@@ -3,6 +3,8 @@
 
 package site.anikitty.app.ui.player
 
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import site.anikitty.app.data.download.DOWNLOAD_USER_AGENT
 import site.anikitty.app.data.download.resolvedStripBytes
@@ -19,6 +21,7 @@ import java.util.concurrent.atomic.AtomicReference
  * A CDN 403 swaps the media item; the factories stay and read these holders,
  * so Referer, Gotaku, and Flix follow the new URL without releasing ExoPlayer.
  */
+@OptIn(UnstableApi::class)
 internal class PlaybackPipeline {
     private val stripBytes = AtomicInteger(SegmentStripDataSource.DEFAULT_STRIP_BYTES)
     private val obf = AtomicReference(null as site.anikitty.app.data.servers.GotakuObf?)

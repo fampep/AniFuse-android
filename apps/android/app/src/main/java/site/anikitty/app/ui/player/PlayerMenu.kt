@@ -171,13 +171,13 @@ internal fun PlayerMenuFrame(
             val shortSide = if (maxWidth < maxHeight) maxWidth else maxHeight
             val tablet = shortSide >= 600.dp
             val compactHeight = maxHeight < 480.dp
-            // The sheet is a bottom sheet in every orientation: landscape and
-            // full screen get a centered rounded panel instead of a side rail.
-            val sheet = true
+            // Landscape keeps the video on the left and the drawer on the right.
+            // Portrait uses a bottom sheet.
+            val side = landscape
+            val sheet = !side
             val sticky = page.isStickyStylePage()
             val tall = page == PlayerMenuPage.Episodes
-            if (sheet) {
-                Box(
+            Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color.Black.copy(alpha = 0.34f))
@@ -190,37 +190,36 @@ internal fun PlayerMenuFrame(
                             },
                         ),
                 )
-            }
             val aboveControls = if (compactHeight) 104.dp else 116.dp
             val panelMax = when {
                 tall -> maxHeight * 0.82f
                 sticky -> maxHeight * 0.72f
                 else -> maxHeight * 0.64f
             }
-            val capped = landscape || tablet
             val panelWidth = when {
+                tablet && side -> 380.dp
+                side -> 340.dp
                 tablet -> 420.dp
-                landscape -> 480.dp
                 else -> maxWidth
             }
-            val shape = if (capped) {
-                RoundedCornerShape(22.dp)
+            val shape = if (side) {
+                RoundedCornerShape(24.dp)
             } else {
-                RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)
+                RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
             }
             Column(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
+                    .align(if (side) Alignment.CenterEnd else Alignment.BottomCenter)
                     .padding(
-                        start = if (capped) 12.dp else 0.dp,
-                        end = if (capped) 12.dp else 0.dp,
-                        bottom = if (theater && landscape) aboveControls else 0.dp,
+                        start = if (side) 0.dp else if (tablet) 12.dp else 0.dp,
+                        end = if (side || tablet) 12.dp else 0.dp,
+                        bottom = if (!side && theater && landscape) aboveControls else if (side) 12.dp else 0.dp,
                     )
-                    .then(if (capped) Modifier.width(panelWidth) else Modifier.fillMaxWidth())
-                    .heightIn(max = panelMax)
+                    .then(if (side || tablet) Modifier.width(panelWidth) else Modifier.fillMaxWidth())
+                    .then(if (side) Modifier.heightIn(max = maxHeight * 0.94f) else Modifier.heightIn(max = panelMax))
                     .clip(shape)
-                    .background(Color(0xFF0B0C0E))
-                    .border(1.dp, Color.White.copy(alpha = 0.06f), shape)
+                    .background(Color(0xD9101010))
+                    .border(1.dp, Color(0xFF292929), shape)
                     .pointerInput(Unit) { detectTapGestures { } },
             ) {
                 if (sheet) {
@@ -436,6 +435,43 @@ private fun MenuPreview(sheet: Boolean) {
             ) {
                 Text("pills", color = Color.White, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 12.dp))
             }
+        }
+    }
+}
+
+@Composable
+internal fun PlayerDrawerTabs(
+    page: PlayerMenuPage,
+    onSelect: (PlayerMenuPage) -> Unit,
+) {
+    val tabs = listOf(
+        PlayerMenuPage.Episodes to "Episodes",
+        PlayerMenuPage.Subs to "Audio & Subs",
+        PlayerMenuPage.Quality to "Quality & Source",
+        PlayerMenuPage.Speed to "Speed",
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+    ) {
+        tabs.forEach { (id, label) ->
+            val selected = page == id || (id == PlayerMenuPage.Subs && page == PlayerMenuPage.Audio)
+            val shape = RoundedCornerShape(999.dp)
+            Text(
+                label,
+                color = if (selected) Color(0xFF080808) else Color(0xFFA1A1A1),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                modifier = Modifier
+                    .clip(shape)
+                    .background(if (selected) Color.White else Color(0xFF151515))
+                    .border(1.dp, if (selected) Color.White else Color(0xFF292929), shape)
+                    .clickable { onSelect(id) }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+            )
         }
     }
 }
