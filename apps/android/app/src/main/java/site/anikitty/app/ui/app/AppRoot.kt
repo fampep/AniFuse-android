@@ -49,6 +49,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -75,7 +76,6 @@ import site.anikitty.app.data.auth.SavedPassphraseStore
 import site.anikitty.app.data.auth.SessionStore
 import site.anikitty.app.data.local.WatchHistoryDao
 import site.anikitty.app.data.servers.ServerCatalog
-import site.anikitty.app.ui.components.KittyFace
 import site.anikitty.app.ui.components.PrismMark
 import site.anikitty.app.ui.theme.KittyAccent
 import site.anikitty.app.ui.theme.KittyHaptics
@@ -89,6 +89,7 @@ import site.anikitty.app.ui.theme.KittyOutlineSoft
 import site.anikitty.app.ui.theme.KittySurface
 import site.anikitty.app.ui.theme.KittyText
 import site.anikitty.app.ui.theme.LocalDemoMode
+import site.anikitty.app.ui.theme.kittyGlass
 
 /**
  * AniList sign-in is the account. Lists, progress, and profile come from AniList.
@@ -476,48 +477,57 @@ private fun WelcomeOverlay(television: Boolean, onDismiss: () -> Unit) {
                     translationY = if (reduced) 0f else rise
                     alpha = if (reduced) 1f else (1f - (rise / 28f)).coerceIn(0f, 1f)
                 }
-                .clip(RoundedCornerShape(20.dp))
-                .background(Color(0xFF101012))
+                .kittyGlass(shape = RoundedCornerShape(24.dp), elevated = true)
                 .then(if (television) Modifier.focusProperties { canFocus = false } else Modifier)
                 .clickable(onClick = {})
-                .padding(horizontal = if (television) 36.dp else 22.dp, vertical = if (television) 32.dp else 24.dp),
+                .padding(horizontal = if (television) 40.dp else 26.dp, vertical = if (television) 36.dp else 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            KittyFace(
-                modifier = Modifier.size(88.dp),
-                waving = true,
-                contentDescription = null,
+            PrismMark(
+                modifier = Modifier.size(92.dp),
+                glow = true,
+                contentDescription = "AniFuse",
             )
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                "AniFuse",
+                color = Color.White,
+                fontWeight = FontWeight.Black,
+                letterSpacing = (-0.6).sp,
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            Spacer(modifier = Modifier.height(10.dp))
             Text(
                 if (danish) "Hej. Klar til næste episode?" else "Hi. Ready for the next episode?",
-                color = Color.White,
+                color = Color.White.copy(alpha = 0.86f),
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.titleMedium,
             )
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(18.dp))
             Button(
                 onClick = {
                     KittyHaptics.perform(view, KittyHaptics.Kind.Confirm)
                     onDismiss()
                 },
-                modifier = Modifier.then(
-                    if (television) {
-                        Modifier
-                            .focusRequester(letsGo)
-                            .onFocusChanged { letsGoFocused = it.isFocused }
-                            .border(
-                                width = if (letsGoFocused) 3.dp else 0.dp,
-                                color = if (letsGoFocused) Color.White else Color.Transparent,
-                                shape = RoundedCornerShape(14.dp),
-                            )
-                            .height(56.dp)
-                    } else {
-                        Modifier
-                    },
-                ),
-                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(if (television) 56.dp else 48.dp)
+                    .then(
+                        if (television) {
+                            Modifier
+                                .focusRequester(letsGo)
+                                .onFocusChanged { letsGoFocused = it.isFocused }
+                                .border(
+                                    width = if (letsGoFocused) 3.dp else 0.dp,
+                                    color = if (letsGoFocused) Color.White else Color.Transparent,
+                                    shape = RoundedCornerShape(16.dp),
+                                )
+                        } else {
+                            Modifier
+                        },
+                    ),
+                shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = KittyAccent,
                     contentColor = KittyOnAccent,

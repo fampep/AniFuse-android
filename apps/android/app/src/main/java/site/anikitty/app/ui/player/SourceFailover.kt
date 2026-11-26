@@ -67,7 +67,11 @@ internal fun httpStatusOf(error: Throwable?): Int? {
 
 internal fun sourceRecovery(errorCode: Int, httpStatus: Int?, playedMs: Long): SourceRecovery {
     if (httpStatus != null) {
-        return if (httpStatus == 408 || httpStatus == 429 || httpStatus in 500..599 || httpStatus in 400..499) {
+        return if (
+            httpStatus == 401 || httpStatus == 403 || httpStatus == 404 ||
+            httpStatus == 408 || httpStatus == 410 || httpStatus == 416 ||
+            httpStatus == 429 || httpStatus in 500..599 || httpStatus in 400..499
+        ) {
             SourceRecovery.NextSource
         } else {
             SourceRecovery.GiveUp
@@ -79,8 +83,9 @@ internal fun sourceRecovery(errorCode: Int, httpStatus: Int?, playedMs: Long): S
         1002 -> SourceRecovery.SeekLive
         2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007 -> SourceRecovery.NextSource
         3001, 3002, 3003, 3004 -> SourceRecovery.NextSource
-        4003, 4006, 5002, 5003 -> if (played > 10_000L) SourceRecovery.RetrySame else SourceRecovery.NextSource
-        4001, 4002, 4004, 4005, 5001, 5004 -> if (played < 2_000L) SourceRecovery.NextSource else SourceRecovery.GiveUp
-        else -> SourceRecovery.GiveUp
+        // Decoder hiccup after a healthy start — retry once; otherwise flip mirrors fast.
+        4003, 4006, 5002, 5003 -> if (played > 6_000L) SourceRecovery.RetrySame else SourceRecovery.NextSource
+        4001, 4002, 4004, 4005, 5001, 5004 -> if (played < 3_500L) SourceRecovery.NextSource else SourceRecovery.GiveUp
+        else -> if (played < 1_500L) SourceRecovery.NextSource else SourceRecovery.GiveUp
     }
 }

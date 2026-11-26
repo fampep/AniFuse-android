@@ -635,8 +635,8 @@ fun PlayerScreen(
             else -> pipeline.strip
         }
         val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(2_500, 50_000, 2_500, 5_000)
-            .setBackBuffer(30_000, true)
+            .setBufferDurationsMs(1_800, 55_000, 1_200, 3_500)
+            .setBackBuffer(35_000, true)
             .build()
         val metrics = context.resources.displayMetrics
         val seedBitrate = context.getSharedPreferences("anikitty_player", 0)
@@ -645,11 +645,12 @@ fun PlayerScreen(
         val bandwidth = DefaultBandwidthMeter.Builder(context)
             .setInitialBitrateEstimate(seedBitrate.toLong())
             .build()
+        // Snappier ABR: climb sooner when the pipe is healthy, drop faster on stalls.
         val adaptive = AdaptiveTrackSelection.Factory(
-            /* minDurationForQualityIncreaseMs = */ 15_000,
-            /* maxDurationForQualityDecreaseMs = */ 8_000,
-            /* minDurationToRetainAfterDiscardMs = */ 25_000,
-            /* bandwidthFraction = */ 0.7f,
+            /* minDurationForQualityIncreaseMs = */ 8_000,
+            /* maxDurationForQualityDecreaseMs = */ 4_500,
+            /* minDurationToRetainAfterDiscardMs = */ 18_000,
+            /* bandwidthFraction = */ 0.78f,
         )
         val selector = DefaultTrackSelector(context, adaptive).apply {
             // Device locale is the default preference. A Danish phone then keeps

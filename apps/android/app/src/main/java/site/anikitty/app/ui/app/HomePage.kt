@@ -96,6 +96,7 @@ import site.anikitty.app.ui.theme.KittyMotion
 import site.anikitty.app.ui.theme.KittySpace
 import site.anikitty.app.ui.theme.LocalDemoMode
 import site.anikitty.app.ui.theme.LocalKittyPalette
+import site.anikitty.app.ui.theme.kittyFloatingChrome
 import site.anikitty.app.ui.theme.prefersReducedMotion
 
 private val Hairline = Color.White.copy(alpha = 0.14f)
@@ -116,21 +117,23 @@ internal fun HomeBar(
         modifier = Modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(horizontal = 12.dp, vertical = 4.dp),
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .kittyFloatingChrome(elevation = 14.dp)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         PrismMark(
             modifier = Modifier
                 .padding(end = 8.dp)
-                .size(26.dp),
-            glow = false,
+                .size(28.dp),
+            glow = true,
         )
         Text(
             "AniFuse",
             color = ink,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Black,
             fontSize = 20.sp,
-            letterSpacing = (-0.4).sp,
+            letterSpacing = (-0.55).sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
@@ -186,8 +189,8 @@ internal fun HomeBar(
         }
         ProfileMark(
             imageUrl = avatarUrl,
-            size = 32.dp,
-            modifier = Modifier.padding(start = 2.dp).spacePress(onOpenAccount),
+            size = 34.dp,
+            modifier = Modifier.padding(start = 4.dp).spacePress(onOpenAccount),
         )
     }
 }

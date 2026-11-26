@@ -60,7 +60,12 @@ val KittyPageFlatBrush: Brush
  */
 val KittyPageGlassBrush: Brush
     get() = Brush.verticalGradient(
-        colors = listOf(Color(0xFF101010), Color(0xFF080808), Color(0xFF080808)),
+        colors = listOf(
+            Color(0xFF141414),
+            Color(0xFF0C0C0C),
+            Color(0xFF080808),
+            Color(0xFF060606),
+        ),
     )
 
 fun kittyPageBrush(glass: Boolean): Brush =

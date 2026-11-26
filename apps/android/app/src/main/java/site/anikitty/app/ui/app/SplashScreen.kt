@@ -173,10 +173,10 @@ fun SplashScreen(onFinished: () -> Unit) {
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "Your lists. Your next episode.",
-                color = ink.copy(alpha = 0.46f * fillAlphaAnim),
+                text = "Lists. Streams. One glass home.",
+                color = ink.copy(alpha = 0.48f * fillAlphaAnim),
                 fontSize = 13.sp,
-                letterSpacing = 0.3.sp,
+                letterSpacing = 0.35.sp,
                 fontWeight = FontWeight.Medium,
             )
         }
