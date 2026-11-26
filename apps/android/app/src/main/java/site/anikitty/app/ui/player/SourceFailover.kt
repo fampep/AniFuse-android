@@ -39,3 +39,48 @@ internal fun hasNewPlayableUrls(current: Collection<String>, next: Collection<St
     if (next.isEmpty()) return false
     return next.toSet() != current.toSet()
 }
+
+/**
+ * What a playback error is allowed to do.
+ * A dead CDN moves on. A decoder glitch after the file was already playing does not.
+ */
+internal enum class SourceRecovery {
+    NextSource,
+    RetrySame,
+    SeekLive,
+    GiveUp,
+}
+
+internal fun httpStatusOf(error: Throwable?): Int? {
+    var current = error
+    var guard = 0
+    while (current != null && guard < 8) {
+        val message = current.message.orEmpty()
+        Regex("""(?:Response code|HTTP(?: status)?)[: ]+(\d{3})""").find(message)?.let {
+            return it.groupValues[1].toInt()
+        }
+        current = current.cause
+        guard++
+    }
+    return null
+}
+
+internal fun sourceRecovery(errorCode: Int, httpStatus: Int?, playedMs: Long): SourceRecovery {
+    if (httpStatus != null) {
+        return if (httpStatus == 408 || httpStatus == 429 || httpStatus in 500..599 || httpStatus in 400..499) {
+            SourceRecovery.NextSource
+        } else {
+            SourceRecovery.GiveUp
+        }
+    }
+    val played = playedMs.coerceAtLeast(0L)
+    // Numbers are androidx.media3.common.PlaybackException error codes.
+    return when (errorCode) {
+        1002 -> SourceRecovery.SeekLive
+        2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007 -> SourceRecovery.NextSource
+        3001, 3002, 3003, 3004 -> SourceRecovery.NextSource
+        4003, 4006, 5002, 5003 -> if (played > 10_000L) SourceRecovery.RetrySame else SourceRecovery.NextSource
+        4001, 4002, 4004, 4005, 5001, 5004 -> if (played < 2_000L) SourceRecovery.NextSource else SourceRecovery.GiveUp
+        else -> SourceRecovery.GiveUp
+    }
+}

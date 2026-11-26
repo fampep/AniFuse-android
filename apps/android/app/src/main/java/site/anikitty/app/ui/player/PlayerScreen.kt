@@ -353,6 +353,7 @@ fun PlayerScreen(
     var playAttempt by remember { mutableIntStateOf(0) }
     var playlist by remember(sources) { mutableStateOf(sources) }
     var sourceIndex by remember(playlist, playAttempt) { mutableIntStateOf(0) }
+    var retriedSource by remember(sourceIndex, playlist) { mutableStateOf(false) }
     var skipTimes by remember { mutableStateOf(SkipTimes()) }
     var didSeekStart by remember { mutableStateOf(false) }
     var resumeAtMs by remember { mutableLongStateOf(startPositionMs) }
@@ -1011,6 +1012,61 @@ fun PlayerScreen(
         recoverExhausted(message, decision.resumeMs, fromCast = true)
     }
 
+    fun applyPlaybackError(target: Player?, e: PlaybackException, liveMs: Long, fromCast: Boolean) {
+        val decision = sourceFailover(
+            index = if (fromCast) latestSourceIndex else sourceIndex,
+            count = if (fromCast) latestSources.size else playlist.size,
+            livePositionMs = liveMs,
+            heldResumeMs = resumeAtMs,
+            historyMs = if (fromCast) latestStartPositionMs else startPositionMs,
+            allowHistory = if (fromCast) latestAllowHistory else allowHistoryFallback,
+        )
+        val cause = e.cause?.message?.takeIf { it.isNotBlank() }
+        val message = friendlyFailure(
+            listOfNotNull(e.message, cause).joinToString(" — ").ifBlank { "Playback failed" },
+        )
+        when (sourceRecovery(e.errorCode, httpStatusOf(e), liveMs)) {
+            SourceRecovery.SeekLive -> {
+                runCatching {
+                    target?.seekToDefaultPosition()
+                    target?.prepare()
+                    target?.playWhenReady = true
+                }
+            }
+            SourceRecovery.RetrySame -> {
+                if (retriedSource) {
+                    error = message
+                    if (fromCast) handEpisodeBackToPhone(message, receiverStillPlaying = false)
+                    return
+                }
+                retriedSource = true
+                runCatching {
+                    target?.seekTo(decision.resumeMs.coerceAtLeast(0L))
+                    target?.prepare()
+                    target?.playWhenReady = true
+                }
+            }
+            SourceRecovery.NextSource -> {
+                if (fromCast) {
+                    failCastSource(message, liveMs)
+                } else if (decision.nextIndex != null) {
+                    resumeAtMs = decision.resumeMs
+                    positionMs = decision.resumeMs
+                    playhead.ms = decision.resumeMs
+                    didSeekStart = false
+                    allowHistoryFallback = false
+                    sourceIndex = decision.nextIndex
+                } else {
+                    recoverExhausted(message, decision.resumeMs, fromCast = false)
+                }
+            }
+            SourceRecovery.GiveUp -> {
+                error = message
+                if (fromCast) handEpisodeBackToPhone(message, receiverStillPlaying = false)
+            }
+        }
+    }
+
     fun castFailed(message: String) {
         if (!castAlive.get()) return
         if (message == "Chromecast is not connected") {
@@ -1152,10 +1208,8 @@ fun PlayerScreen(
             val castErrors = object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
                     if (!castAlive.get() || !isCasting) return
-                    val message = error.message?.takeIf { it.isNotBlank() }
-                        ?: "Chromecast could not play this stream"
                     val live = runCatching { helper.castPlayer.currentPosition }.getOrDefault(playhead.ms)
-                    failCastSource(message, live)
+                    applyPlaybackError(helper.castPlayer, error, live, fromCast = true)
                 }
             }
             helper.attachScreen()
@@ -1567,29 +1621,7 @@ fun PlayerScreen(
 
             override fun onPlayerError(e: PlaybackException) {
                 val pos = activePlayer?.currentPosition?.coerceAtLeast(0L) ?: playhead.ms
-                val decision = sourceFailover(
-                    index = sourceIndex,
-                    count = playlist.size,
-                    livePositionMs = pos,
-                    heldResumeMs = resumeAtMs,
-                    historyMs = startPositionMs,
-                    allowHistory = allowHistoryFallback,
-                )
-                if (decision.nextIndex != null) {
-                    resumeAtMs = decision.resumeMs
-                    positionMs = decision.resumeMs
-                    playhead.ms = decision.resumeMs
-                    didSeekStart = false
-                    allowHistoryFallback = false
-                    sourceIndex = decision.nextIndex
-                } else {
-                    val cause = e.cause?.message?.takeIf { it.isNotBlank() }
-                    val message = friendlyFailure(
-                        listOfNotNull(e.message, cause).joinToString(" — ")
-                            .ifBlank { "Playback failed" },
-                    )
-                    recoverExhausted(message, decision.resumeMs, fromCast = false)
-                }
+                applyPlaybackError(activePlayer, e, pos, fromCast = false)
             }
         }
         activePlayer?.addListener(listener)

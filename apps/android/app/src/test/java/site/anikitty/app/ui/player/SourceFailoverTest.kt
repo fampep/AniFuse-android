@@ -51,4 +51,14 @@ class SourceFailoverTest {
         assertEquals(false, hasNewPlayableUrls(listOf("https://cdn/a"), emptyList()))
         assertEquals(true, hasNewPlayableUrls(listOf("https://cdn/a?sig=old"), listOf("https://cdn/a?sig=new")))
     }
+
+    @Test
+    fun decoderGlitchDoesNotBurnAPlayingSource() {
+        assertEquals(SourceRecovery.NextSource, sourceRecovery(2004, 403, 12_000L))
+        assertEquals(SourceRecovery.SeekLive, sourceRecovery(1002, null, 4_000L))
+        assertEquals(SourceRecovery.RetrySame, sourceRecovery(4003, null, 20_000L))
+        assertEquals(SourceRecovery.NextSource, sourceRecovery(4001, null, 0L))
+        assertEquals(SourceRecovery.GiveUp, sourceRecovery(4001, null, 30_000L))
+        assertEquals(403, httpStatusOf(IllegalStateException("Response code: 403")))
+    }
 }
