@@ -1,7 +1,7 @@
 name: CI
 
 # Pull requests must compile and pass unit tests before they can merge.
-# The dev release workflow repeats the tests on main before it publishes.
+# The release workflow repeats the tests on main before it publishes.
 on:
   pull_request:
 

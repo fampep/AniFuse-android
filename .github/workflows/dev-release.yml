@@ -1,18 +1,18 @@
-name: Dev release
+name: Release
 
-# Every push to main publishes the next dev prerelease.
+# Every push to main publishes the next dev/alpha prerelease.
+# Names follow uBlock Origin: dev is 1.2.13b0, stable is 1.2.13.
+# The tag and the release title are that version, with no "v" prefix.
 # The version commit message contains [skip ci], and GitHub does not
 # start a new run from the workflow token, so this does not loop.
-# README version badges read the GitHub releases API. This workflow
-# does not edit the README. A floating "dev" release is replaced in
-# place; numbered tags are never deleted.
+# A floating "dev" release is replaced in place; numbered tags are never deleted.
 on:
   push:
     branches: [main]
   workflow_dispatch:
     inputs:
       stable:
-        description: Cut a stable release of the current dev line, then bump main to the next dev
+        description: Cut stable x.y.z from the current dev line (1.2.13bN becomes 1.2.13), then bump main to the next dev
         type: boolean
         default: false
 
@@ -39,17 +39,7 @@ jobs:
         run: |
           message="${{ github.event.head_commit.message }}"
           if { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.stable }}" = "true" ]; } || [[ "$message" == *"[stable]"* ]]; then
-            current="$(grep -E '^name=' VERSION | head -1 | cut -d= -f2- | tr -d '[:space:]')"
-            code="$(grep -E '^code=' VERSION | head -1 | cut -d= -f2- | tr -d '[:space:]')"
-            base="${current%-dev.*}"
-            if [ "$base" = "$current" ]; then
-              # A pull request already set the stable name and code. Publish that cut.
-              name="$current"
-            else
-              name="$base"
-              code="$((code + 1))"
-            fi
-            printf '%s\n' '# Android versionName / versionCode. Pushes to main cut the next dev prerelease.' '# Stable releases stay manual. The dev workflow commits this file with [skip ci].' "name=${name}" "code=${code}" > VERSION
+            read -r name code < <(bash scripts/next-dev-version.sh --stable)
             echo "stable=true" >> "$GITHUB_OUTPUT"
           else
             read -r name code < <(bash scripts/next-dev-version.sh)
@@ -217,22 +207,50 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # The first release on this repo has no previous tag. Later notes
+          # start at the last release, or the last stable cut when this is stable.
           if [ "${{ steps.ver.outputs.stable }}" = "true" ]; then
-            # Dev prereleases sit above the last stable, so a short release
-            # list can miss it. Walk newest-first until a full release.
-            prev="$(gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" --jq '.[] | select(.prerelease==false) | .tag_name' | head -n 1)"
+            # Releases are newest first. --paginate runs --jq once per page, so
+            # keep every stable tag in order and take the first line. Indexing
+            # inside jq would emit one tag per page and glue them together.
+            gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" \
+              --jq '.[] | select(.prerelease==false) | .tag_name' > stable-tags.txt
+            prev="$(head -n 1 stable-tags.txt || true)"
+            rm -f stable-tags.txt
           else
-            prev="$(gh release list --repo "${{ github.repository }}" --limit 1 --json tagName --jq '.[0].tagName')"
+            prev="$(gh release list --repo "${{ github.repository }}" --limit 1 --json tagName --jq '.[0].tagName // empty')"
           fi
-          test -n "$prev"
           echo "previous=$prev" >> "$GITHUB_OUTPUT"
-          gh api --method POST "repos/${{ github.repository }}/releases/generate-notes" \
-            -f tag_name="v${{ steps.ver.outputs.name }}" \
-            -f previous_tag_name="$prev" \
-            -f target_commitish="${{ steps.commit.outputs.sha }}" \
-            --jq .body > notes.md
-          header="docs/release-notes/v${{ steps.ver.outputs.name }}.md"
-          if [ -f "$header" ]; then
+          version="${{ steps.ver.outputs.name }}"
+          if [ -n "$prev" ]; then
+            gh api --method POST "repos/${{ github.repository }}/releases/generate-notes" \
+              -f tag_name="$version" \
+              -f previous_tag_name="$prev" \
+              -f target_commitish="${{ steps.commit.outputs.sha }}" \
+              --jq .body > notes.md
+          else
+            gh api --method POST "repos/${{ github.repository }}/releases/generate-notes" \
+              -f tag_name="$version" \
+              -f target_commitish="${{ steps.commit.outputs.sha }}" \
+              --jq .body > notes.md
+          fi
+          {
+            if [ "${{ steps.ver.outputs.stable }}" = "true" ]; then
+              printf 'Stable **%s**.\n\n' "$version"
+            else
+              base="${version%b*}"
+              printf 'Dev **%s**. The stable cut of this line will be **%s**.\n\n' "$version" "$base"
+            fi
+            cat notes.md
+          } > notes.with-header.md
+          mv notes.with-header.md notes.md
+          header=""
+          if [ -f "docs/release-notes/${version}.md" ]; then
+            header="docs/release-notes/${version}.md"
+          elif [ -f "docs/release-notes/v${version}.md" ]; then
+            header="docs/release-notes/v${version}.md"
+          fi
+          if [ -n "$header" ]; then
             tmp="$(mktemp)"
             cat "$header" > "$tmp"
             printf '\n' >> "$tmp"
@@ -249,14 +267,15 @@ jobs:
           version="${{ steps.ver.outputs.name }}"
           repo="${{ github.repository }}"
           sha="${{ steps.commit.outputs.sha }}"
-          cp apps/android/app/build/outputs/apk/release/app-release.apk \
-            "anikitty-${version}.apk"
-          # Rolling download at /releases/download/dev/anikitty-dev.apk.
-          # Recreate it before the numbered release so the numbered tag
-          # stays the newest prerelease (the README dev badge). This
-          # replaces only the floating "dev" tag.
+          apk="AniFuse_${version}.apk"
+          cp apps/android/app/build/outputs/apk/release/app-release.apk "$apk"
+          # Rolling download at /releases/download/dev/AniFuse_dev.apk.
+          # anikitty-dev.apk stays beside it so older links keep working.
+          # Recreate the floating tag before the numbered release so the
+          # numbered tag stays the newest prerelease. Only the "dev" tag moves.
           if [ "${{ steps.ver.outputs.stable }}" != "true" ]; then
-            cp "anikitty-${version}.apk" anikitty-dev.apk
+            cp "$apk" AniFuse_dev.apk
+            cp "$apk" anikitty-dev.apk
             if ! {
               if gh release view dev --repo "$repo" >/dev/null 2>&1; then
                 gh release delete dev --repo "$repo" --yes --cleanup-tag
@@ -266,7 +285,8 @@ jobs:
                 --target "$sha" \
                 --prerelease \
                 --title "dev" \
-                --notes "Rolling dev build. This tag moves. Numbered prereleases stay on their own tags." \
+                --notes "Rolling dev build of the newest numbered prerelease. This tag moves. Numbered tags stay." \
+                AniFuse_dev.apk \
                 anikitty-dev.apk
             }; then
               echo "Rolling dev release was not updated. The numbered release still publishes."
@@ -276,11 +296,11 @@ jobs:
           if [ "${{ steps.ver.outputs.stable }}" != "true" ]; then
             flags+=(--prerelease)
           fi
-          gh release create "v${version}" \
+          gh release create "$version" \
             --repo "$repo" \
             --target "$sha" \
             --title "$version" \
             ${flags[@]+"${flags[@]}"} \
             --notes-file notes.md \
-            "anikitty-${version}.apk" \
+            "$apk" \
             docs/brand/anikitty-icon-512.png

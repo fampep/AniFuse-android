@@ -35,13 +35,13 @@ class ExtensionStoreClient(
 
         /**
          * Main store submission — opens GitHub issue form on the extensions repo
-         * (falls back to anikitty issues until that public repo exists).
+         * (falls back to this app's issue form).
          */
         const val SUBMIT_URL =
             "https://github.com/fampep/anikitty-extensions/issues/new?template=extension_submit.yml"
 
         const val SUBMIT_FALLBACK_URL =
-            "https://github.com/fampep/anikitty/issues/new?template=extension_submit.yml"
+            "https://github.com/fampep/AniFuse-android/issues/new?template=extension_submit.yml"
     }
 }
 
