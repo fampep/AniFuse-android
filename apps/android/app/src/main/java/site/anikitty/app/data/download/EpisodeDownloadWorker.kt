@@ -74,14 +74,21 @@ class EpisodeDownloadWorker(
         val dest = progressiveFile(EpisodeDownloads.filesRoot(applicationContext), row.anilistId, row.episode, row.url)
         dest.parentFile?.mkdirs()
         val part = File(dest.path + ".part")
+        val already = if (part.exists()) part.length() else 0L
+        val resume = progressiveResume(already)
         try {
             withContext(Dispatchers.IO) {
                 val request = Request.Builder().url(row.url)
-                headers.forEach { (key, value) ->
-                    if (!key.equals("User-Agent", ignoreCase = true)) request.header(key, value)
+                site.anikitty.app.data.servers.playbackHeaders(headers).forEach { (key, value) ->
+                    request.header(key, value)
                 }
                 request.header("User-Agent", userAgent)
+                resume.rangeHeader?.let { request.header("Range", it) }
                 PlaybackHttp.client.newCall(request.build()).execute().use { response ->
+                    if (response.code == 416) {
+                        part.delete()
+                        throw java.io.IOException("Couldn't resume this episode")
+                    }
                     if (!response.isSuccessful) {
                         throw DownloadRejectedException(httpFailure(response.code))
                     }
@@ -90,12 +97,18 @@ class EpisodeDownloadWorker(
                         throw DownloadRejectedException("Couldn't save this episode")
                     }
                     val body = response.body ?: throw DownloadRejectedException("Couldn't save this episode")
-                    val total = body.contentLength()
+                    val append = resume.appendOnPartial && response.code == 206
+                    val prior = if (append) already else 0L
+                    val bodyLength = body.contentLength()
+                    val total = when {
+                        bodyLength > 0L -> prior + bodyLength
+                        else -> -1L
+                    }
                     var stopped = false
                     body.byteStream().use { input ->
-                        part.outputStream().use { output ->
+                        java.io.FileOutputStream(part, append).use { output ->
                             val buffer = ByteArray(64 * 1024)
-                            var readTotal = 0L
+                            var readTotal = prior
                             var lastPercent = 0
                             var lastAt = 0L
                             while (true) {
@@ -123,7 +136,8 @@ class EpisodeDownloadWorker(
                 }
             }
         } catch (error: Exception) {
-            part.delete()
+            // A dropped connection keeps the partial file so the next try can Range-resume.
+            if (error !is java.io.IOException) part.delete()
             throw error
         }
         if (!part.exists()) return Result.success()

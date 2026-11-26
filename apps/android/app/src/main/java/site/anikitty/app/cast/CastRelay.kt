@@ -100,7 +100,9 @@ class CastRelay(context: Context) {
             next.headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value
                 ?: DEFAULT_UA,
         )
-        httpFactory.setDefaultRequestProperties(next.headers)
+        httpFactory.setDefaultRequestProperties(
+            site.anikitty.app.data.servers.playbackHeaders(next.headers),
+        )
         gotakuFactory.updateObf(next.gotakuObf)
         obf.set(next.gotakuObf)
         flixFactory.update(next.flix)

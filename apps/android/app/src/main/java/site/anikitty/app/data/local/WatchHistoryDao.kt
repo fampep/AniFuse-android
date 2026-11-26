@@ -18,8 +18,14 @@ interface WatchHistoryDao {
     @Query("SELECT * FROM watch_history WHERE anilistId = :anilistId LIMIT 1")
     suspend fun get(anilistId: Int): WatchHistoryEntity?
 
+    @Query("SELECT * FROM watch_history")
+    suspend fun getAll(): List<WatchHistoryEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entry: WatchHistoryEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entries: List<WatchHistoryEntity>)
 
     @Query("DELETE FROM watch_history WHERE anilistId = :anilistId")
     suspend fun delete(anilistId: Int)

@@ -891,8 +891,8 @@ internal fun HomeRankRow(
                     KittyImage(
                         url = anime.coverImageUrl,
                         contentDescription = null,
-                        widthPx = 320,
-                        heightPx = 480,
+                        widthPx = 360,
+                        heightPx = 540,
                         modifier = Modifier
                             .padding(start = 20.dp)
                             .sharedPoster(anime.id)
@@ -926,7 +926,7 @@ internal fun HomeRankRow(
     }
 }
 
-private val LiveGreen = Color(0xFF3DDC84)
+private val LiveGreen = Color.White
 
 @Composable
 internal fun HomeLatestEpisodes(

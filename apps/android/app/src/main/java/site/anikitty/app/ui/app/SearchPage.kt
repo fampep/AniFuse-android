@@ -88,7 +88,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import site.anikitty.app.ui.components.KittyImage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -171,13 +171,13 @@ fun SearchFeed(
     onRequestedGenreConsumed: () -> Unit = {},
     listMarks: Map<Int, String> = emptyMap(),
 ) {
-    var query by rememberSaveable { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf(SearchSession.query) }
     var pick by remember { mutableStateOf(SearchPick()) }
     var asGrid by rememberSaveable { mutableStateOf(true) }
     var filtersOpen by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var items by remember { mutableStateOf<List<AnimeSummary>>(emptyList()) }
+    var items by remember { mutableStateOf(SearchSession.restore(query)) }
     var discover by remember { mutableStateOf<List<AnimeSummary>>(emptyList()) }
     var discoverError by remember { mutableStateOf<String?>(null) }
     var discoverTick by remember { mutableIntStateOf(0) }
@@ -260,6 +260,7 @@ fun SearchFeed(
                 }.onSuccess { found ->
                     error = null
                     items = if (more) (items + found).distinctBy { it.id } else found
+                    if (!more) SearchSession.save(q, items)
                     page = nextPage
                     end = found.size < 24
                     if (q.length >= 2 && found.isNotEmpty()) rememberQuery(q)
@@ -278,6 +279,9 @@ fun SearchFeed(
         runSearch(query, filters = next)
     }
 
+    LaunchedEffect(Unit) {
+        if (query.trim().length >= 2 && items.isEmpty() && !pick.on()) runSearch(query)
+    }
     LaunchedEffect(discoverTick) {
         if (demo) {
             discover = site.anikitty.app.data.demo.DemoLibrary.catalog
@@ -824,15 +828,16 @@ private fun SearchPoster(anime: AnimeSummary, badge: String?, onClick: () -> Uni
                 contentDescription = searchResultDescription(anime.title, aired, anime.format, releasing, badge)
             },
     ) {
-        AsyncImage(
-            model = anime.coverImageUrl,
+        KittyImage(
+            url = anime.coverImageUrl,
             contentDescription = null,
             contentScale = ContentScale.Crop,
+            widthPx = 360,
+            heightPx = 540,
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(3.dp))
-                .background(palette.surface),
+                .clip(RoundedCornerShape(3.dp)),
         )
         Spacer(Modifier.height(6.dp))
         Text(
@@ -921,10 +926,12 @@ private fun SearchListRow(anime: AnimeSummary, badge: String?, onClick: () -> Un
                 .background(palette.surface)
                 .clearAndSetSemantics { },
         ) {
-            AsyncImage(
-                model = anime.coverImageUrl,
+            KittyImage(
+                url = anime.coverImageUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                widthPx = 360,
+                heightPx = 540,
                 modifier = Modifier.fillMaxSize(),
             )
             anime.averageScore?.let { score ->

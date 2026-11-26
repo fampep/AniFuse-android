@@ -307,14 +307,10 @@ fun LocalFirstApp(
                         ?: error("AniList did not accept that sign-in")
                     aniListAuth.saveViewer(pendingAniListToken, viewer)
                     onAniListReady()
-                    val synced = runCatching { aniListSync.pull() }.getOrNull()
+                    // The linked-account effect pulls once. A second pull here
+                    // used to sit in front of Home on the same AniList lane.
                     aniLinkTick++
-                    if (synced != null) {
-                        syncLabel = "Synced ${synced.imported} from AniList"
-                        "Signed in as @${viewer.name}"
-                    } else {
-                        "Signed in as @${viewer.name}"
-                    }
+                    "Signed in as @${viewer.name}"
                 }.getOrElse { e -> friendlyFailure(e.message) }
                 onConsumedAniListToken()
             }
@@ -395,18 +391,9 @@ fun LocalFirstApp(
                 .toMap()
             return@LaunchedEffect
         }
-        val missing = history.map { it.anilistId }.distinct().filter { it !in releasedById }.take(24)
+        val missing = history.map { it.anilistId }.distinct().filter { it !in releasedById }.take(50)
         if (missing.isEmpty()) return@LaunchedEffect
-        val found = coroutineScope {
-            missing.map { id ->
-                async {
-                    val count = runCatching { aniList.media(id) }.getOrNull()
-                        ?.releasedEpisodeCount()
-                        ?.takeIf { it > 0 }
-                    if (count != null) id to count else null
-                }
-            }.awaitAll().filterNotNull()
-        }
+        val found = runCatching { aniList.mediaBrief(missing) }.getOrDefault(emptyMap())
         if (found.isNotEmpty()) releasedById = releasedById + found
     }
     BackHandler(
@@ -732,7 +719,6 @@ fun LocalFirstApp(
                     }
                 }
                 val posterFlight = remember { PosterFlight() }
-                posterFlight.claimed.clear()
                 CompositionLocalProvider(
                     LocalPosterMotion provides PosterMotion(
                         scope = shared,
@@ -1197,8 +1183,9 @@ private fun DockOverlay(
     modifier: Modifier = Modifier,
 ) {
     val reduced = prefersReducedMotion()
+    androidx.compose.runtime.LaunchedEffect(selectedId) { KittyDock.shown = true }
     val shift by animateDpAsState(
-        targetValue = if (KittyDock.shown) 0.dp else 108.dp,
+        targetValue = if (KittyDock.shown) 0.dp else 180.dp,
         animationSpec = if (reduced) snap() else tween(220, easing = FastOutSlowInEasing),
         label = "dock",
     )
@@ -1241,11 +1228,12 @@ private fun HomeFeed(
     onOpenBuilds: () -> Unit = {},
 ) {
     val context = LocalContext.current
-    var loading by remember { mutableStateOf(true) }
+    val warmShelves = !demo && HomeShelfMemory.trending.isNotEmpty()
+    var loading by remember { mutableStateOf(!warmShelves) }
     var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var trending by remember { mutableStateOf<List<AnimeSummary>>(emptyList()) }
-    var seasonal by remember { mutableStateOf<List<AnimeSummary>>(emptyList()) }
+    var trending by remember { mutableStateOf(if (demo) emptyList() else HomeShelfMemory.trending) }
+    var seasonal by remember { mutableStateOf(if (demo) emptyList() else HomeShelfMemory.seasonal) }
     val scope = rememberCoroutineScope()
     var catalogJob by remember { mutableStateOf<Job?>(null) }
     val catalogBusy = loading || refreshing
@@ -1268,7 +1256,10 @@ private fun HomeFeed(
         // deprecated and stays only as skip-time / audio-availability reads.
         val items = runCatching { anifuseApi.latest(limit = 48) }.getOrDefault(emptyList())
         val mapped = if (items.isNotEmpty()) {
-            AnifuseLatestMapper.toSlots(items, aniList, known)
+            val store = site.anikitty.app.data.anifuse.TitleResolveStore(
+                java.io.File(context.filesDir, "title-resolve.json"),
+            )
+            AnifuseLatestMapper.toSlots(items, aniList, known, store)
         } else {
             emptyList()
         }
@@ -1292,8 +1283,8 @@ private fun HomeFeed(
     val planToWatch = remember(history) {
         history.filter { it.listStatus.equals("PLANNING", ignoreCase = true) }.take(12)
     }
-    var topTen by remember { mutableStateOf<List<AnimeSummary>>(emptyList()) }
-    var popular by remember { mutableStateOf<List<AnimeSummary>>(emptyList()) }
+    var topTen by remember { mutableStateOf(if (demo) emptyList() else HomeShelfMemory.topTen) }
+    var popular by remember { mutableStateOf(if (demo) emptyList() else HomeShelfMemory.popular) }
     var upcoming by remember { mutableStateOf<List<AnimeSummary>>(emptyList()) }
     var upcomingDates by remember { mutableStateOf<Map<Int, String>>(emptyMap()) }
     var topRated by remember { mutableStateOf<List<AnimeSummary>>(emptyList()) }
@@ -1322,7 +1313,7 @@ private fun HomeFeed(
         val loaded = coroutineScope {
             forYouSpots.map { spot ->
                 async {
-                    spot to runCatching { aniList.media(spot.anilistId, aniListAuth.accessToken) }.getOrNull()
+                    spot to runCatching { aniList.media(spot.anilistId) }.getOrNull()
                 }
             }.awaitAll()
         }
@@ -1338,7 +1329,7 @@ private fun HomeFeed(
         forYou = picked.take(12)
     }
 
-    fun reload(fromPull: Boolean = false) {
+    fun reload(fromPull: Boolean = false, silent: Boolean = false) {
         if (demo) {
             trending = site.anikitty.app.data.demo.DemoLibrary.featured
             seasonal = site.anikitty.app.data.demo.DemoLibrary.seasonal
@@ -1371,7 +1362,7 @@ private fun HomeFeed(
             catalogJob?.cancel()
         }
         catalogJob = scope.launch {
-            if (fromPull) refreshing = true else loading = true
+            if (fromPull) refreshing = true else if (!silent) loading = true
             error = null
             runCatching {
                 if (fromPull) aniList.invalidateCache()
@@ -1400,6 +1391,7 @@ private fun HomeFeed(
                     seasonal = s.await()
                     topTen = seasonTop.await().ifEmpty { trending }.take(10)
                     popular = p.await()
+                    HomeShelfMemory.save(trending, seasonal, popular, topTen)
                     prefetchCovers(context, trending + seasonal + topTen + popular)
                 }
             }.onFailure {
@@ -1466,7 +1458,7 @@ private fun HomeFeed(
         }
     }
 
-    LaunchedEffect(Unit) { reload() }
+    LaunchedEffect(Unit) { reload(silent = !demo && HomeShelfMemory.fresh()) }
 
     val openCatalog: (AnimeSummary) -> Unit = { anime ->
         val known = site.anikitty.app.data.demo.DemoLibrary.find(anime.id)
@@ -1955,13 +1947,14 @@ private fun HomeFeed(
 
 private fun prefetchCovers(context: android.content.Context, animes: List<AnimeSummary>) {
     val loader = coil.Coil.imageLoader(context)
-    animes.take(16).forEach { anime ->
-        val url = anime.coverImageUrl ?: return@forEach
+    animes.take(24).mapNotNull { it.coverImageUrl }.distinct().forEach { url ->
+        val key = site.anikitty.app.ui.components.coverCacheKey(url, 360, 540)
         loader.enqueue(
             coil.request.ImageRequest.Builder(context)
                 .data(url)
                 .size(360, 540)
-                .memoryCacheKey("$url@360")
+                .memoryCacheKey(key)
+                .diskCacheKey(key)
                 .build(),
         )
     }

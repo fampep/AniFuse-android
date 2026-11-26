@@ -139,6 +139,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -202,7 +203,9 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
@@ -377,6 +380,7 @@ fun PlayerScreen(
     var selectedTextId by remember { mutableStateOf("auto") }
     var textOptions by remember { mutableStateOf<List<TextOption>>(emptyList()) }
     var selectedVideoId by remember { mutableStateOf("auto") }
+    var renderedHeight by remember { mutableIntStateOf(0) }
     var videoOptions by remember { mutableStateOf<List<VideoOption>>(emptyList()) }
     var selectedAudioId by remember { mutableStateOf("auto") }
     var audioOptions by remember { mutableStateOf<List<AudioOption>>(emptyList()) }
@@ -577,6 +581,13 @@ fun PlayerScreen(
             activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
+    DisposableEffect(activity) {
+        val previous = activity?.window?.attributes?.screenBrightness ?: -1f
+        onDispose {
+            val host = activity ?: return@onDispose
+            host.window.attributes = host.window.attributes.apply { screenBrightness = previous }
+        }
+    }
 
     DisposableEffect(immersive, activity, view) {
         val window = activity?.window
@@ -624,21 +635,41 @@ fun PlayerScreen(
             else -> pipeline.strip
         }
         val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(2_500, 40_000, 1_500, 2_000)
+            .setBufferDurationsMs(2_500, 50_000, 2_500, 5_000)
+            .setBackBuffer(30_000, true)
             .build()
-        val selector = DefaultTrackSelector(context).apply {
+        val metrics = context.resources.displayMetrics
+        val seedBitrate = context.getSharedPreferences("anikitty_player", 0)
+            .getInt("last_video_bitrate", 1_500_000)
+            .coerceIn(400_000, 8_000_000)
+        val bandwidth = DefaultBandwidthMeter.Builder(context)
+            .setInitialBitrateEstimate(seedBitrate.toLong())
+            .build()
+        val adaptive = AdaptiveTrackSelection.Factory(
+            /* minDurationForQualityIncreaseMs = */ 15_000,
+            /* maxDurationForQualityDecreaseMs = */ 8_000,
+            /* minDurationToRetainAfterDiscardMs = */ 25_000,
+            /* bandwidthFraction = */ 0.7f,
+        )
+        val selector = DefaultTrackSelector(context, adaptive).apply {
             // Device locale is the default preference. A Danish phone then keeps
             // the Japanese DEFAULT rendition on a shared sub/dub master.
+            // The viewport keeps a phone from requesting a 4K rung it cannot show.
             parameters = buildUponParameters()
+                .setViewportSize(metrics.widthPixels, metrics.heightPixels, true)
                 .setPreferredAudioLanguage(requestedAudioLanguage(audio))
                 .setPreferredTextLanguage("en")
                 .setSelectUndeterminedTextLanguage(true)
                 .build()
         }
         val exo = ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(topFactory))
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(topFactory)
+                    .setLoadErrorHandlingPolicy(FastFailLoadPolicy()),
+            )
             .setLoadControl(loadControl)
             .setTrackSelector(selector)
+            .setBandwidthMeter(bandwidth)
             .build()
             .apply {
                 videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
@@ -1724,6 +1755,8 @@ fun PlayerScreen(
         // this episode has buffered or reached ready.
         var castItemStarted = false
         var castLeftEnding = false
+        var stallBuffered = -1L
+        var stallSince = 0L
         val p = activePlayer
         while (p != null) {
             if (!scrubbing) {
@@ -1744,6 +1777,46 @@ fun PlayerScreen(
                 if (trustCastClock) {
                     playhead.ms = rawPos
                     if (rawDur > 0 && rawDur != durationMs) durationMs = rawDur
+                }
+                if (!isCasting && p is ExoPlayer) {
+                    val format = p.videoFormat
+                    val height = format?.height ?: 0
+                    if (height > 0 && height != renderedHeight) {
+                        renderedHeight = height
+                        val bitrate = format?.bitrate ?: 0
+                        if (bitrate > 200_000) {
+                            playerPrefs.edit().putInt("last_video_bitrate", bitrate).apply()
+                        }
+                    }
+                    val buffered = clock.bufferedMs
+                    val stalled = clock.playWhenReady &&
+                        !clock.playing &&
+                        clock.state == Player.STATE_BUFFERING
+                    if (stalled && buffered == stallBuffered) {
+                        if (stallSince == 0L) stallSince = System.currentTimeMillis()
+                        if (System.currentTimeMillis() - stallSince >= 8_000L && latestSources.size > latestSourceIndex + 1) {
+                            stallSince = 0L
+                            val decision = sourceFailover(
+                                index = latestSourceIndex,
+                                count = latestSources.size,
+                                livePositionMs = maxOf(pos, resumeAtMs),
+                                heldResumeMs = resumeAtMs,
+                                historyMs = startPositionMs,
+                                allowHistory = allowHistoryFallback,
+                            )
+                            if (decision.nextIndex != null) {
+                                resumeAtMs = decision.resumeMs
+                                positionMs = decision.resumeMs
+                                playhead.ms = decision.resumeMs
+                                didSeekStart = false
+                                allowHistoryFallback = false
+                                sourceIndex = decision.nextIndex
+                            }
+                        }
+                    } else {
+                        stallBuffered = buffered
+                        stallSince = if (stalled) System.currentTimeMillis() else 0L
+                    }
                 }
                 val d = if (trustCastClock) rawDur else 0L
                 if (clock.playing != playing) playing = clock.playing
@@ -2039,11 +2112,12 @@ fun PlayerScreen(
     val qualityLabel = when {
         selectedVideoId != "auto" ->
             videoOptions.firstOrNull { it.id == selectedVideoId }?.label ?: selectedVideoId
-        videoOptions.any { it.height >= 1080 } -> "Auto · 1080p"
-        videoOptions.any { it.height > 0 } -> {
-            val best = videoOptions.filter { it.height > 0 }.maxByOrNull { it.height }
-            "Auto · ${best?.label ?: "HD"}"
-        }
+        renderedHeight >= 2160 -> "Auto · 2160p"
+        renderedHeight >= 1440 -> "Auto · 1440p"
+        renderedHeight >= 1080 -> "Auto · 1080p"
+        renderedHeight >= 720 -> "Auto · 720p"
+        renderedHeight > 0 -> "Auto · ${renderedHeight}p"
+        videoOptions.any { it.height > 0 } -> "Auto"
         else -> source?.label ?: "Quality"
     }
     val subLabel = when {
@@ -2063,9 +2137,15 @@ fun PlayerScreen(
         val host = activity ?: return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         if (!host.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return
-        val params = PictureInPictureParams.Builder()
-            .setAspectRatio(Rational(16, 9))
-            .build()
+        val rect = android.graphics.Rect()
+        playerViewRef?.getGlobalVisibleRect(rect)
+        val params = PipAutoEnter.params(
+            activity = host,
+            autoEnter = true,
+            videoWidth = player?.videoSize?.width ?: 0,
+            videoHeight = player?.videoSize?.height ?: renderedHeight,
+            sourceRect = rect,
+        )
         val entered = try {
             host.enterPictureInPictureMode(params)
         } catch (_: IllegalStateException) {
@@ -2102,9 +2182,13 @@ fun PlayerScreen(
         localPlaying = playing && player?.isPlaying == true,
         playbackEnded = playbackEnded,
         castBlocks = castBlocks,
+        playWhenReady = player?.playWhenReady == true,
     )
     var inPip by remember {
         mutableStateOf(activity?.isInPictureInPictureMode == true)
+    }
+    LaunchedEffect(inPip, subStyle, playerViewRef) {
+        applyCaptionStyle(playerViewRef, subStyle, scale = if (inPip) 0.62f else 1f)
     }
     DisposableEffect(activity) {
         val host = activity as? ComponentActivity
@@ -2122,9 +2206,27 @@ fun PlayerScreen(
             PipAutoEnter.update(host, allowed = false)
         }
     }
-    LaunchedEffect(autoPip, activity) {
+    SideEffect {
+        PipControls.onPlayPause = { toggleOnScreen() }
+        PipControls.onSeek = { delta -> seekBy(delta) }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            PipControls.onPlayPause = null
+            PipControls.onSeek = null
+        }
+    }
+    LaunchedEffect(autoPip, activity, renderedHeight) {
         val host = activity ?: return@LaunchedEffect
-        PipAutoEnter.update(host, autoPip)
+        val rect = android.graphics.Rect()
+        playerViewRef?.getGlobalVisibleRect(rect)
+        PipAutoEnter.update(
+            activity = host,
+            allowed = autoPip,
+            videoWidth = player?.videoSize?.width ?: 0,
+            videoHeight = player?.videoSize?.height?.takeIf { it > 0 } ?: renderedHeight,
+            sourceRect = rect,
+        )
     }
 
     @Composable
@@ -2638,6 +2740,7 @@ fun PlayerScreen(
                     }
                     val slideLevel = start.x < size.width / 2f
                     var dragged = false
+                    var horizontal = false
                     val releasedEarly = withTimeoutOrNull(280L) {
                         while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
@@ -2645,6 +2748,11 @@ fun PlayerScreen(
                             if (!change.pressed) return@withTimeoutOrNull true
                             val dx = kotlin.math.abs(change.position.x - start.x)
                             val dy = kotlin.math.abs(change.position.y - start.y)
+                            if (!controlsLocked && dx > 36f && dx > dy) {
+                                dragged = true
+                                horizontal = true
+                                return@withTimeoutOrNull false
+                            }
                             if (dy > 28f && dy > dx) {
                                 dragged = true
                                 return@withTimeoutOrNull false
@@ -2661,35 +2769,65 @@ fun PlayerScreen(
                             if (event.changes.none { it.pressed }) break
                         }
                         holdBoost = false
-                    } else if (dragged) {
+                    } else if (dragged && horizontal) {
                         gestureDragging = true
-                        var previous = start.y
+                        val origin = activePlayer?.currentPosition?.coerceAtLeast(0L) ?: positionMs
+                        val span = (activePlayer?.duration?.takeIf { it > 0L } ?: durationMs).coerceAtLeast(1L)
+                        var target = origin
                         while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
                             val change = event.changes.firstOrNull { it.pressed }
                             if (change == null) break
-                            val delta = (previous - change.position.y) / size.height
-                            previous = change.position.y
                             change.consume()
-                            if (slideLevel) {
+                            val dx = change.position.x - start.x
+                            val deltaMs = (dx / size.width.coerceAtLeast(1).toFloat()) * span.toFloat()
+                            target = (origin + deltaMs.toLong()).coerceIn(0L, span)
+                            gestureHud = GestureHud(
+                                kind = GestureHudKind.Seek,
+                                level = target.toFloat() / span.toFloat(),
+                                caption = formatPlayerClock(target),
+                            )
+                        }
+                        val landed = safeSeekTarget(target, activePlayer?.duration ?: span, durationMs)
+                        activePlayer?.seekTo(landed)
+                        positionMs = landed
+                        playhead.ms = landed
+                        gestureDragging = false
+                    } else if (dragged) {
+                        gestureDragging = true
+                        val activity = context as? Activity
+                        val startBrightness = activity?.let { brightnessFraction(it) } ?: 0.5f
+                        val startVolume = volumeFraction(context)
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.pressed }
+                            if (change == null) break
+                            val delta = (start.y - change.position.y) / size.height
+                            change.consume()
+                            if (slideLevel && activity != null) {
+                                val level = (startBrightness + delta).coerceIn(0.01f, 1f)
+                                applyBrightness(activity, level)
                                 gestureHud = GestureHud(
                                     kind = GestureHudKind.Brightness,
-                                    level = nudgeBrightness(context, view, delta),
+                                    level = level,
                                 )
-                            } else {
-                                val level = if (isCasting) {
-                                    castHelper?.adjustDeviceVolume(delta)
-                                } else {
-                                    null
-                                } ?: nudgeVolume(context, view, delta)
-                                if (isCasting && delta > 0.012f && level > 0.02f && muted) {
+                            } else if (isCasting) {
+                                val level = castHelper?.adjustDeviceVolume(delta) ?: startVolume
+                                if (delta > 0.012f && level > 0.02f && muted) {
                                     muted = false
                                     castHelper?.setTvMuted(false)
                                 }
                                 gestureHud = GestureHud(
                                     kind = GestureHudKind.Volume,
                                     level = level,
-                                    caption = if (isCasting) "TV" else null,
+                                    caption = "TV",
+                                )
+                            } else {
+                                val level = (startVolume + delta).coerceIn(0f, 1f)
+                                applyVolumeFraction(context, level)
+                                gestureHud = GestureHud(
+                                    kind = GestureHudKind.Volume,
+                                    level = level,
                                 )
                             }
                         }
@@ -2916,7 +3054,13 @@ fun PlayerScreen(
         AnimatedVisibility(
             visible = hud != null,
             modifier = Modifier
-                .align(if (heldHud?.kind == GestureHudKind.Brightness) Alignment.CenterStart else Alignment.CenterEnd)
+                .align(
+                when (heldHud?.kind) {
+                    GestureHudKind.Brightness -> Alignment.CenterStart
+                    GestureHudKind.Seek -> Alignment.Center
+                    else -> Alignment.CenterEnd
+                },
+            )
                 .padding(horizontal = 28.dp),
             enter = fadeIn(tween(if (reducedHud) 0 else 140)),
             exit = fadeOut(tween(if (reducedHud) 0 else 180)),
@@ -2925,6 +3069,7 @@ fun PlayerScreen(
             val pct = (shown.level.coerceIn(0f, 1f) * 100f).toInt()
             val hudShape = RoundedCornerShape(16.dp)
             val hudDescription = when {
+                shown.kind == GestureHudKind.Seek -> "Seek to ${shown.caption ?: "$pct percent"}"
                 shown.kind == GestureHudKind.Brightness -> "Brightness $pct percent"
                 shown.caption != null -> "${shown.caption} volume $pct percent"
                 else -> "Volume $pct percent"
@@ -3954,6 +4099,7 @@ private data class PlayerClock(
     val playing: Boolean,
     val state: Int,
     val playWhenReady: Boolean,
+    val bufferedMs: Long = 0L,
 )
 
 private fun playerClock(player: Player): PlayerClock = PlayerClock(
@@ -3962,6 +4108,7 @@ private fun playerClock(player: Player): PlayerClock = PlayerClock(
     playing = player.isPlaying,
     state = player.playbackState,
     playWhenReady = player.playWhenReady,
+    bufferedMs = player.bufferedPosition.coerceAtLeast(0L),
 )
 
 @OptIn(UnstableApi::class)
@@ -4211,19 +4358,15 @@ private fun applyVideoSelection(
             .build()
         return
     }
-    val concrete = options.firstOrNull { it.id == selectedId && it.mediaGroup != null }
-    if (concrete?.mediaGroup != null) {
-        selector.parameters = params
-            .setOverrideForType(
-                TrackSelectionOverride(concrete.mediaGroup, listOf(concrete.trackIndex)),
-            )
+    // A chosen height is a ceiling. The ladder can still drop when that rung stalls.
+    val concrete = options.firstOrNull { it.id == selectedId }
+    val height = concrete?.height?.takeIf { it > 0 }
+        ?: selectedId.removeSuffix("p").toIntOrNull()?.takeIf { it > 0 }
+    selector.parameters = if (height != null) {
+        params
+            .setForceHighestSupportedBitrate(false)
+            .setMaxVideoSize(Int.MAX_VALUE, height)
             .build()
-        return
-    }
-    // Fallback: cap by height parsed from id ("1080p").
-    val height = selectedId.removeSuffix("p").toIntOrNull()
-    selector.parameters = if (height != null && height > 0) {
-        params.setMaxVideoSize(Int.MAX_VALUE, height).build()
     } else {
         params.build()
     }
@@ -4247,13 +4390,13 @@ private fun applyTextSelection(
         return
     }
     params.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-    val concrete = when (selectedId) {
-        "auto" -> options.firstOrNull { it.mediaGroup != null }
-            ?: options.firstOrNull {
-                it.id != "off" && it.id != "auto" && it.mediaGroup != null
-            }
-        else -> options.firstOrNull { it.id == selectedId }
+    if (selectedId == "auto") {
+        // Preferred language picks English. Locking the first group used to
+        // override that and play whatever track the file listed first.
+        selector.parameters = params.build()
+        return
     }
+    val concrete = options.firstOrNull { it.id == selectedId }
     val mediaGroup = concrete?.mediaGroup
     if (mediaGroup != null) {
         params.setOverrideForType(
@@ -4264,7 +4407,7 @@ private fun applyTextSelection(
 }
 
 @OptIn(UnstableApi::class)
-private fun applyCaptionStyle(playerView: PlayerView?, style: SubStyle) {
+private fun applyCaptionStyle(playerView: PlayerView?, style: SubStyle, scale: Float = 1f) {
     val view = playerView?.subtitleView ?: return
     view.visibility = android.view.View.VISIBLE
     view.setApplyEmbeddedStyles(false)
@@ -4299,7 +4442,7 @@ private fun applyCaptionStyle(playerView: PlayerView?, style: SubStyle) {
     val metrics = view.resources.displayMetrics
     val sizeSp = style.sizeSp.coerceIn(SUB_SIZE_SP_MIN, SUB_SIZE_SP_MAX)
     // Exact sp → px. No hidden density floor that keeps captions oversized.
-    val px = sizeSp * metrics.density
+    val px = sizeSp * metrics.density * scale.coerceIn(0.45f, 1.4f)
     view.setFixedTextSize(Cue.TEXT_SIZE_TYPE_ABSOLUTE, px)
     view.setBottomPaddingFraction(style.bottomPad.coerceIn(SUB_BOTTOM_MIN, SUB_BOTTOM_MAX))
 }
@@ -4404,10 +4547,52 @@ private const val DEFAULT_SUB_BOTTOM_PAD = 0.20f
 private const val SUB_BOTTOM_MIN = 0.03f
 private const val SUB_BOTTOM_MAX = 0.30f
 
+private fun formatPlayerClock(ms: Long): String {
+    val total = (ms.coerceAtLeast(0L) / 1000L).toInt()
+    val hours = total / 3600
+    val minutes = (total % 3600) / 60
+    val seconds = total % 60
+    return if (hours > 0) {
+        "%d:%02d:%02d".format(hours, minutes, seconds)
+    } else {
+        "%d:%02d".format(minutes, seconds)
+    }
+}
+
+private fun brightnessFraction(activity: Activity): Float {
+    val current = activity.window.attributes.screenBrightness
+    if (current >= 0f) return current.coerceIn(0.01f, 1f)
+    val raw = android.provider.Settings.System.getInt(
+        activity.contentResolver,
+        android.provider.Settings.System.SCREEN_BRIGHTNESS,
+        128,
+    )
+    return (raw / 255f).coerceIn(0.01f, 1f)
+}
+
+private fun applyBrightness(activity: Activity, fraction: Float) {
+    activity.window.attributes = activity.window.attributes.apply {
+        screenBrightness = fraction.coerceIn(0.01f, 1f)
+    }
+}
+
+private fun volumeFraction(context: android.content.Context): Float {
+    val audio = context.getSystemService(android.media.AudioManager::class.java) ?: return 0f
+    val max = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+    return audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) / max.toFloat()
+}
+
+private fun applyVolumeFraction(context: android.content.Context, fraction: Float) {
+    val audio = context.getSystemService(android.media.AudioManager::class.java) ?: return
+    val stream = android.media.AudioManager.STREAM_MUSIC
+    val max = audio.getStreamMaxVolume(stream).coerceAtLeast(1)
+    val next = (fraction.coerceIn(0f, 1f) * max).toInt().coerceIn(0, max)
+    if (next != audio.getStreamVolume(stream)) audio.setStreamVolume(stream, next, 0)
+}
+
 private fun nudgeBrightness(context: android.content.Context, view: android.view.View, delta: Float): Float {
     val activity = context as? Activity ?: return 0.5f
-    val current = activity.window.attributes.screenBrightness
-    val base = if (current < 0f) 0.5f else current
+    val base = brightnessFraction(activity)
     val next = (base + delta).coerceIn(0.01f, 1f)
     if (base <= 0.02f && next <= 0.02f || base >= 0.99f && next >= 0.99f) {
         KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
@@ -4758,7 +4943,7 @@ private fun PlayerGestureHint(
     }
 }
 
-private enum class GestureHudKind { Brightness, Volume }
+private enum class GestureHudKind { Brightness, Volume, Seek }
 
 private data class GestureHud(
     val kind: GestureHudKind,

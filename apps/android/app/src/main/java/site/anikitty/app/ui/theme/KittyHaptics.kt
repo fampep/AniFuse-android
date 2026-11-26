@@ -30,20 +30,27 @@ object KittyHaptics {
         if (now - lastAt[slot] < gap) return
         lastAt[slot] = now
         if (!enabled(view.context)) return
-        val vibrator = view.context.getSystemService(Vibrator::class.java)
-        if (vibrator != null && vibrator.hasVibrator() && Build.VERSION.SDK_INT >= 29) {
-            val effect = when (kind) {
-                Kind.Tick -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
-                Kind.Confirm -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
-                Kind.Success -> if (Build.VERSION.SDK_INT >= 30) {
-                    VibrationEffect.createPredefined(VibrationEffect.EFFECT_DOUBLE_CLICK)
-                } else {
-                    VibrationEffect.createOneShot(28, VibrationEffect.DEFAULT_AMPLITUDE)
+        try {
+            val vibrator = view.context.getSystemService(Vibrator::class.java)
+            if (vibrator != null && vibrator.hasVibrator()) {
+                val predefined = predefinedEffect(kind)
+                if (predefined != null && Build.VERSION.SDK_INT >= 30 && effectSupported(vibrator, predefined)) {
+                    vibrator.vibrate(VibrationEffect.createPredefined(predefined))
+                    return
                 }
-                Kind.Error -> VibrationEffect.createWaveform(longArrayOf(0, 16, 36, 16), -1)
+                if (Build.VERSION.SDK_INT >= 26) {
+                    val fallback = when (kind) {
+                        Kind.Tick -> VibrationEffect.createOneShot(12, 40)
+                        Kind.Confirm -> VibrationEffect.createOneShot(18, VibrationEffect.DEFAULT_AMPLITUDE)
+                        Kind.Success -> VibrationEffect.createWaveform(longArrayOf(0, 16, 40, 20), -1)
+                        Kind.Error -> VibrationEffect.createWaveform(longArrayOf(0, 16, 36, 16), -1)
+                    }
+                    vibrator.vibrate(fallback)
+                    return
+                }
             }
-            vibrator.vibrate(effect)
-            return
+        } catch (_: RuntimeException) {
+            // A missing predefined effect must not swallow the click that asked for it.
         }
         val constant = when (kind) {
             Kind.Tick -> HapticFeedbackConstants.CLOCK_TICK
@@ -51,7 +58,30 @@ object KittyHaptics {
             Kind.Success -> HapticFeedbackConstants.CONFIRM
             Kind.Error -> HapticFeedbackConstants.REJECT
         }
-        view.performHapticFeedback(constant)
+        val flags = if (Build.VERSION.SDK_INT >= 33) {
+            HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING
+        } else {
+            0
+        }
+        view.performHapticFeedback(constant, flags)
+    }
+
+    private fun predefinedEffect(kind: Kind): Int? {
+        if (Build.VERSION.SDK_INT < 29) return null
+        return when (kind) {
+            Kind.Tick -> VibrationEffect.EFFECT_TICK
+            Kind.Confirm -> VibrationEffect.EFFECT_CLICK
+            Kind.Success -> if (Build.VERSION.SDK_INT >= 30) VibrationEffect.EFFECT_DOUBLE_CLICK else null
+            Kind.Error -> null
+        }
+    }
+
+    private fun effectSupported(vibrator: Vibrator, effect: Int): Boolean {
+        if (Build.VERSION.SDK_INT < 30) return false
+        val support = vibrator.areEffectsSupported(effect)
+        if (support.isEmpty()) return false
+        return support[0] == Vibrator.VIBRATION_EFFECT_SUPPORT_YES ||
+            support[0] == Vibrator.VIBRATION_EFFECT_SUPPORT_UNKNOWN
     }
 
     private fun enabled(context: Context): Boolean =

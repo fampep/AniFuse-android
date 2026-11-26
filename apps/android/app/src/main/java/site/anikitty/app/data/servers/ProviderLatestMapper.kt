@@ -96,7 +96,7 @@ object ProviderLatestMapper {
         return candidates.any { normalize(it) == needle }
     }
 
-    private fun normalize(raw: String): String =
+    internal fun normalize(raw: String): String =
         raw.lowercase()
             .replace('’', '\'')
             .replace(Regex("""[^a-z0-9]+"""), " ")

@@ -9,6 +9,7 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 
 /**
@@ -30,7 +31,9 @@ val LocalPosterMotion = compositionLocalOf<PosterMotion?> { null }
  * the first poster in composition order owns the key.
  */
 class PosterFlight {
-    val claimed = HashSet<Int>()
+    private val claimed = HashSet<Int>()
+
+    fun claim(id: Int): Boolean = claimed.add(id)
 }
 
 val LocalPosterFlight = compositionLocalOf<PosterFlight?> { null }
@@ -41,7 +44,11 @@ fun Modifier.sharedPoster(id: Int): Modifier {
     val motion = LocalPosterMotion.current ?: return this
     val flight = LocalPosterFlight.current
     if (id <= 0) return this
-    if (flight != null && !flight.claimed.add(id)) return this
+    // Remembered so a press or image update does not drop the shared element.
+    val owns = remember(id, flight) {
+        flight?.claim(id) ?: true
+    }
+    if (!owns) return this
     return with(motion.scope) {
         sharedElement(
             rememberSharedContentState(key = "art-$id"),

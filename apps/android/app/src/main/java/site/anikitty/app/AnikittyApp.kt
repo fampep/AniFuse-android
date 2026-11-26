@@ -56,12 +56,11 @@ class AnikittyApp : Application(), ImageLoaderFactory {
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("image_cache"))
-                    .maxSizePercent(0.04)
+                    .maxSizeBytes(256L * 1024L * 1024L)
                     .build()
             }
             .allowHardware(true)
-            .crossfade(true)
-            .crossfade(180)
+            .crossfade(false)
             .build()
 
     override fun onCreate() {
