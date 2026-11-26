@@ -1,0 +1,55 @@
+# Public GitHub setup (maintainers)
+
+## Live
+
+- **[`fampep/anikitty-extensions`](https://github.com/fampep/anikitty-extensions)** is **public** and is the **only** store
+- Store index: https://raw.githubusercontent.com/fampep/anikitty-extensions/main/store/index.json
+- Android loads only that URL in `ExtensionStoreClient.DEFAULT_INDEX_URLS` (no monorepo fallback — the monorepo keeps no listings)
+
+Cloud agent tokens still cannot always `createRepository` / flip visibility — use the **fampep** GitHub user (or a self-hosted worker with fampep credentials) for those ops.
+
+## 1. Make the app repo public (optional community surface)
+
+```bash
+gh repo edit fampep/anikitty --visibility public --accept-visibility-change-consequences
+```
+
+## 2. Refresh `fampep/anikitty-extensions` after monorepo `extensions/` changes
+
+Cloud / Cursor tokens **cannot** push `fampep/anikitty-extensions` (no write).
+Run this as **fampep** (laptop or self-hosted worker) after merging store/provider updates:
+
+```bash
+# from anikitty repo root (on main, clean tree)
+./extensions/scripts/publish-to-github.sh
+# equivalent:
+#   git subtree split -P extensions -b extensions-publish
+#   git push https://github.com/fampep/anikitty-extensions.git extensions-publish:main
+```
+
+Confirm the raw store index loads after the push:
+
+`https://raw.githubusercontent.com/fampep/anikitty-extensions/main/store/index.json`
+
+The monorepo keeps **no** store listings (`extensions/store/` is only a
+link to the extensions repository), so this push is the single source of
+truth.
+
+## 3. Topics
+
+```bash
+gh repo edit fampep/anikitty --add-topic android,anime,compose,kotlin,educational
+gh repo edit fampep/anikitty-extensions --add-topic anikitty,extensions,educational
+```
+
+## 4. Framing
+
+Both GitHub repos use the Apache License 2.0 [LICENSE](../LICENSE). Copyright 2026 fampep.  
+[`fampep/anikitty-extensions`](https://github.com/fampep/anikitty-extensions) must show that same license file at its root.
+
+Keep [extensions/DISCLAIMER.md](../extensions/DISCLAIMER.md) after the split:
+
+- **fampep holds copyright** in AniFuse / protocol / provider source
+- Apache License 2.0: use, change, and share, including commercially
+- community extensions gladly accepted; **fampep does not control third-party backends**
+- provider Kotlin lives in [extensions/providers](../extensions/providers) and is compiled by the app

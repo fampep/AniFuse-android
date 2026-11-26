@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Release: cleartext blocked by default.
+  The app does not call a dedicated server.
+  Debug overlay (src/debug) still allows cleartext globally for local testing.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <!-- Subtitle library. Captions are SRT from this host, not scraped in the app. -->
+        <domain includeSubdomains="false">143.246.203.212</domain>
+    </domain-config>
+</network-security-config>

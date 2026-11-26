@@ -1,0 +1,204 @@
+import java.util.Properties
+import org.gradle.api.tasks.testing.Test
+
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.devtools.ksp")
+}
+
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
+val localPropertiesFile = rootProject.file("local.properties")
+val localProperties = Properties()
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.inputStream().use { localProperties.load(it) }
+}
+
+fun configValue(property: String, env: String, default: String = ""): String {
+    val fromGradle = project.findProperty(property) as String?
+    return (fromGradle ?: localProperties.getProperty(property) ?: System.getenv(env) ?: default)
+        .trim()
+        .replace("\\", "")
+        .replace("\"", "")
+}
+
+/** Shared release cut: repo-root `VERSION` (name=… / code=…). */
+fun monorepoRelease(): Pair<String, Int> {
+    val file = rootProject.file("../../VERSION")
+    require(file.exists()) { "Missing monorepo VERSION at ${file.canonicalPath}" }
+    val props = Properties()
+    file.inputStream().use { props.load(it) }
+    val name = props.getProperty("name")?.trim().orEmpty()
+    val code = props.getProperty("code")?.trim()?.toIntOrNull()
+    require(name.isNotEmpty() && code != null) { "VERSION must set name= and code=" }
+    return name to code
+}
+
+val (releaseName, releaseCode) = monorepoRelease()
+
+android {
+    namespace = "site.anikitty.app"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "site.anikitty.app"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = releaseCode
+        versionName = releaseName
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Public AniList client id. Sign-in is the implicit grant, so the APK has no secret.
+        val anilistClientId = configValue("anilistClientId", "ANILIST_CLIENT_ID", "56768")
+        buildConfigField("String", "ANILIST_CLIENT_ID", "\"$anilistClientId\"")
+        // Public TMDB key. A gradle property, local.properties, or TMDB_API_KEY overrides it.
+        // A blank override keeps this default. Settings can still replace it on the phone.
+        val tmdbApiKey = configValue(
+            "tmdbApiKey",
+            "TMDB_API_KEY",
+            "d708d48abb71e5352958f6e17209f960",
+        ).ifBlank { "d708d48abb71e5352958f6e17209f960" }
+        val fanartApiKey = configValue("fanartApiKey", "FANART_API_KEY")
+        buildConfigField("String", "TMDB_API_KEY", "\"$tmdbApiKey\"")
+        buildConfigField("String", "FANART_API_KEY", "\"$fanartApiKey\"")
+    }
+
+    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            create("release") {
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            // Same id/name as release so sideloaded APKs stay "AniKitty 1.0.0"
+            // instead of site.anikitty.app.debug / 0.x-local-debug.
+            isDebuggable = true
+        }
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            // Prefer release keystore when present; otherwise sign with the
+            // debug key so a clean 1.0.0 APK is still installable.
+            signingConfig = if (keystorePropertiesFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+        }
+        create("benchmark") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            isDebuggable = false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+
+    sourceSets {
+        getByName("main") {
+            // Provider resolvers live in the extensions repo tree so that
+            // folder is the place to build the extension version.
+            java.srcDir("../../../extensions/providers/anikoto")
+            java.srcDir("../../../extensions/providers/gotaku")
+            java.srcDir("../../../extensions/providers/reanime")
+            java.srcDir("../../../extensions/providers/mkissa")
+            java.srcDir("../../../extensions/providers/kaa")
+            java.srcDir("../../../extensions/providers/animex")
+            java.srcDir("../../../extensions/providers/xanime")
+            java.srcDir("../../../extensions/providers/aninz")
+            java.srcDir("../../../extensions/providers/gogoanime")
+            java.srcDir("../../../extensions/providers/anizone")
+            java.srcDir("../../../extensions/providers/aniwaves")
+            java.srcDir("../../../extensions/providers/animegg")
+            java.srcDir("../../../extensions/providers/anigato")
+java.srcDir("../../../extensions/providers/anihosts")
+        }
+    }
+}
+
+dependencies {
+    val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
+    implementation(composeBom)
+    androidTestImplementation(composeBom)
+
+    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.navigation:navigation-compose:2.8.4")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.media3:media3-datasource-okhttp:1.5.0")
+    implementation("androidx.media3:media3-exoplayer:1.5.0")
+    implementation("androidx.media3:media3-exoplayer-hls:1.5.0")
+    implementation("androidx.media3:media3-database:1.5.0")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("androidx.media3:media3-ui:1.5.0")
+    implementation("androidx.media3:media3-cast:1.5.0")
+    implementation("com.google.android.gms:play-services-cast-framework:21.5.0")
+    implementation("androidx.mediarouter:mediarouter:1.7.0")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
+
+    implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+
+    testImplementation("junit:junit:4.13.2")
+    // Android's unit-test stub replaces org.json with methods that throw.
+    // The real parser lets resolver fixture tests read recorded JSON.
+    testImplementation("org.json:json:20240303")
+    implementation("androidx.browser:browser:1.8.0")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+// android.jar's org.json is a stub that throws. Put the real parser first.
+tasks.withType<Test>().configureEach {
+    doFirst {
+        val json = classpath.files.firstOrNull { it.name.startsWith("json-") } ?: return@doFirst
+        classpath = project.files(json) + classpath
+    }
+}

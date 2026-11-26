@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Phones and tablets. values-television overrides this on Android TV. -->
+    <bool name="is_television">false</bool>
+</resources>

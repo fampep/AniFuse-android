@@ -1,0 +1,218 @@
+// Copyright 2026 fampep
+// Licensed under the Apache License, Version 2.0. See the LICENSE file.
+
+package site.anikitty.app.data.servers
+
+import androidx.compose.runtime.Immutable
+import site.anikitty.app.data.skip.SkipTimes
+
+/**
+ * A selectable stream source — bundled or a user-installed HTTP extension.
+ *
+ * Phone obtains a playable **request URL** (+ headers). HLS download /
+ * bandwidth / playback stay on-device (Media3). The dedicated Go auth server
+ * never carries stream bytes.
+ */
+data class StreamServer(
+    val id: String,
+    val name: String,
+    val description: String,
+    /** Site / brand icon (favicon or app icon URL). Required for store extensions. */
+    val iconUrl: String? = null,
+    /** Origin site the resolver scrapes / fronts (for attribution in the Store). */
+    val siteUrl: String? = null,
+)
+
+data class SubtitleTrack(
+    val url: String,
+    val label: String,
+    val language: String? = null,
+    val mimeType: String? = null,
+) {
+    /** Absolute http, file, or content URI the player can open. Relative paths stay unset. */
+    fun playableUri(): android.net.Uri? {
+        val trimmed = url.trim()
+        if (trimmed.isEmpty()) return null
+        return when {
+            trimmed.startsWith("https://", ignoreCase = true) ||
+                trimmed.startsWith("http://", ignoreCase = true) ||
+                trimmed.startsWith("file:", ignoreCase = true) ||
+                trimmed.startsWith("content:", ignoreCase = true) -> android.net.Uri.parse(trimmed)
+            trimmed.startsWith("/") -> android.net.Uri.fromFile(java.io.File(trimmed))
+            else -> null
+        }
+    }
+
+    /** MIME for sidecar captions. Declared type wins, then the URL suffix. */
+    fun resolvedMime(): String {
+        mimeType?.takeIf { it.isNotBlank() }?.let { return it }
+        val probe = url.lowercase()
+        return when {
+            ".srt" in probe -> "application/x-subrip"
+            ".ass" in probe || ".ssa" in probe -> "text/x-ssa"
+            else -> "text/vtt"
+        }
+    }
+}
+
+@Immutable
+data class PlayableSource(
+    val url: String,
+    val headers: Map<String, String> = emptyMap(),
+    val label: String = "Stream",
+    /** MegaPlay PNG-disguise unwrap size for HLS segments (0 = none). */
+    val stripBytes: Int = SegmentStripDataSource.DEFAULT_STRIP_BYTES,
+    val subtitles: List<SubtitleTrack> = emptyList(),
+    /** Gotaku playlist/segment unwrap; when set, [GotakuObfDataSource] handles CDN crypto. */
+    val gotakuObf: GotakuObf? = null,
+    /** Intro / credits from the anime site that supplied this source. Empty when unknown. */
+    val skip: SkipTimes = SkipTimes(),
+    /** Resolver-reported picture size, e.g. "1080p" or "4K". Null when unknown. */
+    val quality: String? = null,
+    /** Resolver-reported audio, e.g. "AAC 2.0 · SUB". Null when unknown. */
+    val audio: String? = null,
+    /** Resolver-reported grade, e.g. "HD". Null when the source did not give one. */
+    val qualityRating: String? = null,
+    /** FlixCloud playlist key and segment mask. Null for every other source. */
+    val flix: FlixUnwrap? = null,
+    /** Sprite-sheet WebVTT for the seek preview. Null when the source has none. */
+    val thumbnails: ThumbnailTrack? = null,
+    /**
+     * True when [url] is an HLS playlist whose path is not `.m3u8`.
+     * AnimeX names the master `deeznuts.txt`.
+     */
+    val hls: Boolean = false,
+    /**
+     * ISO 639-1 audio to prefer when one playlist lists several renditions.
+     * "ja" is the original track and "en" is the English dub. Null leaves the
+     * playlist default alone.
+     */
+    val audioLanguage: String? = null,
+    /** Provider that returned this file. Null until failover names it. */
+    val serverName: String? = null,
+)
+
+/**
+ * Language the Sub / Dub control asked for. Providers that already know a
+ * more specific code keep it.
+ */
+internal fun requestedAudioLanguage(audio: String): String =
+    if (audio.equals("dub", ignoreCase = true)) "en" else "ja"
+
+/**
+ * Label while the loaded playlist is still the other language.
+ * Null once the source matches, or when it has not reported a language yet.
+ */
+internal fun audioSwitchLabel(requested: String, loadedLanguage: String?): String? {
+    val loaded = loadedLanguage
+        ?.trim()
+        ?.lowercase()
+        ?.substringBefore('-')
+        ?.takeIf { it.length == 2 }
+        ?: return null
+    if (loaded == requestedAudioLanguage(requested)) return null
+    return if (requested.equals("dub", ignoreCase = true)) "Switching to Dub" else "Switching to Sub"
+}
+
+/**
+ * Language to save when a Sub/Dub resolve finishes.
+ * Null when this attempt must not touch the saved choice: it was cancelled,
+ * the player was dismissed, or a newer episode or language request replaced it.
+ * A real failure of the attempt still in front restores [committed].
+ */
+internal fun audioToPersist(
+    request: Int,
+    latest: Int,
+    cancelled: Boolean,
+    failed: Boolean,
+    requested: String,
+    committed: String,
+    dismissed: Boolean = false,
+): String? {
+    if (cancelled || dismissed || request != latest) return null
+    return if (failed) committed else requested
+}
+
+/**
+ * Playback captions come from the subtitle library. Provider sidecar lists
+ * are dropped so the app does not play files it scraped itself.
+ */
+internal fun withLibrarySubtitles(
+    sources: List<PlayableSource>,
+    captions: List<SubtitleTrack>,
+): List<PlayableSource> = sources.map { source -> source.copy(subtitles = captions) }
+
+/** Keep a name a source already carries. Fill the rest from the provider that won. */
+internal fun namedByServer(sources: List<PlayableSource>, serverName: String): List<PlayableSource> {
+    val name = serverName.trim()
+    if (name.isEmpty()) return sources
+    return sources.map { source ->
+        if (!source.serverName.isNullOrBlank()) source else source.copy(serverName = name)
+    }
+}
+
+/**
+ * Sources page line. Anikoto keeps the kotoplay note. Every other name is
+ * the provider's own label, including ones added after the sentence was written.
+ */
+internal fun sourcesPageSubtitle(names: List<String>): String {
+    val shown = names.map { name ->
+        if (name.equals("Anikoto", ignoreCase = true)) {
+            "Anikoto (kotoplay.to if Anikoto is down)"
+        } else {
+            name.trim()
+        }
+    }.filter { it.isNotEmpty() }
+    val list = when (shown.size) {
+        0 -> return "Installed sources appear here."
+        1 -> shown.single()
+        else -> shown.dropLast(1).joinToString(", ") + ", and " + shown.last()
+    }
+    return "$list ship in the app."
+}
+
+internal fun playbackAudioLanguage(sources: List<PlayableSource>, audio: String): List<PlayableSource> {
+    val language = requestedAudioLanguage(audio)
+    return sources.map { source ->
+        if (!source.audioLanguage.isNullOrBlank()) source
+        else source.copy(audioLanguage = language)
+    }
+}
+
+/** Thumbnail VTT plus the headers its sprite sheets require. */
+@Immutable
+data class ThumbnailTrack(
+    val url: String,
+    val headers: Map<String, String> = emptyMap(),
+)
+
+/** Keys Media3 needs to turn a FlixCloud response into a normal HLS stream. */
+data class FlixUnwrap(
+    val playlistKey: String,
+    val segmentMask: String,
+    val englishAudio: Boolean,
+)
+
+interface StreamResolver {
+    val server: StreamServer
+
+    /**
+     * Resolve a direct playable URL on-device / via extension HTTP.
+     * @param titleHint AniList / display title to help map the watch page.
+     */
+    suspend fun resolve(
+        anilistId: Int,
+        episode: Int,
+        audio: String = "sub",
+        titleHint: String? = null,
+    ): List<PlayableSource>
+}
+
+/** Outcome of [ServerCatalog.resolveWithFailover] across installed providers. */
+data class ResolveFailoverResult(
+    val sources: List<PlayableSource>,
+    val server: StreamServer,
+    /** True when a provider other than the previously selected one won. */
+    val usedFallback: Boolean,
+    val attempted: List<String> = emptyList(),
+)

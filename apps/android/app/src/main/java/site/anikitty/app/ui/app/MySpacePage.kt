@@ -1,0 +1,1505 @@
+// Copyright 2026 fampep
+// Licensed under the Apache License, Version 2.0. See the LICENSE file.
+
+package site.anikitty.app.ui.app
+
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.rounded.Check
+import site.anikitty.app.ui.icons.FluentuiSystemIconsBookmarkOutline
+import site.anikitty.app.ui.icons.FluentuiSystemIconsMoviesAndTvFilled
+import site.anikitty.app.ui.icons.FluentuiSystemIconsStarFilled
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import site.anikitty.app.AnikittyApp
+import site.anikitty.app.data.download.EpisodeDownloadEntity
+import kotlin.coroutines.cancellation.CancellationException
+import site.anikitty.app.data.anilist.AniListClient
+import site.anikitty.app.data.anilist.AniListMediaListEntry
+import site.anikitty.app.data.anilist.AniListOAuth
+import site.anikitty.app.data.anilist.AniListViewer
+import site.anikitty.app.data.anilist.AnimeSummary
+import site.anikitty.app.data.local.ContinueHidden
+import site.anikitty.app.data.local.WatchHistoryDao
+import site.anikitty.app.data.local.WatchHistoryEntity
+import site.anikitty.app.data.local.continueQueue
+import site.anikitty.app.data.local.markEpisode
+import site.anikitty.app.ui.theme.LocalKittyPalette
+import site.anikitty.app.ui.theme.KittyMotion
+
+@Composable
+fun MySpaceFeed(
+    history: List<WatchHistoryEntity>,
+    historyDao: WatchHistoryDao,
+    aniList: AniListClient,
+    demo: Boolean = false,
+    aniListLinked: Boolean,
+    accessToken: String?,
+    accountLabel: String,
+    syncLabel: String?,
+    libraryFilter: String,
+    onSync: () -> Unit,
+    onOpen: (AnimeSummary) -> Unit,
+    onOpenAccount: () -> Unit,
+    onSignOut: () -> Unit,
+    onSeeAllContinue: () -> Unit = {},
+    onBrowse: () -> Unit = {},
+    avatarUrl: String? = null,
+    onFinishedEpisode: suspend (AnimeSummary, Int) -> Unit = { _, _ -> },
+) {
+    val palette = LocalKittyPalette.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var viewer by remember { mutableStateOf<AniListViewer?>(null) }
+    var favourites by remember { mutableStateOf<List<AnimeSummary>>(emptyList()) }
+    var cloudLists by remember { mutableStateOf<List<AniListMediaListEntry>>(emptyList()) }
+    var loadingCloud by remember { mutableStateOf(false) }
+    var downloads by remember { mutableStateOf<List<EpisodeDownloadEntity>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        downloads = withContext(Dispatchers.IO) {
+            runCatching {
+                (context.applicationContext as AnikittyApp).database.episodeDownloadDao().recent()
+            }.getOrDefault(emptyList())
+        }
+    }
+    var selectedTab by remember(libraryFilter) {
+        mutableStateOf(tabForLibraryFilter(libraryFilter))
+    }
+    var selecting by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(setOf<Int>()) }
+    var bulkBusy by remember { mutableStateOf(false) }
+    var bulkNote by remember { mutableStateOf<String?>(null) }
+    val syncing = syncLabel == "Syncing…"
+    val selection = ShowSelection(
+        active = selecting,
+        ids = selectedIds,
+        onToggle = { id ->
+            selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
+        },
+        onStart = { id ->
+            selecting = true
+            selectedIds = selectedIds + id
+        },
+    )
+
+    fun leaveSelection() {
+        selecting = false
+        selectedIds = emptySet()
+        bulkNote = null
+    }
+
+    fun markSelected(watched: Boolean) {
+        if (demo) return
+        val ids = selectedIds.toList()
+        if (ids.isEmpty() || bulkBusy) return
+        bulkBusy = true
+        bulkNote = null
+        scope.launch {
+            val token = accessToken?.takeIf { aniListLinked && it.isNotBlank() }
+            var failed = 0
+            val updated = cloudLists.toMutableList()
+            for (id in ids) {
+                val fromList = updated.firstOrNull { it.media.id == id }
+                val fromFav = favourites.firstOrNull { it.id == id }
+                val fromHistory = history.firstOrNull { it.anilistId == id }
+                val anime = fromList?.media ?: fromFav ?: fromHistory?.let { entry ->
+                    AnimeSummary(
+                        id = entry.anilistId,
+                        title = entry.title,
+                        coverImageUrl = entry.coverImageUrl,
+                        episodes = null,
+                        format = null,
+                        averageScore = null,
+                        malId = entry.malId,
+                    )
+                }
+                val title = anime?.title ?: fromHistory?.title ?: "Show"
+                val cover = anime?.coverImageUrl ?: fromHistory?.coverImageUrl
+                val knownEpisodes = anime?.episodes?.takeIf { it > 0 }
+                val movie = anime?.format.equals("MOVIE", ignoreCase = true)
+                val progress = when {
+                    movie -> 1
+                    knownEpisodes != null -> knownEpisodes
+                    else -> (fromList?.progress ?: fromHistory?.episode ?: 1).coerceAtLeast(1)
+                }
+                val remoteOk = if (token == null) {
+                    true
+                } else if (watched) {
+                    if (knownEpisodes != null || movie) {
+                        aniList.saveProgress(token, id, progress, "COMPLETED")
+                    } else {
+                        aniList.saveList(token, id, status = "COMPLETED")
+                    }
+                } else {
+                    val entryId = fromList?.id?.takeIf { it > 0 } ?: aniList.listEntryId(token, id)
+                    if (entryId == null) true else aniList.deleteListEntry(token, entryId)
+                }
+                if (!remoteOk) {
+                    failed++
+                    continue
+                }
+                val now = System.currentTimeMillis()
+                if (watched) {
+                    val existing = historyDao.get(id)
+                    historyDao.upsert(
+                        (existing ?: WatchHistoryEntity(
+                            anilistId = id,
+                            title = title,
+                            coverImageUrl = cover,
+                            episode = progress,
+                            positionMs = 0L,
+                            durationMs = 0L,
+                            updatedAtEpochMs = now,
+                            malId = anime?.malId,
+                        )).copy(
+                            title = title,
+                            coverImageUrl = cover ?: existing?.coverImageUrl,
+                            episode = progress,
+                            positionMs = 0L,
+                            durationMs = 0L,
+                            updatedAtEpochMs = now,
+                            listStatus = "COMPLETED",
+                            malId = anime?.malId ?: existing?.malId,
+                        ),
+                    )
+                    val completed = AniListMediaListEntry(
+                        status = "COMPLETED",
+                        progress = if (knownEpisodes != null || movie) progress else fromList?.progress ?: progress,
+                        media = anime ?: AnimeSummary(
+                            id = id,
+                            title = title,
+                            coverImageUrl = cover,
+                            episodes = knownEpisodes,
+                            format = if (movie) "MOVIE" else null,
+                            averageScore = null,
+                            malId = fromHistory?.malId,
+                        ),
+                        id = fromList?.id ?: 0,
+                    )
+                    val index = updated.indexOfFirst { it.media.id == id }
+                    if (index >= 0) updated[index] = completed else updated += completed
+                } else {
+                    historyDao.delete(id)
+                    updated.removeAll { it.media.id == id }
+                }
+            }
+            cloudLists = updated
+            bulkBusy = false
+            bulkNote = if (failed == 0) {
+                null
+            } else {
+                "Could not update $failed"
+            }
+            if (failed == 0) leaveSelection()
+        }
+    }
+
+    val listStamp = remember(history) {
+        history.joinToString("|") { "${it.anilistId}:${it.listStatus}" }
+    }
+    LaunchedEffect(accessToken, syncLabel, listStamp, bulkBusy) {
+        if (bulkBusy) return@LaunchedEffect
+        val token = accessToken
+        if (!aniListLinked || token.isNullOrBlank()) {
+            viewer = null
+            favourites = emptyList()
+            cloudLists = emptyList()
+            loadingCloud = false
+            return@LaunchedEffect
+        }
+        if (syncing) return@LaunchedEffect
+        loadingCloud = viewer == null
+        try {
+            val profile = aniList.viewer(token) ?: return@LaunchedEffect
+            viewer = profile
+            favourites = aniList.favourites(token)
+            cloudLists = aniList.mediaListEntries(token, profile.id)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // A failed refresh keeps the shelves already on screen.
+        } finally {
+            if (isActive) loadingCloud = false
+        }
+    }
+
+    var librarySort by rememberSaveable { mutableStateOf("newest") }
+    val hiddenContinue = ContinueHidden.ids
+    val continueWatching = remember(history, hiddenContinue, librarySort) {
+        val queue = continueQueue(history, hiddenContinue)
+        when (librarySort) {
+            "alpha" -> queue.sortedBy { it.title.lowercase() }
+            "watched" -> queue.sortedByDescending { it.episodesFinished() }
+            else -> queue
+        }
+    }
+    val weekAgo = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
+    val weekMinutes = history
+        .filter { it.updatedAtEpochMs >= weekAgo }
+        .sumOf { (it.positionMs.coerceAtLeast(0L) / 60_000L).toInt() }
+    LaunchedEffect(selectedTab) {
+        if (selectedTab.isBlank()) selectedTab = "Watching"
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LocalKittyPalette.current.page),
+    ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = if (selecting) 176.dp else 88.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .padding(horizontal = 20.dp, vertical = 20.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Library",
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = (-0.5).sp,
+                            ),
+                            color = palette.text,
+                        )
+                        Text(
+                            text = "Your favorites & history.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = palette.text.copy(alpha = 0.45f),
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            text = if (selecting) "Cancel" else "Select",
+                            color = palette.text.copy(alpha = 0.7f),
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                            modifier = Modifier
+                                .defaultMinSize(minHeight = 48.dp)
+                                .spacePress {
+                                    if (selecting) leaveSelection() else selecting = true
+                                },
+                        )
+                        ProfileMark(
+                            imageUrl = viewer?.avatarUrl ?: avatarUrl,
+                            size = 48.dp,
+                            modifier = Modifier.spacePress(onOpenAccount),
+                        )
+                    }
+                }
+            }
+
+            item {
+                Row(
+                    modifier = Modifier
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(
+                        "newest" to "Newest",
+                        "watched" to "Most watched",
+                        "alpha" to "A–Z",
+                    ).forEach { (id, label) ->
+                        val selected = librarySort == id
+                        Text(
+                            label,
+                            color = if (selected) palette.onAccent else palette.text,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier
+                                .defaultMinSize(minHeight = 48.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(if (selected) palette.accent else palette.surface)
+                                .border(1.dp, palette.hairline, RoundedCornerShape(999.dp))
+                                .spacePress { librarySort = id }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                        )
+                    }
+                }
+            }
+            item {
+                Row(
+                    modifier = Modifier
+                        .padding(horizontal = 20.dp)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(palette.surface)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    site.anikitty.app.ui.components.WeekGoalRing(
+                        minutes = weekMinutes,
+                        goal = site.anikitty.app.ui.theme.LookState.weekGoalMinutes,
+                        modifier = Modifier.size(64.dp),
+                    )
+                    Column(modifier = Modifier.padding(start = 14.dp)) {
+                        Text(
+                            "This week",
+                            color = palette.muted,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "$weekMinutes of ${site.anikitty.app.ui.theme.LookState.weekGoalMinutes} min",
+                            color = palette.text,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
+            }
+
+            item {
+                CloudSyncBlock(
+                    demo = demo,
+                    linked = aniListLinked && !accessToken.isNullOrBlank(),
+                    viewer = viewer,
+                    accountLabel = accountLabel,
+                    syncing = syncing,
+                    loading = loadingCloud,
+                    tabs = LIBRARY_CATEGORIES,
+                    selectedTab = selectedTab,
+                    favourites = favourites,
+                    cloudLists = cloudLists,
+                    history = history,
+                    downloads = downloads,
+                    onSelectTab = { selectedTab = it },
+                    onSync = onSync,
+                    onConnect = { AniListOAuth.openAuthorize(context) },
+                    onSignOut = onSignOut,
+                    onOpen = onOpen,
+                    selection = selection,
+                )
+            }
+
+            if (continueWatching.isNotEmpty()) item {
+                ContinueBlock(
+                    rows = continueWatching.take(12),
+                    selection = selection,
+                    onSeeAll = onSeeAllContinue,
+                    onOpen = { entry ->
+                        scope.launch {
+                            val detail = site.anikitty.app.data.demo.DemoLibrary.find(entry.anilistId)
+                                ?: aniList.media(entry.anilistId) ?: AnimeSummary(
+                                id = entry.anilistId,
+                                title = entry.title,
+                                coverImageUrl = entry.coverImageUrl,
+                                episodes = null,
+                                format = null,
+                                averageScore = null,
+                                malId = entry.malId,
+                            )
+                            onOpen(detail)
+                        }
+                    },
+                    onRemove = { entry -> ContinueHidden.hide(context, entry.anilistId) },
+                    onMarkWatched = { entry, episode ->
+                        scope.launch {
+                            val anime = summaryFor(entry)
+                            val finished = historyDao.markEpisode(anime, episode) ?: return@launch
+                            if (!demo) onFinishedEpisode(anime, finished)
+                        }
+                    },
+                )
+            }
+            item {
+                FavoritesBlock(
+                    favourites = favourites,
+                    linked = aniListLinked,
+                    onOpen = onOpen,
+                    onBrowse = onBrowse,
+                    selection = selection,
+                )
+            }
+        }
+        if (selecting) {
+            WatchSelectBar(
+                count = selectedIds.size,
+                busy = bulkBusy,
+                note = bulkNote,
+                onWatched = { markSelected(watched = true) },
+                onNotWatched = { markSelected(watched = false) },
+                onAll = {
+                    val visible = postersForTab(selectedTab, favourites, cloudLists, history, downloads)
+                        .map { it.anime.id }
+                    val extra = continueWatching.map { it.anilistId } + favourites.map { it.id }
+                    selectedIds = (visible + extra).toSet()
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(start = 16.dp, end = 16.dp, bottom = 88.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CloudSyncBlock(
+    demo: Boolean = false,
+    linked: Boolean,
+    viewer: AniListViewer?,
+    accountLabel: String,
+    syncing: Boolean,
+    loading: Boolean,
+    tabs: List<String>,
+    selectedTab: String,
+    favourites: List<AnimeSummary>,
+    cloudLists: List<AniListMediaListEntry>,
+    history: List<WatchHistoryEntity>,
+    downloads: List<EpisodeDownloadEntity> = emptyList(),
+    onSelectTab: (String) -> Unit,
+    onSync: () -> Unit,
+    onConnect: () -> Unit,
+    onSignOut: () -> Unit,
+    onOpen: (AnimeSummary) -> Unit,
+    selection: ShowSelection,
+) {
+    val palette = LocalKittyPalette.current
+    val spin = rememberInfiniteTransition(label = "sync")
+    val rotation by spin.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "rotation",
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = "CLOUDSYNC (ANILIST)",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 1.sp,
+                    ),
+                    color = palette.text.copy(alpha = 0.6f),
+                )
+                if (linked) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .clickable(enabled = !syncing, onClick = onSync),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Sync,
+                            contentDescription = "Sync AniList",
+                            tint = if (syncing) palette.text else palette.text.copy(alpha = 0.6f),
+                            modifier = Modifier
+                                .size(14.dp)
+                                .graphicsLayer { rotationZ = if (syncing) rotation else 0f },
+                        )
+                    }
+                }
+            }
+            if (linked) {
+                Text(
+                    text = "Logout",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
+                    color = palette.text.copy(alpha = 0.55f),
+                    modifier = Modifier
+                        .clickable(onClick = onSignOut)
+                        .padding(horizontal = 8.dp, vertical = 14.dp),
+                )
+            }
+        }
+
+        if (!linked) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(palette.surface)
+                    .border(0.5.dp, palette.text.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                    .clickable(enabled = !demo, onClick = onConnect)
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = if (demo) "Demo library. Not your AniList account." else "Connect AniList",
+                    color = palette.text,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+        } else if (loading && viewer == null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                repeat(4) {
+                    site.anikitty.app.ui.theme.ShimmerBox(
+                        modifier = Modifier
+                            .weight(1f)
+                            .aspectRatio(2f / 3f)
+                            .clip(RoundedCornerShape(6.dp)),
+                    )
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                AsyncImage(
+                    model = viewer?.avatarUrl,
+                    contentDescription = "Avatar",
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(palette.surface),
+                    contentScale = ContentScale.Crop,
+                )
+                Column {
+                    Text(
+                        text = viewer?.name ?: accountLabel.ifBlank { "AniList" },
+                        color = palette.text,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    )
+                    Text(
+                        text = if (syncing) "Syncing..." else "Connected",
+                        color = palette.text.copy(alpha = if (syncing) 1f else 0.5f),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+            }
+
+            if (tabs.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    items(tabs, key = { it }, contentType = { "chip" }) { tab ->
+                        val count = tabCount(tab, favourites, cloudLists, history, downloads)
+                        SpaceChip(
+                            label = "$tab ($count)",
+                            selected = selectedTab == tab,
+                            onClick = { onSelectTab(tab) },
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            val row = postersForTab(selectedTab, favourites, cloudLists, history, downloads)
+            if (row.isEmpty()) {
+                Text(
+                    "Nothing in $selectedTab yet.",
+                    color = palette.muted,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                )
+            } else {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(row, key = { "cloud-${it.key}" }, contentType = { "poster" }) { card ->
+                        SpacePoster(
+                            title = card.title,
+                            imageUrl = card.imageUrl,
+                            subtitle = card.subtitle,
+                            progress = card.progress,
+                            selected = card.anime.id in selection.ids,
+                            selecting = selection.active,
+                            onClick = {
+                                if (selection.active) selection.onToggle(card.anime.id)
+                                else onOpen(card.anime)
+                            },
+                            onLongClick = { selection.onStart(card.anime.id) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContinueBlock(
+    rows: List<WatchHistoryEntity>,
+    selection: ShowSelection,
+    onSeeAll: () -> Unit,
+    onOpen: (WatchHistoryEntity) -> Unit,
+    onRemove: (WatchHistoryEntity) -> Unit,
+    onMarkWatched: (WatchHistoryEntity, Int) -> Unit,
+) {
+    if (rows.isEmpty()) return
+    val palette = LocalKittyPalette.current
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = "CONTINUE WATCHING",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp,
+                ),
+                color = palette.text.copy(alpha = 0.6f),
+            )
+            Text(
+                text = "See all",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
+                color = palette.text.copy(alpha = 0.7f),
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .defaultMinSize(minHeight = 48.dp)
+                    .spacePress(onSeeAll),
+            )
+        }
+        if (selection.active) {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(rows, key = { "cw-${it.anilistId}" }, contentType = { "continue" }) { watch ->
+                    SpacePoster(
+                        title = watch.title,
+                        imageUrl = watch.coverImageUrl,
+                        subtitle = "EP ${watch.episode}",
+                        progress = if (watch.durationMs > 0L) {
+                            (watch.positionMs.toFloat() / watch.durationMs.toFloat()).coerceIn(0f, 1f)
+                        } else {
+                            0f
+                        },
+                        wide = true,
+                        selected = watch.anilistId in selection.ids,
+                        selecting = true,
+                        onClick = { selection.onToggle(watch.anilistId) },
+                        onLongClick = { selection.onStart(watch.anilistId) },
+                    )
+                }
+            }
+        } else {
+            ContinueWatchRow(
+                entries = rows,
+                onOpen = { entry, _ -> onOpen(entry) },
+                onRemove = onRemove,
+                onMarkWatched = onMarkWatched,
+            )
+        }
+    }
+}
+
+private fun summaryFor(entry: WatchHistoryEntity) = AnimeSummary(
+    id = entry.anilistId,
+    title = entry.title,
+    coverImageUrl = entry.coverImageUrl,
+    episodes = null,
+    format = null,
+    averageScore = null,
+    malId = entry.malId,
+)
+
+@Composable
+private fun FavoritesBlock(
+    favourites: List<AnimeSummary>,
+    linked: Boolean,
+    onOpen: (AnimeSummary) -> Unit,
+    onBrowse: () -> Unit,
+    selection: ShowSelection,
+) {
+    val palette = LocalKittyPalette.current
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            text = "MY FAVORITES",
+            modifier = Modifier.padding(horizontal = 20.dp),
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.sp,
+            ),
+            color = palette.text.copy(alpha = 0.6f),
+        )
+        if (favourites.isEmpty()) {
+            EmptyPanel(
+                icon = {
+                    site.anikitty.app.ui.components.KittyFace(
+                        modifier = Modifier.size(56.dp),
+                        contentDescription = null,
+                    )
+                },
+                title = "Your favorites will gather here",
+                body = if (linked) {
+                    "Favourite a show on AniList and it will show up in this row."
+                } else {
+                    "Sign in and your AniList favorites will land here."
+                },
+                action = "Browse",
+                onAction = onBrowse,
+            )
+        } else {
+            Column(
+                modifier = Modifier.padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                favourites.forEach { anime ->
+                    FavoriteRow(
+                        anime = anime,
+                        selected = anime.id in selection.ids,
+                        selecting = selection.active,
+                        onClick = {
+                            if (selection.active) selection.onToggle(anime.id) else onOpen(anime)
+                        },
+                        onLongClick = { selection.onStart(anime.id) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyPanel(
+    icon: @Composable () -> Unit,
+    title: String,
+    body: String,
+    action: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    val palette = LocalKittyPalette.current
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(palette.text.copy(alpha = 0.02f))
+            .border(1.dp, palette.text.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+            .padding(vertical = 40.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            icon()
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = palette.text.copy(alpha = 0.8f),
+            )
+            Text(
+                text = body,
+                style = MaterialTheme.typography.labelMedium,
+                color = palette.muted,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
+            if (action != null && onAction != null) {
+                Text(
+                    text = action,
+                    color = palette.onAccent,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .defaultMinSize(minHeight = 48.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(palette.accent)
+                        .spacePress(onAction)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpacePoster(
+    title: String,
+    imageUrl: String?,
+    subtitle: String,
+    progress: Float,
+    onClick: () -> Unit,
+    wide: Boolean = false,
+    selected: Boolean = false,
+    selecting: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
+) {
+    val palette = LocalKittyPalette.current
+    val width = if (wide) 180.dp else 140.dp
+    val height = if (wide) 102.dp else 80.dp
+    val frame by animateColorAsState(
+        if (selected) palette.text else Color.Transparent,
+        tween(KittyMotion.duration(160)),
+        label = "posterFrame",
+    )
+    var menu by remember { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .width(width)
+            .spaceHold(
+                onClick = onClick,
+                onLongClick = {
+                    if (selecting) onLongClick?.invoke() else menu = true
+                },
+            )
+            .border(1.5.dp, frame, RoundedCornerShape(10.dp))
+            .padding(2.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .width(width)
+                .height(height)
+                .clip(RoundedCornerShape(8.dp))
+                .background(palette.text.copy(alpha = 0.05f)),
+        ) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)),
+                        ),
+                    ),
+            )
+            if (progress > 0f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .align(Alignment.BottomStart)
+                        .background(palette.text.copy(alpha = 0.08f)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(progress.coerceIn(0f, 1f))
+                            .background(palette.text),
+                    )
+                }
+            }
+            if (selecting) {
+                SelectMark(
+                    selected = selected,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp),
+                )
+            }
+            site.anikitty.app.ui.components.KittyMenu(
+                expanded = menu,
+                onDismiss = { menu = false },
+                entries = listOf(
+                    site.anikitty.app.ui.components.KittyMenuEntry("Open", onClick),
+                    site.anikitty.app.ui.components.KittyMenuEntry("Select") {
+                        onLongClick?.invoke()
+                    },
+                ),
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = title,
+            color = palette.text,
+            style = MaterialTheme.typography.titleSmall.copy(
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp,
+                lineHeight = 14.sp,
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 2.dp),
+        )
+        Text(
+            text = subtitle,
+            color = palette.muted,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 2.dp),
+        )
+    }
+}
+
+@Composable
+private fun FavoriteRow(
+    anime: AnimeSummary,
+    onClick: () -> Unit,
+    selected: Boolean = false,
+    selecting: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
+) {
+    val palette = LocalKittyPalette.current
+    val score = anime.averageScore?.takeIf { it > 0 }
+    val stroke by animateColorAsState(
+        if (selected) palette.text else palette.text.copy(alpha = 0.08f),
+        tween(KittyMotion.duration(160)),
+        label = "favStroke",
+    )
+    var menu by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .spaceHold(
+                onClick = onClick,
+                onLongClick = {
+                    if (selecting) onLongClick?.invoke() else menu = true
+                },
+            )
+            .clip(RoundedCornerShape(12.dp))
+            .background(palette.surface)
+            .border(if (selected) 1.5.dp else 0.5.dp, stroke, RoundedCornerShape(12.dp)),
+    ) {
+        if (!anime.bannerImageUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = anime.bannerImageUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer { alpha = 0.15f },
+            )
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(Color.Black.copy(alpha = 0.94f), Color.Black.copy(alpha = 0.5f)),
+                        ),
+                    ),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(72.dp)
+                    .aspectRatio(0.7f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(palette.surface),
+            ) {
+                AsyncImage(
+                    model = anime.coverImageUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                if (selecting) {
+                    SelectMark(
+                        selected = selected,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp),
+                    )
+                }
+                if (score != null) {
+                    val scoreColor = when {
+                        score > 75 -> Color(0xFF4CAF50)
+                        score > 50 -> Color(0xFFFFC107)
+                        else -> palette.text
+                    }
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(4.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color.Black.copy(alpha = 0.8f))
+                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = FluentuiSystemIconsStarFilled,
+                                contentDescription = "Score",
+                                tint = scoreColor,
+                                modifier = Modifier.size(8.dp),
+                            )
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                text = "$score%",
+                                color = palette.text,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = anime.title,
+                    color = palette.text,
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 13.sp,
+                        letterSpacing = (-0.1).sp,
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                val formatText = formatLine(anime.format, anime.episodes)
+                if (formatText.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = formatText,
+                        color = palette.text.copy(alpha = 0.6f),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (anime.genres.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        anime.genres.take(3).forEach { genre ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(palette.text.copy(alpha = 0.05f))
+                                    .border(0.5.dp, palette.text.copy(alpha = 0.06f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                            ) {
+                                Text(
+                                    text = genre,
+                                    color = palette.text.copy(alpha = 0.7f),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        site.anikitty.app.ui.components.KittyMenu(
+            expanded = menu,
+            onDismiss = { menu = false },
+            entries = listOf(
+                site.anikitty.app.ui.components.KittyMenuEntry("Open", onClick),
+                site.anikitty.app.ui.components.KittyMenuEntry("Select") {
+                    onLongClick?.invoke()
+                },
+            ),
+        )
+    }
+}
+
+private data class SpaceCard(
+    val key: String,
+    val title: String,
+    val imageUrl: String?,
+    val subtitle: String,
+    val progress: Float,
+    val anime: AnimeSummary,
+)
+
+private val LIBRARY_CATEGORIES = listOf(
+    "Watching",
+    "Plan to Watch",
+    "Completed",
+    "On Hold",
+    "Dropped",
+    "Favourites",
+    "History",
+    "Downloads",
+)
+
+private fun postersForTab(
+    tab: String,
+    favourites: List<AnimeSummary>,
+    cloudLists: List<AniListMediaListEntry>,
+    history: List<WatchHistoryEntity>,
+    downloads: List<EpisodeDownloadEntity> = emptyList(),
+): List<SpaceCard> {
+    if (tab == "History") {
+        return history.map { entry -> historyCard(entry) }
+    }
+    if (tab == "Downloads") {
+        return downloads.map { row ->
+            SpaceCard(
+                key = "dl-${row.anilistId}-${row.episode}",
+                title = row.title.ifBlank { "Episode ${row.episode}" },
+                imageUrl = null,
+                subtitle = "EP ${row.episode} · ${row.phase}",
+                progress = (row.progressPercent / 100f).coerceIn(0f, 1f),
+                anime = AnimeSummary(
+                    id = row.anilistId,
+                    title = row.title.ifBlank { "Episode ${row.episode}" },
+                    coverImageUrl = null,
+                    episodes = null,
+                    format = null,
+                    averageScore = null,
+                ),
+            )
+        }
+    }
+    if (tab == "Favorites" || tab == "Favourites") {
+        return favourites.map { anime ->
+            SpaceCard(
+                key = "fav-${anime.id}",
+                title = anime.title,
+                imageUrl = anime.bannerImageUrl ?: anime.coverImageUrl,
+                subtitle = formatLine(anime.format, anime.episodes).ifBlank { "Anime" },
+                progress = 0f,
+                anime = anime,
+            )
+        }
+    }
+    val status = statusForName(tab) ?: return emptyList()
+    if (cloudLists.isNotEmpty()) {
+        return cloudLists.filter { it.status.equals(status, ignoreCase = true) }.map { entry ->
+            val total = entry.media.episodes?.takeIf { it > 0 }
+            val fraction = if (total != null && entry.progress > 0) {
+                (entry.progress.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+            SpaceCard(
+                key = "list-$status-${entry.media.id}",
+                title = entry.media.title,
+                imageUrl = entry.media.bannerImageUrl ?: entry.media.coverImageUrl,
+                subtitle = if (entry.media.format.equals("MOVIE", ignoreCase = true)) {
+                    "Movie"
+                } else if (entry.progress > 0) {
+                    "EP ${entry.progress}"
+                } else {
+                    formatLine(entry.media.format, entry.media.episodes)
+                },
+                progress = fraction,
+                anime = entry.media,
+            )
+        }
+    }
+    return history.filter { it.listStatus.equals(status, ignoreCase = true) }.map { entry ->
+        historyCard(entry).copy(key = "local-$status-${entry.anilistId}")
+    }
+}
+
+private fun historyCard(entry: WatchHistoryEntity) = SpaceCard(
+    key = "hist-${entry.anilistId}",
+    title = entry.title,
+    imageUrl = entry.coverImageUrl,
+    subtitle = "EP ${entry.episode}",
+    progress = if (entry.durationMs > 0L) {
+        (entry.positionMs.toFloat() / entry.durationMs.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    },
+    anime = AnimeSummary(
+        id = entry.anilistId,
+        title = entry.title,
+        coverImageUrl = entry.coverImageUrl,
+        episodes = null,
+        format = null,
+        averageScore = null,
+        malId = entry.malId,
+    ),
+)
+
+private fun tabCount(
+    tab: String,
+    favourites: List<AnimeSummary>,
+    cloudLists: List<AniListMediaListEntry>,
+    history: List<WatchHistoryEntity>,
+    downloads: List<EpisodeDownloadEntity> = emptyList(),
+): Int {
+    if (tab == "History") return history.size
+    if (tab == "Downloads") return downloads.size
+    if (tab == "Favorites" || tab == "Favourites") return favourites.size
+    val status = statusForName(tab) ?: return 0
+    return if (cloudLists.isNotEmpty()) {
+        cloudLists.count { it.status.equals(status, ignoreCase = true) }
+    } else {
+        history.count { it.listStatus.equals(status, ignoreCase = true) }
+    }
+}
+
+private fun listStatusName(status: String): String = when (status.uppercase()) {
+    "CURRENT" -> "Watching"
+    "REPEATING" -> "Rewatching"
+    "PLANNING" -> "Planning"
+    "PAUSED" -> "Paused"
+    "COMPLETED" -> "Completed"
+    "DROPPED" -> "Dropped"
+    else -> status
+}
+
+private fun statusForName(name: String): String? = when (name) {
+    "Watching" -> "CURRENT"
+    "Rewatching" -> "REPEATING"
+    "Planning", "Plan to Watch" -> "PLANNING"
+    "Paused", "On Hold" -> "PAUSED"
+    "Completed" -> "COMPLETED"
+    "Dropped" -> "DROPPED"
+    else -> null
+}
+
+private fun tabForLibraryFilter(filter: String): String = when (filter) {
+    "watching" -> "Watching"
+    "plan" -> "Plan to Watch"
+    "paused" -> "On Hold"
+    "done" -> "Completed"
+    "dropped" -> "Dropped"
+    "favourites" -> "Favourites"
+    "history" -> "History"
+    "downloads" -> "Downloads"
+    else -> "Watching"
+}
+
+private fun formatLine(format: String?, episodes: Int?): String {
+    val label = when (format?.uppercase()) {
+        "MOVIE" -> "Movie"
+        "TV" -> "TV"
+        "TV_SHORT" -> "Short"
+        "OVA" -> "OVA"
+        "ONA" -> "ONA"
+        "SPECIAL" -> "Special"
+        "MUSIC" -> "Music"
+        null, "" -> ""
+        else -> format
+    }
+    val count = if (!format.equals("MOVIE", ignoreCase = true)) episodes?.takeIf { it > 0 } else null
+    return listOfNotNull(label.takeIf { it.isNotEmpty() }, count?.let { "$it Eps" }).joinToString(" • ")
+}
+
+private class ShowSelection(
+    val active: Boolean,
+    val ids: Set<Int>,
+    val onToggle: (Int) -> Unit,
+    val onStart: (Int) -> Unit,
+)
+
+@Composable
+private fun WatchSelectBar(
+    count: Int,
+    busy: Boolean,
+    note: String?,
+    onWatched: () -> Unit,
+    onNotWatched: () -> Unit,
+    onAll: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val palette = LocalKittyPalette.current
+    val ready = count > 0 && !busy
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(palette.surface)
+            .border(0.5.dp, palette.text.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = when {
+                    busy -> "Updating…"
+                    count == 1 -> "1 selected"
+                    else -> "$count selected"
+                },
+                color = palette.text,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = "All",
+                color = palette.text.copy(alpha = if (busy) 0.3f else 0.7f),
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                modifier = if (busy) Modifier else Modifier.spacePress(onAll),
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Not watched",
+                color = if (ready) palette.text else palette.text.copy(alpha = 0.3f),
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(palette.text.copy(alpha = if (ready) 0.08f else 0.04f))
+                    .then(if (ready) Modifier.spacePress(onNotWatched) else Modifier)
+                    .padding(vertical = 10.dp),
+            )
+            Text(
+                text = "Watched",
+                color = if (ready) palette.onAccent else palette.onAccent.copy(alpha = 0.35f),
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (ready) palette.text else palette.text.copy(alpha = 0.35f))
+                    .then(if (ready) Modifier.spacePress(onWatched) else Modifier)
+                    .padding(vertical = 10.dp),
+            )
+        }
+        if (!note.isNullOrBlank()) {
+            Text(
+                text = note,
+                color = palette.text.copy(alpha = 0.55f),
+                fontSize = 12.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SelectMark(selected: Boolean, modifier: Modifier = Modifier) {
+    val palette = LocalKittyPalette.current
+    Box(
+        modifier = modifier
+            .size(22.dp)
+            .clip(CircleShape)
+            .background(if (selected) palette.text else Color.Black.copy(alpha = 0.45f))
+            .border(1.5.dp, palette.text, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) {
+            Icon(
+                Icons.Rounded.Check,
+                contentDescription = null,
+                tint = palette.onAccent,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+private fun Modifier.spaceHold(
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+): Modifier = composed {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        animationSpec = tween(KittyMotion.duration(140)),
+        label = "hold",
+    )
+    graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.combinedClickable(
+        interactionSource = interaction,
+        indication = null,
+        onClick = onClick,
+        onLongClick = onLongClick,
+    )
+}
