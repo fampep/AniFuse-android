@@ -36,11 +36,18 @@ class AniPmPlaybackTest {
 
     @Test
     fun sessionEmbedUsesSettlarHost() {
-        val token = aninzEmbedToken(
+        val embed = anipmEmbedUrl(
             """{"embedUrl":"https://embed.settlar.io/embed/v1?t=abc%2Bdef&x=1","provider":"anipm"}""",
         )
-        assertEquals("abc+def", token)
-        assertNotNull(token)
+        assertEquals("https://embed.settlar.io/embed/v1?t=abc%2Bdef&x=1", embed)
+        assertEquals("abc+def", anipmEmbedToken(embed!!))
         assertTrue(aninzOwnMedia("https://media.settlar.io/v1/object/master.m3u8"))
+        assertNotNull(embed)
+    }
+
+    @Test
+    fun onlyOneAniPmProviderId() {
+        assertEquals("anipm", AniPmServer.ID)
+        assertEquals("ani.pm", AniPmServer(cache = null).server.name)
     }
 }

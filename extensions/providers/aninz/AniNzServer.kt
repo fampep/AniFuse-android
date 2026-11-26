@@ -33,6 +33,7 @@ class AniNzServer(
         .callTimeout(22, TimeUnit.SECONDS)
         .followRedirects(true)
         .retryOnConnectionFailure(true)
+        .cookieJar(MemoryCookieJar())
         .build(),
 ) : StreamResolver {
     override val server = StreamServer(
@@ -55,8 +56,8 @@ class AniNzServer(
         val show = findShow(anilistId, titleHint)
         val lang = if (dub) "dub" else "sub"
         val boot = openBootstrap(show, episode, lang)
-        val token = openSession(boot, episode, lang)
-        listOf(openPlaylist(token, boot.skip, dub))
+        val embedUrl = openSessionEmbed(boot, episode, lang)
+        listOf(openPlaylist(embedUrl, boot.skip, dub))
     }
 
     private fun findShow(anilistId: Int, titleHint: String?): AninzShow {
@@ -98,27 +99,35 @@ class AniNzServer(
         return aninzBootstrap(body.text, lang)
     }
 
-    private fun openSession(boot: AninzBootstrap, fallbackEpisode: Int, lang: String): String {
+    private fun openSessionEmbed(boot: AninzBootstrap, fallbackEpisode: Int, lang: String): String {
         val episode = if (boot.episode > 0) boot.episode else fallbackEpisode
         val query = "selection=${enc(boot.selection)}&provider=$OWN_SESSION&ep=$episode&channel=$lang&telemetry=0"
         val body = get("$ORIGIN/api/anime/settlar/session?$query", siteHeaders())
         if (aninzBlocked(body.code, body.text)) error(BLOCKED)
         if (body.code !in 200..299) error(BLOCKED)
-        return aninzEmbedToken(body.text) ?: error(MISSING)
+        val embedUrl = aninzEmbedPageUrl(body.text) ?: error(MISSING)
+        // Host-guard: load the embed document before /api/embed/session.
+        val page = get(embedUrl, embedPageHeaders())
+        if (aninzBlocked(page.code, page.text)) error(BLOCKED)
+        if (page.code !in 200..299) error(BLOCKED)
+        return embedUrl
     }
 
-    private fun openPlaylist(token: String, skip: SkipTimes, dub: Boolean): PlayableSource {
+    private fun openPlaylist(embedUrl: String, skip: SkipTimes, dub: Boolean): PlayableSource {
+        val token = aninzEmbedTokenFromUrl(embedUrl) ?: error(MISSING)
         val session = get(
             "$EMBED_ORIGIN/api/embed/session?t=${enc(token)}",
-            embedHeaders(),
+            embedApiHeaders(embedUrl),
         )
         if (aninzBlocked(session.code, session.text)) error(BLOCKED)
         if (session.code !in 200..299) error(BLOCKED)
         val pending = aninzPending(session.text) ?: error(MISSING)
-        val playlist = get(pending.url, mediaHeaders())
+        val playlist = get(pending.url, mediaHeaders(embedUrl))
         if (aninzBlocked(playlist.code, playlist.text)) error(BLOCKED)
         if (playlist.code !in 200..299) error(BLOCKED)
-        return aninzPlayable(pending, playlist.text, skip, dub, USER_AGENT) ?: error(MISSING)
+        return aninzPlayable(pending, playlist.text, skip, dub, USER_AGENT)?.copy(
+            serverName = server.name,
+        ) ?: error(MISSING)
     }
 
     private fun get(url: String, headers: Map<String, String>): HttpText {
@@ -139,15 +148,24 @@ class AniNzServer(
         "User-Agent" to USER_AGENT,
     )
 
-    private fun embedHeaders(): Map<String, String> = mapOf(
+    private fun embedPageHeaders(): Map<String, String> = mapOf(
+        "Accept" to "text/html,application/xhtml+xml,*/*;q=0.8",
+        "Referer" to "$ORIGIN/",
+        "User-Agent" to USER_AGENT,
+        "Sec-Fetch-Dest" to "iframe",
+        "Sec-Fetch-Mode" to "navigate",
+        "Sec-Fetch-Site" to "cross-site",
+    )
+
+    private fun embedApiHeaders(embedUrl: String): Map<String, String> = mapOf(
         "Accept" to "application/json",
-        "Referer" to "$EMBED_ORIGIN/",
+        "Referer" to embedUrl,
         "Origin" to EMBED_ORIGIN,
         "User-Agent" to USER_AGENT,
     )
 
-    private fun mediaHeaders(): Map<String, String> = mapOf(
-        "Referer" to "$EMBED_ORIGIN/",
+    private fun mediaHeaders(embedUrl: String): Map<String, String> = mapOf(
+        "Referer" to embedUrl,
         "Origin" to EMBED_ORIGIN,
         "User-Agent" to USER_AGENT,
     )
@@ -235,13 +253,20 @@ internal fun aninzBootstrap(payload: String, want: String): AninzBootstrap? {
     return AninzBootstrap(selection, language, aninzSkip(root.optJSONObject("skip")), episode, route)
 }
 
-internal fun aninzEmbedToken(payload: String): String? {
+internal fun aninzEmbedPageUrl(payload: String): String? {
     val url = runCatching { JSONObject(payload) }.getOrNull()
         ?.optString("embedUrl")
         ?.trim()
         .orEmpty()
     if (!url.startsWith("${AniNzServer.EMBED_ORIGIN}/")) return null
-    val query = url.substringAfter('?', "")
+    return url
+}
+
+internal fun aninzEmbedToken(payload: String): String? =
+    aninzEmbedPageUrl(payload)?.let(::aninzEmbedTokenFromUrl)
+
+internal fun aninzEmbedTokenFromUrl(embedUrl: String): String? {
+    val query = embedUrl.substringAfter('?', "")
     for (part in query.split('&')) {
         if (part.substringBefore('=') != "t") continue
         val raw = part.substringAfter('=', "")

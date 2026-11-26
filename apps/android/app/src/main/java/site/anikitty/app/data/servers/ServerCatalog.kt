@@ -96,7 +96,9 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
 
     init {
         // Every live site + community install comes back into the race.
+        // Restored bundled ids (e.g. ani.pm) must not stay disabled from an older cut.
         extensions.enableAll()
+        extensions.ensureEnabled(bundledSiteIds)
         scope.launch {
             combine(extensions.installed, extensions.disabled) { installed, _ ->
                 installed

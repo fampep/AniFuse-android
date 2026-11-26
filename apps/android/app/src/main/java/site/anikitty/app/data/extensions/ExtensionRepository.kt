@@ -41,6 +41,22 @@ class ExtensionRepository(context: Context) {
         _disabled.update { emptySet() }
     }
 
+    /**
+     * Force-enable specific ids (bundled sites). Restored providers that were
+     * left disabled from an older build come back into the race.
+     */
+    fun ensureEnabled(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        val next = _disabled.value.toMutableSet()
+        var changed = false
+        for (id in ids) {
+            if (next.remove(id)) changed = true
+        }
+        if (!changed) return
+        prefs.edit().putString(KEY_DISABLED, next.joinToString(",")).apply()
+        _disabled.update { next }
+    }
+
     fun upsert(manifest: ExtensionManifest) {
         val next = _installed.value.filterNot { it.id == manifest.id } + manifest
         persist(next)

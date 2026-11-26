@@ -5,30 +5,31 @@ package site.anikitty.app.data.servers
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import site.anikitty.app.data.skip.SkipTimes
 import java.net.URLEncoder
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /**
- * On-device ani.pm resolve — live origin is https://anipm.pk/
- * (ani.pm redirects there; same settlar bootstrap + embed pipeline as ani.nz).
+ * On-device **ani.pm** resolve — live origin is https://anipm.pk/
  *
- * Search is `GET /api/anime/search`. Playback is
- * `GET /api/anime/playback-bootstrap/{source}/{id}` then
- * `/api/anime/settlar/session?provider=anipm`, then the HLS master on
- * `media.settlar.io`. The provider label stays **ani.pm**.
+ * Flow:
+ * 1. Search `/api/anime/search`
+ * 2. Bootstrap `/api/anime/playback-bootstrap/{source}/{id}`
+ * 3. Session `/api/anime/settlar/session?provider=anipm`
+ * 4. Warm the embed HTML (host-guard cookies), then `/api/embed/session`
+ * 5. Play the HLS master on `media.settlar.io`
+ *
+ * The provider label is always **ani.pm** — never remapped to another site.
  */
 class AniPmServer(
     private val cache: ResolveCache? = null,
-    private val http: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(14, TimeUnit.SECONDS)
-        .callTimeout(22, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .retryOnConnectionFailure(true)
-        .build(),
+    private val http: OkHttpClient = defaultClient(),
 ) : StreamResolver {
     override val server = StreamServer(
         id = ID,
@@ -47,11 +48,16 @@ class AniPmServer(
         require(anilistId > 0) { "anilistId required" }
         require(episode > 0) { "episode required" }
         val dub = audio.equals("dub", ignoreCase = true)
+        warmSite()
         val show = findShow(anilistId, titleHint)
         val lang = if (dub) "dub" else "sub"
         val boot = openBootstrap(show, episode, lang)
-        val token = openSession(boot, episode, lang)
-        listOf(openPlaylist(token, boot.skip, dub))
+        val embedUrl = openSessionEmbed(boot, episode, lang)
+        listOf(openPlaylist(embedUrl, boot.skip, dub))
+    }
+
+    private fun warmSite() {
+        runCatching { get(ORIGIN, siteHeaders(html = true)) }
     }
 
     private fun findShow(anilistId: Int, titleHint: String?): AninzShow {
@@ -62,10 +68,7 @@ class AniPmServer(
         }
         val title = FlixCrypto.cleanTitle(titleHint)
         if (title.isBlank()) error("ani.pm needs a title to find this show.")
-        val body = get(
-            "$ORIGIN/api/anime/search?q=${enc(title)}",
-            siteHeaders(),
-        )
+        val body = get("$ORIGIN/api/anime/search?q=${enc(title)}", siteHeaders())
         if (aninzBlocked(body.code, body.text)) error(BLOCKED)
         if (body.code !in 200..299) error(BLOCKED)
         val show = aninzPickShow(body.text, anilistId, title) ?: error(MISSING)
@@ -92,24 +95,32 @@ class AniPmServer(
         return aninzBootstrap(body.text, lang)
     }
 
-    private fun openSession(boot: AninzBootstrap, fallbackEpisode: Int, lang: String): String {
+    /** Returns the full embed URL (with token), not just the token. */
+    private fun openSessionEmbed(boot: AninzBootstrap, fallbackEpisode: Int, lang: String): String {
         val episode = if (boot.episode > 0) boot.episode else fallbackEpisode
-        val query = "selection=${enc(boot.selection)}&provider=$OWN_SESSION&ep=$episode&channel=$lang&telemetry=0"
+        val query =
+            "selection=${enc(boot.selection)}&provider=$OWN_SESSION&ep=$episode&channel=$lang&telemetry=0"
         val body = get("$ORIGIN/api/anime/settlar/session?$query", siteHeaders())
         if (aninzBlocked(body.code, body.text)) error(BLOCKED)
         if (body.code !in 200..299) error(BLOCKED)
-        return aninzEmbedToken(body.text) ?: error(MISSING)
+        val embedUrl = anipmEmbedUrl(body.text) ?: error(MISSING)
+        // Host-guard + cookies: the embed HTML must load before /api/embed/session.
+        val page = get(embedUrl, embedPageHeaders(embedUrl))
+        if (aninzBlocked(page.code, page.text)) error(BLOCKED)
+        if (page.code !in 200..299) error(BLOCKED)
+        return embedUrl
     }
 
-    private fun openPlaylist(token: String, skip: SkipTimes, dub: Boolean): PlayableSource {
+    private fun openPlaylist(embedUrl: String, skip: SkipTimes, dub: Boolean): PlayableSource {
+        val token = anipmEmbedToken(embedUrl) ?: error(MISSING)
         val session = get(
-            "${AniNzServer.EMBED_ORIGIN}/api/embed/session?t=${enc(token)}",
-            embedHeaders(),
+            "$EMBED_ORIGIN/api/embed/session?t=${enc(token)}",
+            embedApiHeaders(embedUrl),
         )
         if (aninzBlocked(session.code, session.text)) error(BLOCKED)
         if (session.code !in 200..299) error(BLOCKED)
         val pending = aninzPending(session.text) ?: error(MISSING)
-        val playlist = get(pending.url, mediaHeaders())
+        val playlist = get(pending.url, mediaHeaders(embedUrl))
         if (aninzBlocked(playlist.code, playlist.text)) error(BLOCKED)
         if (playlist.code !in 200..299) error(BLOCKED)
         return aninzPlayable(pending, playlist.text, skip, dub, USER_AGENT)?.copy(
@@ -128,23 +139,36 @@ class AniPmServer(
         }
     }
 
-    private fun siteHeaders(): Map<String, String> = mapOf(
-        "Accept" to "application/json",
+    private fun siteHeaders(html: Boolean = false): Map<String, String> = mapOf(
+        "Accept" to if (html) "text/html,application/xhtml+xml,*/*;q=0.8" else "application/json",
         "Referer" to "$ORIGIN/",
         "Origin" to ORIGIN,
         "User-Agent" to USER_AGENT,
+        "Accept-Language" to "en-US,en;q=0.9",
     )
 
-    private fun embedHeaders(): Map<String, String> = mapOf(
-        "Accept" to "application/json",
-        "Referer" to "${AniNzServer.EMBED_ORIGIN}/",
-        "Origin" to AniNzServer.EMBED_ORIGIN,
+    private fun embedPageHeaders(embedUrl: String): Map<String, String> = mapOf(
+        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Referer" to "$ORIGIN/",
         "User-Agent" to USER_AGENT,
+        "Accept-Language" to "en-US,en;q=0.9",
+        "Sec-Fetch-Dest" to "iframe",
+        "Sec-Fetch-Mode" to "navigate",
+        "Sec-Fetch-Site" to "cross-site",
     )
 
-    private fun mediaHeaders(): Map<String, String> = mapOf(
-        "Referer" to "${AniNzServer.EMBED_ORIGIN}/",
-        "Origin" to AniNzServer.EMBED_ORIGIN,
+    private fun embedApiHeaders(embedUrl: String): Map<String, String> = mapOf(
+        "Accept" to "application/json",
+        "Referer" to embedUrl,
+        "Origin" to EMBED_ORIGIN,
+        "User-Agent" to USER_AGENT,
+        "Accept-Language" to "en-US,en;q=0.9",
+    )
+
+    private fun mediaHeaders(embedUrl: String): Map<String, String> = mapOf(
+        "Accept" to "application/vnd.apple.mpegurl,*/*",
+        "Referer" to embedUrl,
+        "Origin" to EMBED_ORIGIN,
         "User-Agent" to USER_AGENT,
     )
 
@@ -159,9 +183,76 @@ class AniPmServer(
         const val BLOCKED = "ani.pm could not be reached."
         /** Live host — ani.pm redirects here. */
         const val ORIGIN = "https://anipm.pk"
-        /** Settlar session provider id on anipm.pk (not a display rename). */
+        const val EMBED_ORIGIN = "https://embed.settlar.io"
+        /** Settlar session provider id on anipm.pk. */
         const val OWN_SESSION = "anipm"
         const val USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+
+        private fun defaultClient(): OkHttpClient =
+            OkHttpClient.Builder()
+                .connectTimeout(8, TimeUnit.SECONDS)
+                .readTimeout(16, TimeUnit.SECONDS)
+                .callTimeout(28, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .retryOnConnectionFailure(true)
+                .cookieJar(MemoryCookieJar())
+                .build()
     }
+}
+
+/** In-memory cookies so anipm.pk + embed.settlar.io share a warm session. */
+internal class MemoryCookieJar : CookieJar {
+    private val store = ConcurrentHashMap<String, ConcurrentHashMap<String, Cookie>>()
+
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+        val host = url.host.lowercase()
+        val bucket = store.getOrPut(host) { ConcurrentHashMap() }
+        cookies.forEach { cookie -> bucket[cookie.name] = cookie }
+    }
+
+    override fun loadForRequest(url: HttpUrl): List<Cookie> {
+        val host = url.host.lowercase()
+        val now = System.currentTimeMillis()
+        val out = ArrayList<Cookie>()
+        store.forEach { (cookieHost, bucket) ->
+            if (!hostEndsWith(host, cookieHost)) return@forEach
+            val iter = bucket.entries.iterator()
+            while (iter.hasNext()) {
+                val entry = iter.next()
+                val cookie = entry.value
+                if (cookie.expiresAt < now) {
+                    iter.remove()
+                    continue
+                }
+                if (cookie.matches(url)) out += cookie
+            }
+        }
+        return out
+    }
+
+    private fun hostEndsWith(host: String, cookieHost: String): Boolean =
+        host == cookieHost || host.endsWith(".$cookieHost")
+}
+
+internal fun anipmEmbedUrl(payload: String): String? {
+    val url = runCatching { org.json.JSONObject(payload) }.getOrNull()
+        ?.optString("embedUrl")
+        ?.trim()
+        .orEmpty()
+    if (!url.startsWith("${AniPmServer.EMBED_ORIGIN}/")) return null
+    return url
+}
+
+internal fun anipmEmbedToken(embedUrl: String): String? {
+    val query = embedUrl.substringAfter('?', "")
+    for (part in query.split('&')) {
+        if (part.substringBefore('=') != "t") continue
+        val raw = part.substringAfter('=', "")
+        val token = runCatching {
+            java.net.URLDecoder.decode(raw, Charsets.UTF_8.name())
+        }.getOrDefault(raw)
+        if (token.isNotBlank()) return token
+    }
+    return null
 }
