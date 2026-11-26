@@ -180,9 +180,7 @@ fun ExtensionStoreFeed(
         byId.values.toList()
     }
 
-    val deprecatedIds = catalog.deprecatedBundledIds
-
-    val filtered = remember(mergedListings, query, selectedId, bundledIds, deprecatedIds) {
+    val filtered = remember(mergedListings, query, selectedId, bundledIds) {
         val q = query.trim()
         val base = if (q.isEmpty()) {
             mergedListings
@@ -194,16 +192,18 @@ fun ExtensionStoreFeed(
                     listing.id.contains(q, ignoreCase = true)
             }
         }
+        // Live site extensions are first-class again — never force-deprecate them.
         base.map { listing ->
-            // The index may not flag them yet; the local set always does.
-            if (listing.id in deprecatedIds && !listing.deprecated) {
+            if (listing.id in bundledIds && listing.deprecated) {
+                listing.copy(deprecated = false)
+            } else if (listing.id == catalog.anifuseExtensionId) {
                 listing.copy(deprecated = true)
             } else {
                 listing
             }
         }.sortedWith(
             compareByDescending<StoreListing> { it.id == selectedId }
-                .thenByDescending { it.id == catalog.anifuseExtensionId }
+                .thenByDescending { it.id in bundledIds }
                 .thenByDescending { !it.deprecated }
                 .thenByDescending { it.featured }
                 .thenBy { it.name.lowercase() },
@@ -218,8 +218,8 @@ fun ExtensionStoreFeed(
             if (onPhone.isNotEmpty()) {
                 add(
                     StoreRow.Head(
-                        title = "On this phone",
-                        subtitle = "Ships with AniFuse. The source is in anikitty-extensions.",
+                        title = "Live sites on this phone",
+                        subtitle = "Direct scrapers. Failover races every enabled source.",
                     ),
                 )
                 onPhone.forEach { add(StoreRow.Card(it)) }
@@ -236,8 +236,8 @@ fun ExtensionStoreFeed(
             if (deprecated.isNotEmpty()) {
                 add(
                     StoreRow.Head(
-                        title = "Deprecated",
-                        subtitle = "Superseded by AniFuse — listed for reference, never used for playback.",
+                        title = "Not used for playback",
+                        subtitle = "Hosted API and retired sources — kept for reference only.",
                     ),
                 )
                 deprecated.forEach { add(StoreRow.Card(it)) }

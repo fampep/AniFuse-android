@@ -599,13 +599,17 @@ internal fun SettingsFeed(
     val sourceRows = remember(resolvers, installedExt, disabledExtIds) {
         val enabledIds = resolvers.map { it.server.id }.toSet()
         buildList {
-            addAll(resolvers.map { it.server })
+            // Live sites first (including ones the user toggled off).
+            catalog.bundledServers.forEach { add(it) }
+            resolvers.forEach { resolver ->
+                if (resolver.server.id !in catalog.bundledSiteIds) add(resolver.server)
+            }
             installedExt.forEach { manifest ->
-                if (manifest.id !in enabledIds) {
+                if (manifest.id !in enabledIds && manifest.id !in catalog.bundledSiteIds) {
                     add(HttpExtensionResolver(manifest).server)
                 }
             }
-        }
+        }.distinctBy { it.id }
     }
     Column(
         modifier = Modifier
@@ -824,18 +828,35 @@ internal fun SettingsFeed(
                         )
                     }
                     item {
-                        Button(
-                            onClick = onOpenStore,
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 20.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = palette.accent,
-                                contentColor = palette.onAccent,
-                            ),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            Text("Open Extension Store", fontWeight = FontWeight.Bold)
+                            Button(
+                                onClick = onOpenStore,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = palette.accent,
+                                    contentColor = palette.onAccent,
+                                ),
+                            ) {
+                                Text("Store", fontWeight = FontWeight.Bold)
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    catalog.extensions.enableAll()
+                                    extensionStatus = "All live sites and extensions enabled"
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, palette.hairline),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = palette.text),
+                            ) {
+                                Text("Enable all", fontWeight = FontWeight.Bold)
+                            }
                         }
                         if (extensionStatus != null) {
                             Text(
@@ -849,7 +870,8 @@ internal fun SettingsFeed(
                     lazyItems(sourceRows, key = { it.id }) { server ->
                         val selected = server.id == selectedId
                         val isExtension = installedExt.any { it.id == server.id }
-                        val isEnabled = if (isExtension) catalog.extensions.isEnabled(server.id) else true
+                        val isBundled = server.id in catalog.bundledSiteIds
+                        val isEnabled = catalog.extensions.isEnabled(server.id)
                         Column(
                             modifier = Modifier
                                 .padding(horizontal = 20.dp)
@@ -924,13 +946,17 @@ internal fun SettingsFeed(
                                         }
                                     }
                                     Text(
-                                        if (isExtension) "Extension" else "Bundled",
+                                        when {
+                                            isBundled -> "Live site"
+                                            isExtension -> "Extension"
+                                            else -> "Source"
+                                        },
                                         color = palette.faint,
                                         style = MaterialTheme.typography.labelSmall,
                                         modifier = Modifier.clearAndSetSemantics { },
                                     )
                                 }
-                                if (isExtension) {
+                                if (isBundled || isExtension) {
                                     Switch(
                                         checked = isEnabled,
                                         onCheckedChange = { enabled ->
@@ -985,8 +1011,8 @@ internal fun SettingsFeed(
                 "anifuse" -> {
                     item {
                         SpacePageHeader(
-                            title = "AniFuse API",
-                            subtitle = "The resolver that fronts every source. Point it at your own instance to self-host.",
+                            title = "AniFuse API (optional)",
+                            subtitle = "Playback uses live site extensions on this phone. This hosted API is optional for self-hosters only.",
                             onBack = { page = "hub" },
                         )
                     }
@@ -1163,8 +1189,8 @@ private fun SettingsHubBody(
             )
             SettingsHubRow(
                 icon = Icons.Outlined.Cloud,
-                title = "AniFuse API",
-                detail = apiEndpoint,
+                title = "Optional API",
+                detail = "Not used for playback · $apiEndpoint",
                 plain = true,
                 onClick = { onOpen("anifuse") },
             )
@@ -1412,7 +1438,7 @@ private fun AnifuseApiSettingsCard(
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
             )
             Text(
-                "Every stream request goes through this server. Keep HTTPS for your own instance; plain HTTP is only for local testing.",
+                "Optional. Live site extensions handle playback. Keep HTTPS if you self-host this API for experiments; plain HTTP is only for local testing.",
                 color = palette.muted,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 4.dp),

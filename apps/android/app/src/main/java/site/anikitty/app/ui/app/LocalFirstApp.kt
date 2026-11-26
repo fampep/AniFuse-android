@@ -109,7 +109,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import site.anikitty.app.data.anifuse.AnifuseApi
 import site.anikitty.app.data.anifuse.AnifuseApiStore
-import site.anikitty.app.data.anifuse.AnifuseLatestMapper
 import site.anikitty.app.data.tmdb.TmdbCatalog
 import site.anikitty.app.data.anilist.AiringSlot
 import site.anikitty.app.data.anilist.AniListAuthStore
@@ -1228,7 +1227,7 @@ private fun HomeFeed(
     history: List<WatchHistoryEntity>,
     historyDao: WatchHistoryDao,
     streamServers: ServerCatalog,
-    anifuseApi: AnifuseApi,
+    @Suppress("UNUSED_PARAMETER") anifuseApi: AnifuseApi,
     onOpen: (AnimeSummary, Int?) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenGenre: (String) -> Unit,
@@ -1272,21 +1271,33 @@ private fun HomeFeed(
             return@LaunchedEffect
         }
         val known = (trending + seasonal).associateBy { it.id }
-        // The resolver API aggregates newest episodes across every provider.
-        // It is the app's single latest feed; the on-device Anikoto scrape is
-        // deprecated and stays only as skip-time / audio-availability reads.
-        val items = runCatching { anifuseApi.latest(limit = 48) }.getOrDefault(emptyList())
-        val mapped = if (items.isNotEmpty()) {
-            val store = site.anikitty.app.data.anifuse.TitleResolveStore(
-                java.io.File(context.filesDir, "title-resolve.json"),
+        // Live site scrape — Anikoto home widgets — not the hosted AniFuse API.
+        val siteItems = runCatching {
+            streamServers.anikotoLatestUpdates(kind = "all")
+        }.getOrDefault(emptyList())
+        val mapped = if (siteItems.isNotEmpty()) {
+            site.anikitty.app.data.servers.ProviderLatestMapper.toSlots(
+                items = siteItems,
+                audio = "sub",
+                aniList = aniList,
+                known = known,
             )
-            AnifuseLatestMapper.toSlots(items, aniList, known, store)
+        } else {
+            emptyList()
+        }
+        val dubMapped = if (siteItems.isNotEmpty()) {
+            site.anikitty.app.data.servers.ProviderLatestMapper.toSlots(
+                items = siteItems.filter { it.latestDub > 0 },
+                audio = "dub",
+                aniList = aniList,
+                known = known,
+            )
         } else {
             emptyList()
         }
         if (mapped.isNotEmpty()) {
             airingToday = mapped
-            latestDub = emptyList()
+            latestDub = dubMapped
         } else {
             val now = System.currentTimeMillis() / 1000L
             airingToday = runCatching {

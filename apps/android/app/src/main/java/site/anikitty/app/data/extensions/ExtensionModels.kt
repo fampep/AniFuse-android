@@ -51,8 +51,8 @@ data class StoreListing(
     /** Protocol document version, such as "1.1". Manifest `apiVersion` stays 1. */
     val protocol: String? = null,
     /**
-     * Deprecated sources are superseded by AniFuse: the store shows the
-     * badge, and playback never uses them.
+     * Deprecated / retired listings stay visible for reference but leave
+     * the playback race. Live bundled sites are never marked this way.
      */
     val deprecated: Boolean = false,
 )

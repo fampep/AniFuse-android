@@ -34,6 +34,13 @@ class ExtensionRepository(context: Context) {
         _disabled.update { next }
     }
 
+    /** Clears every disable flag so the full failover race is live again. */
+    fun enableAll() {
+        if (_disabled.value.isEmpty()) return
+        prefs.edit().remove(KEY_DISABLED).apply()
+        _disabled.update { emptySet() }
+    }
+
     fun upsert(manifest: ExtensionManifest) {
         val next = _installed.value.filterNot { it.id == manifest.id } + manifest
         persist(next)

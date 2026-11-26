@@ -168,7 +168,7 @@ internal fun sourcesPageSubtitle(names: List<String>): String {
         1 -> shown.single()
         else -> shown.dropLast(1).joinToString(", ") + ", and " + shown.last()
     }
-    return "$list ship in the app."
+    return "$list race live on this phone."
 }
 
 internal fun playbackAudioLanguage(sources: List<PlayableSource>, audio: String): List<PlayableSource> {

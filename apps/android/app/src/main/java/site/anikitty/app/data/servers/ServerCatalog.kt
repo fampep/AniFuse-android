@@ -31,10 +31,9 @@ import site.anikitty.app.data.extensions.StoreListing
 import site.anikitty.app.data.extensions.prepareStoreInstall
 
 /**
- * Stream sources = the main AniFuse extension + user-installed HTTP extensions.
- * The deprecated on-device scrapers stay compiled in (skip times, latest
- * cards and audio availability still read them) but never play: playback
- * goes through AniFuse, which fronts every source in parallel.
+ * Stream sources = live on-device site extensions (Anikoto, Gotaku, …) plus
+ * any community HTTP extensions the user installs. Playback races those
+ * sites directly — the hosted AniFuse API is no longer in the chain.
  */
 class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = AnifuseApiStore(context)) {
     private val prefs = context.getSharedPreferences("anikitty_servers", Context.MODE_PRIVATE)
@@ -65,38 +64,24 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         AniHostsServer(cache = resolveCache),
     )
 
+    /** Bundled site ids — live scrapers that ship with the APK. */
+    val bundledSiteIds: Set<String> = bundled.map { it.server.id }.toSet()
+
+    /** Full bundled site list (enabled or not) for Settings toggles. */
+    val bundledServers: List<StreamServer> = bundled.map { it.server }
+
     /**
-     * The on-device scrapers are deprecated: AniFuse fronts every source
-     * now, so these stay out of playback and the store shows them as such.
+     * Nothing in the live site set is deprecated anymore.
+     * Kept for store UI callers that still read the field.
      */
-    val deprecatedBundledIds: Set<String> = bundled.map { it.server.id }.toSet()
+    val deprecatedBundledIds: Set<String> = emptySet()
 
-    /** The main extension: the hosted AniFuse API fronting all scrapers. */
-    private fun buildAnifuseResolver(): StreamResolver {
-        val baseUrl = apiStore.baseUrl.value
-        return HttpExtensionResolver(
-            ExtensionManifest(
-                apiVersion = ExtensionManifest.SUPPORTED_API,
-                id = ANIFUSE_EXTENSION_ID,
-                name = "AniFuse",
-                version = "1.1.0",
-                description = "One API for every anime source — parallel failover across 13 sites with captions and live health.",
-                author = "fampep",
-                homepage = "https://github.com/fampep/anifuse",
-                baseUrl = baseUrl,
-                resolvePath = ExtensionManifest.DEFAULT_RESOLVE_PATH,
-                iconUrl = ANIFUSE_ICON_URL,
-                siteUrl = baseUrl,
-            ),
-        )
-    }
-
-    /** On-phone ids for the store UI: the deprecated scrapers plus AniFuse. */
-    val bundledIds: Set<String> = deprecatedBundledIds + ANIFUSE_EXTENSION_ID
-
-    /** Store id of the main AniFuse extension (also listed in the store index). */
+    /** Optional hosted API id — kept for settings/migration only, not playback. */
     val anifuseExtensionId: String
         get() = ANIFUSE_EXTENSION_ID
+
+    /** On-phone ids for the store UI. */
+    val bundledIds: Set<String> = bundledSiteIds
 
     private val _resolvers = MutableStateFlow(buildResolvers(extensions.installed.value))
     val resolvers: StateFlow<List<StreamResolver>> = _resolvers.asStateFlow()
@@ -107,9 +92,9 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
     val servers: List<StreamServer> get() = _resolvers.value.map { it.server }
 
     init {
+        // Every live site + community install comes back into the race.
+        extensions.enableAll()
         scope.launch {
-            // Rebuild whenever installed extensions or their enabled state
-            // change, or the user points the app at another AniFuse instance.
             combine(extensions.installed, extensions.disabled) { installed, _ ->
                 installed
             }.collect { installed ->
@@ -117,12 +102,9 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
                 ensureSelectionValid()
             }
         }
-        scope.launch {
-            apiStore.baseUrl.collect {
-                _resolvers.value = buildResolvers(extensions.installed.value)
-                ensureSelectionValid()
-            }
-        }
+        // Retained so Settings can still show/self-host the optional API URL.
+        // Playback no longer rebuilds when the endpoint changes.
+        apiStore.baseUrl
     }
 
     fun select(id: String) {
@@ -177,7 +159,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
 
     /**
      * Resolve using the selected installed provider first, then automatically
-     * try every other **installed** provider until one returns sources.
+     * try every other **enabled** provider until one returns sources.
      * A fallback plays this episode only. The provider the user picked stays selected.
      */
     suspend fun resolveWithFailover(
@@ -202,7 +184,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         val errors = java.util.Collections.synchronizedList(ArrayList<String>())
         val raced = raceHeadStart(
             count = ordered.size,
-            parallel = 3,
+            parallel = 4,
             headStartMs = RESOLVE_HEAD_START_MS,
             timeoutMs = RESOLVE_TIMEOUT_MS,
         ) { index ->
@@ -247,7 +229,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
     }
 
     fun uninstallExtension(id: String) {
-        if (id == ANIFUSE_EXTENSION_ID || bundled.any { it.server.id == id }) return
+        if (bundled.any { it.server.id == id }) return
         extensions.remove(id)
         ensureSelectionValid()
     }
@@ -271,26 +253,26 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
     suspend fun updateExtension(id: String): ExtensionManifest = installer.update(id)
 
     private fun buildResolvers(installed: List<ExtensionManifest>): List<StreamResolver> {
-        // Disabled extensions stay installed but leave the failover chain.
+        // Live site scrapers first — every enabled bundled source races.
+        val fromSites = bundled.filter { extensions.isEnabled(it.server.id) }
         val fromExt = installed
             .filter { extensions.isEnabled(it.id) }
+            .filterNot {
+                it.id == ANIFUSE_EXTENSION_ID ||
+                    it.id in bundledSiteIds ||
+                    isRetiredExtension(it.id, it.name)
+            }
             .map { HttpExtensionResolver(it) }
-        val extras = fromExt.filterNot {
-            it.server.id == ANIFUSE_EXTENSION_ID ||
-                it.server.id in deprecatedBundledIds ||
-                isRetiredExtension(it.server.id, it.server.name)
-        }
-        // AniFuse is the main extension and the only bundled playback
-        // resolver; the deprecated on-device scrapers stay out of failover.
-        return listOf(buildAnifuseResolver()) + extras
+        return fromSites + fromExt
     }
 
     private fun readSelectedId(): String {
-        val raw = prefs.getString(KEY_SELECTED, ANIFUSE_EXTENSION_ID) ?: ANIFUSE_EXTENSION_ID
+        val defaultId = DEFAULT_SITE_ID
+        val raw = prefs.getString(KEY_SELECTED, defaultId) ?: defaultId
         val migrated = when {
-            raw == ANIFUSE_EXTENSION_ID -> raw
-            raw in deprecatedBundledIds -> ANIFUSE_EXTENSION_ID
-            else -> FlixCrypto.migrateServerId(raw) ?: ANIFUSE_EXTENSION_ID
+            raw == ANIFUSE_EXTENSION_ID -> defaultId
+            raw in bundledSiteIds -> raw
+            else -> FlixCrypto.migrateServerId(raw) ?: defaultId
         }
         if (migrated != raw) prefs.edit().putString(KEY_SELECTED, migrated).apply()
         return migrated
@@ -309,14 +291,15 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
     private companion object {
         const val KEY_SELECTED = "selected_server_id"
         /** Preferred resolver's head start before the next providers join. */
-        const val RESOLVE_HEAD_START_MS = 1_500L
+        const val RESOLVE_HEAD_START_MS = 900L
 
         /** Upper bound for one provider's resolve before that racer is dropped. */
-        const val RESOLVE_TIMEOUT_MS = 8_000L
+        const val RESOLVE_TIMEOUT_MS = 7_500L
 
-        /** The main AniFuse extension bundled with the app. */
+        /** Default live site when nothing else is selected. */
+        const val DEFAULT_SITE_ID = "anikoto"
+
+        /** Legacy hosted API id — migrated away from selection. */
         const val ANIFUSE_EXTENSION_ID = "site.anikitty.anifuse"
-        const val ANIFUSE_ICON_URL =
-            "https://raw.githubusercontent.com/fampep/anifuse/main/docs/brand/anifuse-icon-512.png"
     }
 }
