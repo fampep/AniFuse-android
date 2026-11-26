@@ -634,8 +634,15 @@ fun PlayerScreen(
             playbackHlsOffline -> cacheDataSourceFactory(context, anilistId, episode, pipeline.strip)
             else -> pipeline.strip
         }
+        // Media3 requires minBufferMs >= bufferForPlaybackAfterRebufferMs
+        // and minBufferMs >= bufferForPlaybackMs. Violating that crashes on open.
         val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(1_800, 55_000, 1_200, 3_500)
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 3_500,
+                /* maxBufferMs = */ 55_000,
+                /* bufferForPlaybackMs = */ 1_200,
+                /* bufferForPlaybackAfterRebufferMs = */ 3_500,
+            )
             .setBackBuffer(35_000, true)
             .build()
         val metrics = context.resources.displayMetrics

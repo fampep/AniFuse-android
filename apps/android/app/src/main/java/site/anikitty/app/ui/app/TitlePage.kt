@@ -523,6 +523,7 @@ internal fun TitleStage(
                             PlayButton(
                                 label = playLabel,
                                 busy = resolving,
+                                busyLabel = status?.takeIf { resolving },
                                 fraction = if (episodeFraction > 0f) episodeFraction else seriesFraction,
                                 onClick = onPlay,
                             )
@@ -530,8 +531,10 @@ internal fun TitleStage(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .height(52.dp)
+                                .height(54.dp)
                                 .clip(RoundedCornerShape(KittyRadius.button))
+                                .background(palette.surface)
+                                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(KittyRadius.button))
                                 .border(1.dp, palette.hairline, RoundedCornerShape(KittyRadius.button))
                                 .spacePress { if (canEditList) listSheet = true else onMyList() },
                             contentAlignment = Alignment.Center,
@@ -595,13 +598,25 @@ internal fun TitleStage(
                             modifier = Modifier.weight(1f),
                         )
                     }
-                    if (status != null) {
-                        Text(
-                            status,
-                            color = palette.muted,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(top = KittySpace.sm),
-                        )
+                    if (status != null && !resolving) {
+                        Row(
+                            modifier = Modifier
+                                .padding(top = KittySpace.sm)
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(palette.surface)
+                                .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(999.dp))
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                status,
+                                color = palette.muted,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
             }
@@ -1246,6 +1261,7 @@ private fun PlayButton(
     fraction: Float,
     onClick: () -> Unit,
     compact: Boolean = false,
+    busyLabel: String? = null,
 ) {
     if (compact) {
         Column {
@@ -1261,9 +1277,18 @@ private fun PlayButton(
                     CircularProgressIndicator(
                         modifier = Modifier
                             .size(22.dp)
-                            .semantics { contentDescription = label },
+                            .semantics { contentDescription = busyLabel ?: label },
                         strokeWidth = 2.dp,
                         color = Color.Black,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        busyLabel ?: "Opening…",
+                        color = Color.Black,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 } else {
                     Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.Black)
@@ -1300,24 +1325,39 @@ private fun PlayButton(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(KittyRadius.lg))
+            .clip(RoundedCornerShape(KittyRadius.button))
             .background(palette.accent)
-            .spacePress(onClick, grabFocus = isTelevision()),
+            .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(KittyRadius.button))
+            .spacePress(onClick = { if (!busy) onClick() }, grabFocus = isTelevision()),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp),
+                .height(54.dp),
             contentAlignment = Alignment.Center,
         ) {
             if (busy) {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .size(22.dp)
-                        .semantics { contentDescription = label },
-                    strokeWidth = 2.dp,
-                    color = palette.onAccent,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .semantics { contentDescription = busyLabel ?: label },
+                        strokeWidth = 2.dp,
+                        color = palette.onAccent,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        busyLabel ?: "Finding a live source…",
+                        color = palette.onAccent,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = palette.onAccent)
@@ -1325,13 +1365,14 @@ private fun PlayButton(
                     Text(
                         label,
                         color = palette.onAccent,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
+                        letterSpacing = (-0.2).sp,
                     )
                 }
             }
         }
-        if (fraction > 0f) {
+        if (fraction > 0f && !busy) {
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -1378,9 +1419,10 @@ private fun TitleAction(
     val palette = LocalKittyPalette.current
     Column(
         modifier = modifier
-            .defaultMinSize(minHeight = 48.dp)
+            .defaultMinSize(minHeight = 52.dp)
             .clip(RoundedCornerShape(KittyRadius.md))
             .background(palette.surface)
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(KittyRadius.md))
             .spacePress(onClick)
             .padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1390,7 +1432,7 @@ private fun TitleAction(
             label,
             color = palette.text,
             fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp),

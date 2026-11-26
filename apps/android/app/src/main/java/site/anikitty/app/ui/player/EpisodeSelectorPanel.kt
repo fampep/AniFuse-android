@@ -293,7 +293,7 @@ internal fun EpisodeSelectorPanel(
                 minutesLeft = minutesLeft,
                 onToggleWatched = onToggleWatched,
                 anilistId = anilistId,
-                modifier = Modifier.padding(horizontal = (-14).dp),
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
