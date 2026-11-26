@@ -7,14 +7,13 @@ import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
 import site.anikitty.app.data.anifuse.AnifuseApiStore
 import site.anikitty.app.data.extensions.ExtensionInstaller
 import site.anikitty.app.data.extensions.ExtensionManifest
@@ -193,36 +192,41 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
             list.firstOrNull { it.server.id == preferredId }?.let { add(it) }
             list.filterNot { it.server.id == preferredId }.forEach { add(it) }
         }
-        val errors = ArrayList<String>()
-        for ((index, resolver) in ordered.withIndex()) {
+        val errors = java.util.Collections.synchronizedList(ArrayList<String>())
+        val raced = raceHeadStart(
+            count = ordered.size,
+            parallel = 3,
+            headStartMs = RESOLVE_HEAD_START_MS,
+            timeoutMs = RESOLVE_TIMEOUT_MS,
+        ) { index ->
+            val resolver = ordered[index]
             onAttempt?.invoke(resolver.server.name, index, ordered.size)
-            // A provider that never answers must not hold up every other source.
             val sources = try {
-                withTimeout(RESOLVE_TIMEOUT_MS) {
-                    resolver.resolve(anilistId, episode, audio, titleHint)
-                }
+                resolver.resolve(anilistId, episode, audio, titleHint)
             } catch (err: Exception) {
-                val msg = if (err is TimeoutCancellationException) {
-                    "timed out"
-                } else {
-                    err.message?.takeIf { it.isNotBlank() } ?: err::class.java.simpleName
-                }
+                if (err is CancellationException) throw err
+                val msg = err.message?.takeIf { it.isNotBlank() } ?: err::class.java.simpleName
                 errors += "${resolver.server.name}: $msg"
                 null
             }
-            if (sources != null && sources.isNotEmpty()) {
-                val usedFallback = resolver.server.id != preferredId
-                val named = namedByServer(playbackAudioLanguage(sources, audio), resolver.server.name)
-                return ResolveFailoverResult(
-                    sources = named,
-                    server = resolver.server,
-                    usedFallback = usedFallback,
-                    attempted = errors + "${resolver.server.name}: ok",
-                )
+            when {
+                sources.isNullOrEmpty() -> {
+                    if (sources != null) errors += "${resolver.server.name}: empty sources"
+                    null
+                }
+                else -> resolver to sources
             }
-            if (sources != null) {
-                errors += "${resolver.server.name}: empty sources"
-            }
+        }
+        if (raced != null) {
+            val (resolver, sources) = raced.second
+            val usedFallback = resolver.server.id != preferredId
+            val named = namedByServer(playbackAudioLanguage(sources, audio), resolver.server.name)
+            return ResolveFailoverResult(
+                sources = named,
+                server = resolver.server,
+                usedFallback = usedFallback,
+                attempted = errors + "${resolver.server.name}: ok",
+            )
         }
         error(
             buildString {
@@ -295,8 +299,11 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
 
     private companion object {
         const val KEY_SELECTED = "selected_server_id"
-        /** Upper bound for one provider's resolve before failover moves on. */
-        const val RESOLVE_TIMEOUT_MS = 30_000L
+        /** Preferred resolver's head start before the next providers join. */
+        const val RESOLVE_HEAD_START_MS = 1_500L
+
+        /** Upper bound for one provider's resolve before that racer is dropped. */
+        const val RESOLVE_TIMEOUT_MS = 8_000L
 
         /** The main AniFuse extension bundled with the app. */
         const val ANIFUSE_EXTENSION_ID = "site.anikitty.anifuse"

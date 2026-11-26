@@ -6,8 +6,6 @@ package site.anikitty.app.data.anilist
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -18,7 +16,6 @@ import org.json.JSONObject
 import site.anikitty.app.data.friendlyFailure
 import site.anikitty.app.data.plainSynopsis
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * AniList GraphQL — public catalog + optional authenticated MediaList sync.
@@ -33,8 +30,7 @@ class AniListClient(
 ) {
     private val cache = context?.let { AniListCache(it) }
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
-    private val gate = Mutex()
-    private val lastRequestAt = AtomicLong(0L)
+    private val pacer = AniListPacer()
 
     private val mediaFields = """
         id
@@ -136,7 +132,7 @@ class AniListClient(
             }
         """.trimIndent()
         val payload = JSONObject().put("query", graphql).toString()
-        val body = execute(payload, accessToken)
+        val body = execute(payload, accessToken, background = true)
         val viewer = JSONObject(body).optJSONObject("data")?.optJSONObject("Viewer")
             ?: return@withContext null
         val animeStats = viewer.optJSONObject("statistics")?.optJSONObject("anime")
@@ -197,7 +193,7 @@ class AniListClient(
                     .put("type", "ANIME"),
             )
             .toString()
-        val body = execute(payload, accessToken)
+        val body = execute(payload, accessToken, background = true)
         val lists = JSONObject(body)
             .optJSONObject("data")
             ?.optJSONObject("MediaListCollection")
@@ -250,7 +246,7 @@ class AniListClient(
             )
             .toString()
         runCatching {
-            val body = execute(payload, accessToken)
+            val body = execute(payload, accessToken, background = true)
             JSONObject(body).optJSONObject("data")?.optJSONObject("SaveMediaListEntry") != null
         }.getOrDefault(false)
     }
@@ -434,6 +430,76 @@ class AniListClient(
 
     suspend fun search(query: String, page: Int = 1, perPage: Int = 24): List<AnimeSummary> =
         browse(query = query, page = page, perPage = perPage, sort = "SEARCH_MATCH")
+
+    /**
+     * Resolve many latest-episode titles in a handful of documents instead of
+     * one full search each. A bad alias is split off so the rest of the chunk stays.
+     */
+    suspend fun searchMany(titles: List<String>): Map<String, List<AnimeSummary>> {
+        val cleaned = titles.map { it.trim() }.filter { it.length >= 2 }.distinct()
+        if (cleaned.isEmpty()) return emptyMap()
+        val out = LinkedHashMap<String, List<AnimeSummary>>()
+        for (chunk in chunkedList(cleaned, ANILIST_SEARCH_CHUNK)) {
+            out.putAll(searchChunk(chunk))
+        }
+        return out
+    }
+
+    private suspend fun searchChunk(titles: List<String>): Map<String, List<AnimeSummary>> {
+        if (titles.isEmpty()) return emptyMap()
+        val (query, variables) = searchManyQuery(titles)
+        val payload = JSONObject().put("query", query).put("variables", variables).toString()
+        val body = try {
+            execute(payload, accessToken = null, allowPartial = true)
+        } catch (_: Exception) {
+            if (titles.size <= 1) return emptyMap()
+            val mid = titles.size / 2
+            return searchChunk(titles.take(mid)) + searchChunk(titles.drop(mid))
+        }
+        val parsed = parseSearchAliases(body, titles)
+        val mapped = parsed.hits.mapValues { (_, arr) ->
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val item = arr.optJSONObject(i) ?: continue
+                    if (item.optJSONObject("title") == null) continue
+                    add(parseMedia(item))
+                }
+            }
+        }
+        if (parsed.missing.isEmpty() || titles.size <= 1) return mapped
+        return mapped + searchChunk(parsed.missing)
+    }
+
+    /** Released episode counts for Continue, one page per chunk instead of one detail query per show. */
+    suspend fun mediaBrief(ids: List<Int>): Map<Int, Int> = withContext(Dispatchers.IO) {
+        val unique = ids.filter { it > 0 }.distinct()
+        if (unique.isEmpty()) return@withContext emptyMap()
+        buildMap {
+            for (chunk in unique.chunked(ANILIST_BRIEF_CHUNK)) {
+                val graphql = """
+                    query (${'$'}ids: [Int]) {
+                      Page(page: 1, perPage: ${chunk.size.coerceAtLeast(1)}) {
+                        media(id_in: ${'$'}ids, type: ANIME) {
+                          id
+                          episodes
+                          nextAiringEpisode { episode }
+                        }
+                      }
+                    }
+                """.trimIndent()
+                val payload = JSONObject()
+                    .put("query", graphql)
+                    .put("variables", JSONObject().put("ids", org.json.JSONArray(chunk)))
+                    .toString()
+                val body = try {
+                    execute(payload, accessToken = null)
+                } catch (_: Exception) {
+                    continue
+                }
+                putAll(parseBriefCounts(body))
+            }
+        }
+    }
 
     /**
      * Catalog browse. Empty filters with a blank query is not useful; callers
@@ -632,7 +698,9 @@ class AniListClient(
             .put("variables", JSONObject().put("id", id))
             .toString()
         val body = execute(payload, accessToken)
-        if (!authed) cache?.put(cacheKey, body)
+        // List status stays on this response. The disk copy is the public document
+        // so a later shelf open does not skip the cache just because someone is signed in.
+        cache?.put(cacheKey, publicCatalogBody(body))
         val media = JSONObject(body).optJSONObject("data")?.optJSONObject("Media")
             ?: return@withContext null
         parseMedia(media, detail = true)
@@ -730,15 +798,17 @@ class AniListClient(
         }
     }
 
-    private suspend fun execute(payload: String, accessToken: String?): String {
-        gate.withLock {
-            val now = System.currentTimeMillis()
-            val wait = MIN_INTERVAL_MS - (now - lastRequestAt.get())
-            if (wait > 0) delay(wait)
-            var attempt = 0
-            var lastError: Exception? = null
-            while (attempt < 3) {
-                attempt++
+    private suspend fun execute(
+        payload: String,
+        accessToken: String?,
+        background: Boolean = false,
+        allowPartial: Boolean = false,
+    ): String {
+        var attempt = 0
+        var lastError: Exception? = null
+        while (attempt < 3) {
+            attempt++
+            val attemptResult = pacer.run(background) {
                 val requestBuilder = Request.Builder()
                     .url(ENDPOINT)
                     .post(payload.toRequestBody(jsonMedia))
@@ -748,15 +818,16 @@ class AniListClient(
                     requestBuilder.header("Authorization", "Bearer $accessToken")
                 }
                 val request = requestBuilder.build()
-                data class Attempt(val body: String? = null, val retryAfterSec: Long? = null, val error: Exception? = null)
-                val attemptResult = try {
+                try {
                     http.newCall(request).execute().use { response ->
                         val body = response.body?.string().orEmpty()
-                        lastRequestAt.set(System.currentTimeMillis())
                         when {
                             response.code == 429 -> Attempt(
                                 retryAfterSec = response.header("Retry-After")?.toLongOrNull()
                                     ?: (attempt * 2L),
+                            )
+                            response.code in 500..599 -> Attempt(
+                                error = java.io.IOException(friendlyFailure("HTTP ${response.code}")),
                             )
                             !response.isSuccessful -> Attempt(
                                 error = IllegalStateException(
@@ -765,7 +836,9 @@ class AniListClient(
                             )
                             else -> {
                                 val err = JSONObject(body).optJSONArray("errors")
-                                if (err != null && err.length() > 0) {
+                                val partial = allowPartial &&
+                                    JSONObject(body).optJSONObject("data") != null
+                                if (err != null && err.length() > 0 && !partial) {
                                     Attempt(
                                         error = IllegalStateException(
                                             err.optJSONObject(0)?.optString("message")
@@ -778,24 +851,37 @@ class AniListClient(
                             }
                         }
                     }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
                 } catch (e: Exception) {
                     Attempt(error = e)
                 }
-                when {
-                    attemptResult.body != null -> return attemptResult.body
-                    attemptResult.retryAfterSec != null -> {
-                        lastError = IllegalStateException(friendlyFailure("AniList rate limited"))
-                        delay(attemptResult.retryAfterSec.coerceIn(1L, 30L) * 1000L)
-                    }
-                    else -> {
-                        lastError = attemptResult.error
-                        delay(attempt * 400L)
-                    }
-                }
             }
-            throw lastError ?: IllegalStateException("AniList request failed")
+            when {
+                attemptResult.body != null -> return attemptResult.body
+                attemptResult.retryAfterSec != null -> {
+                    lastError = IllegalStateException(friendlyFailure("AniList rate limited"))
+                    val penalty = attemptResult.retryAfterSec.coerceIn(1L, 30L) * 1000L
+                    pacer.penalize(penalty)
+                    delay(penalty)
+                }
+                attemptResult.error is java.io.IOException && attempt < 3 -> {
+                    lastError = attemptResult.error
+                    delay(attempt * 400L)
+                }
+                else -> throw attemptResult.error
+                    ?: lastError
+                    ?: IllegalStateException("AniList request failed")
+            }
         }
+        throw lastError ?: IllegalStateException("AniList request failed")
     }
+
+    private data class Attempt(
+        val body: String? = null,
+        val retryAfterSec: Long? = null,
+        val error: Exception? = null,
+    )
 
     private fun JSONArray?.toPeople(): List<AnimePerson> {
         if (this == null) return emptyList()
@@ -1040,7 +1126,6 @@ class AniListClient(
 
     private companion object {
         const val ENDPOINT = "https://graphql.anilist.co"
-        const val MIN_INTERVAL_MS = 700L
 
         fun JSONObject.nullableString(key: String): String? {
             if (!has(key) || isNull(key)) return null

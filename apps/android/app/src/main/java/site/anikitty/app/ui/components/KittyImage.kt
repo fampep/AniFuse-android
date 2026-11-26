@@ -43,8 +43,8 @@ fun KittyImage(
             .data(url)
             .size(widthPx, heightPx)
             .crossfade(180)
-            .memoryCacheKey("$url@$widthPx")
-            .diskCacheKey("$url@$widthPx")
+            .memoryCacheKey(coverCacheKey(url, widthPx, heightPx))
+            .diskCacheKey(coverCacheKey(url, widthPx, heightPx))
             .build(),
         contentDescription = contentDescription,
         contentScale = contentScale,
@@ -54,3 +54,6 @@ fun KittyImage(
         modifier = modifier,
     )
 }
+
+/** Same key for prefetch and the poster that paints it, including the disk cache. */
+internal fun coverCacheKey(url: String, widthPx: Int, heightPx: Int): String = "$url@${widthPx}x$heightPx"

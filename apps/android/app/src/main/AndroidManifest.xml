@@ -88,6 +88,10 @@
             android:name=".data.download.DownloadCancelReceiver"
             android:exported="false" />
 
+        <receiver
+            android:name=".ui.player.PipActionReceiver"
+            android:exported="false" />
+
         <!-- WorkManager promotes a long episode save so the process is not frozen. -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"

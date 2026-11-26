@@ -4,6 +4,7 @@
 package site.anikitty.app.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
@@ -13,13 +14,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,15 +42,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import site.anikitty.app.ui.app.spacePress
 import site.anikitty.app.ui.theme.KittyHaptics
 import site.anikitty.app.ui.theme.LocalKittyPalette
@@ -72,7 +82,7 @@ private fun dockColors(): DockColors {
     val palette = LocalKittyPalette.current
     return if (palette.dark) {
         DockColors(
-            fill = Color(0xFF101010),
+            fill = Color(0xB3101010),
             stroke = Color(0xFF292929),
             selected = Color.White,
             idle = Color(0xFF707070),
@@ -90,8 +100,8 @@ private fun dockColors(): DockColors {
 }
 
 /**
- * Floating glass capsule dock — same language as the home top pill.
- * Selected tab is a white chip with black icon/label; others stay quiet.
+ * Floating glass capsule. The fill is translucent so artwork shows through,
+ * and one white pill slides to the selected tab.
  */
 @Composable
 fun KittyBottomNav(
@@ -114,7 +124,7 @@ fun KittyBottomNav(
             .padding(horizontal = 14.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(58.dp)
@@ -126,36 +136,49 @@ fun KittyBottomNav(
                 )
                 .clip(shape)
                 .background(dock.fill)
+                .border(1.dp, Color.White.copy(alpha = if (nightDock) 0.14f else 0.35f), shape)
                 .border(1.dp, dock.stroke, shape)
                 .padding(horizontal = 6.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
+            if (tabs.isNotEmpty()) {
+                val selectedIndex = tabs.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
+                val slide by animateFloatAsState(
+                    targetValue = selectedIndex.toFloat(),
+                    animationSpec = if (reduced) snap() else tween(280, easing = FastOutSlowInEasing),
+                    label = "dockSlide",
+                )
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val tabWidth = maxWidth / tabs.size
+                    Box(
+                        Modifier
+                            .offset(x = tabWidth * slide)
+                            .width(tabWidth)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(dock.selected),
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
             tabs.forEach { tab ->
                 val selected = tab.id == selectedId
-                val scale by animateFloatAsState(
-                    targetValue = if (selected && !reduced) 1.0f else 1f,
-                    animationSpec = if (reduced) snap() else tween(180),
-                    label = "navScale",
-                )
-                val chipColor by animateColorAsState(
-                    targetValue = if (selected) dock.selected else Color.Transparent,
-                    animationSpec = if (reduced) snap() else tween(200),
-                    label = "navChip",
-                )
                 val tint by animateColorAsState(
                     targetValue = if (selected) dock.ink else dock.idle,
                     animationSpec = if (reduced) snap() else tween(180),
                     label = "navTint",
                 )
-                val chipShape = RoundedCornerShape(20.dp)
                 Column(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .graphicsLayer(scaleX = scale, scaleY = scale)
-                        .clip(chipShape)
-                        .background(chipColor)
+                        .semantics {
+                            role = Role.Tab
+                            this.selected = selected
+                            contentDescription = tab.label
+                        }
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -170,7 +193,10 @@ fun KittyBottomNav(
                 ) {
                     if (tab.id == profileTabId && !profileImageUrl.isNullOrBlank()) {
                         AsyncImage(
-                            model = profileImageUrl,
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(profileImageUrl)
+                                .size(64)
+                                .build(),
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
@@ -201,6 +227,7 @@ fun KittyBottomNav(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+            }
             }
         }
     }

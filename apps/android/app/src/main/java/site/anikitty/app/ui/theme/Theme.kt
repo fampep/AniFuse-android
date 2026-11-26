@@ -137,7 +137,7 @@ private val DarkColors = darkColorScheme(
     onSurface = KittyText,
     onSurfaceVariant = KittyMuted,
     outline = KittyOutline,
-    error = Color(0xFFE53935),
+    error = Color(0xFFE8E8E8),
 )
 
 private val KittyTypography = Typography(

@@ -4,11 +4,6 @@
 package site.anikitty.app.data.anifuse
 
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import site.anikitty.app.data.anilist.AiringSlot
 import site.anikitty.app.data.anilist.AniListClient
@@ -20,53 +15,78 @@ import java.util.concurrent.ConcurrentHashMap
  * Maps the resolver API's aggregated `/v1/latest` rows onto AniList titles so
  * the home feed opens the right show. Several providers can report the same
  * episode; duplicates collapse to one row per title+episode.
+ *
+ * Titles are resolved in batched searches, then remembered. A cold start does
+ * not fire one GraphQL search per row.
  */
 object AnifuseLatestMapper {
     private val tipCache = ConcurrentHashMap<String, Int>()
-    private val tipMutex = Mutex()
 
-    suspend fun toSlots(
+    internal suspend fun toSlots(
         items: List<AnifuseLatestItem>,
         aniList: AniListClient,
         known: Map<Int, AnimeSummary> = emptyMap(),
+        store: TitleResolveStore? = null,
     ): List<AiringSlot> = withContext(Dispatchers.IO) {
         if (items.isEmpty()) return@withContext emptyList()
-        coroutineScope {
-            items.map { item ->
-                async {
-                    val anime = resolveAnime(item, aniList, known) ?: return@async null
-                    val episode = item.episode.coerceAtLeast(1)
-                    AiringSlot(
-                        anime = anime.copy(
-                            coverImageUrl = anime.coverImageUrl ?: item.imageUrl,
-                        ),
-                        episode = episode,
-                        // The API feed has no per-row airing timestamp.
-                        airingAtEpochSec = 0L,
-                        subEpisodes = null,
-                        dubEpisodes = null,
-                    ) to item.provider
-                }
-            }.awaitAll()
-                .filterNotNull()
-                .distinctBy { (slot, _) -> slot.anime.id to slot.episode }
-                .map { it.first }
+        val resolved = HashMap<String, AnimeSummary>()
+        val pending = ArrayList<AnifuseLatestItem>()
+        for (item in items) {
+            val cached = cachedAnime(item.title, known, store)
+            if (cached != null) resolved[item.title] = cached else pending += item
         }
+        if (pending.isNotEmpty()) {
+            val hits = runCatching {
+                aniList.searchMany(pending.map { it.title }.distinct())
+            }.getOrDefault(emptyMap())
+            for (item in pending) {
+                val match = ProviderLatestMapper.pickMatch(item.title, hits[item.title].orEmpty())
+                    ?: continue
+                resolved[item.title] = match
+                remember(item.title, match, store)
+            }
+        }
+        slotsFromResolved(items, resolved)
     }
 
-    private suspend fun resolveAnime(
-        item: AnifuseLatestItem,
-        aniList: AniListClient,
+    internal fun slotsFromResolved(
+        items: List<AnifuseLatestItem>,
+        resolved: Map<String, AnimeSummary>,
+    ): List<AiringSlot> {
+        return items.mapNotNull { item ->
+            val anime = resolved[item.title] ?: return@mapNotNull null
+            AiringSlot(
+                anime = anime.copy(coverImageUrl = anime.coverImageUrl ?: item.imageUrl),
+                episode = item.episode.coerceAtLeast(1),
+                airingAtEpochSec = 0L,
+                subEpisodes = null,
+                dubEpisodes = null,
+            )
+        }.distinctBy { it.anime.id to it.episode }
+    }
+
+    private fun cachedAnime(
+        title: String,
         known: Map<Int, AnimeSummary>,
+        store: TitleResolveStore?,
     ): AnimeSummary? {
-        tipCache[item.title]?.let { cachedId ->
-            val cached = known[cachedId] ?: runCatching { aniList.media(cachedId) }.getOrNull()
-            if (cached != null) return cached
-            tipCache.remove(item.title)
-        }
-        val hits = runCatching { aniList.search(item.title, perPage = 8) }.getOrDefault(emptyList())
-        val match = ProviderLatestMapper.pickMatch(item.title, hits) ?: return null
-        tipMutex.withLock { tipCache[item.title] = match.id }
-        return match
+        val key = ProviderLatestMapper.normalize(title)
+        if (key.isBlank()) return null
+        tipCache[key]?.let { id -> known[id]?.let { return it } }
+        known.values.firstOrNull { ProviderLatestMapper.pickMatch(title, listOf(it)) != null }
+            ?.let { match ->
+                tipCache[key] = match.id
+                return match
+            }
+        val stored = store?.get(key) ?: return null
+        tipCache[key] = stored.id
+        return stored
+    }
+
+    private fun remember(title: String, anime: AnimeSummary, store: TitleResolveStore?) {
+        val key = ProviderLatestMapper.normalize(title)
+        if (key.isBlank()) return
+        tipCache[key] = anime.id
+        store?.put(key, anime)
     }
 }

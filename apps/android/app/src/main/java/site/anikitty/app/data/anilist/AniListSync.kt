@@ -29,28 +29,25 @@ class AniListSync(
         auth.saveViewer(token, viewer)
 
         val entries = aniList.mediaListEntries(token, viewer.id)
-        var imported = 0
         val now = System.currentTimeMillis()
-        for (entry in entries) {
+        val existingById = historyDao.getAll().associateBy { it.anilistId }
+        val pendingById = pendingPushes.all().associateBy { it.anilistId }
+        val merged = entries.mapIndexed { index, entry ->
             val media = entry.media
-            val existing = historyDao.get(media.id)
-            val pending = pendingPushes.get(media.id)?.episode
-            historyDao.upsert(
-                mergedPullEntry(
-                    existing = existing,
-                    anilistId = media.id,
-                    title = media.title,
-                    coverImageUrl = media.coverImageUrl,
-                    malId = media.malId,
-                    remoteProgress = entry.progress,
-                    remoteStatus = entry.status,
-                    pendingProgress = pending,
-                    syncedAtEpochMs = now - imported,
-                ),
+            mergedPullEntry(
+                existing = existingById[media.id],
+                anilistId = media.id,
+                title = media.title,
+                coverImageUrl = media.coverImageUrl,
+                malId = media.malId,
+                remoteProgress = entry.progress,
+                remoteStatus = entry.status,
+                pendingProgress = pendingById[media.id]?.episode,
+                syncedAtEpochMs = now - index,
             )
-            imported++
         }
-        return Result(imported = imported, username = viewer.name)
+        if (merged.isNotEmpty()) historyDao.upsertAll(merged)
+        return Result(imported = merged.size, username = viewer.name)
     }
 
     /**

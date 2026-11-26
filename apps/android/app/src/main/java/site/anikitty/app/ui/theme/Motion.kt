@@ -39,7 +39,7 @@ fun ShimmerBox(modifier: Modifier = Modifier) {
     val palette = LocalKittyPalette.current
     val reduced = prefersReducedMotion()
     val base = if (palette.dark) Color(0xFF151515) else Color(0xFFE6E6E3)
-    val highlight = if (palette.dark) Color(0xFF1C1C1C) else Color(0xFFF7F7F5)
+    val highlight = if (palette.dark) Color(0xFF2E2E2E) else Color(0xFFF7F7F5)
     val labeled = modifier.semantics { contentDescription = "Loading" }
     if (reduced) {
         androidx.compose.foundation.layout.Box(labeled.background(base))
