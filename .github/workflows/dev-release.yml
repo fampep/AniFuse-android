@@ -36,8 +36,12 @@ jobs:
 
       - name: Next dev version
         id: ver
+        env:
+          # Passed as data. Inlining the message into the script breaks when
+          # a commit contains quotes, and the release never reaches the APK.
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          message="${{ github.event.head_commit.message }}"
+          message="$COMMIT_MESSAGE"
           if { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.stable }}" = "true" ]; } || [[ "$message" == *"[stable]"* ]]; then
             read -r name code < <(bash scripts/next-dev-version.sh --stable)
             echo "stable=true" >> "$GITHUB_OUTPUT"
