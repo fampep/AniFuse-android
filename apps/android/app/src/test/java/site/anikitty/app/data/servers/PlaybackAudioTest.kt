@@ -17,7 +17,7 @@ class PlaybackAudioTest {
         assertEquals("kept", named[0].serverName)
         assertEquals("aniwaves", named[1].serverName)
         assertEquals(
-            "Anikoto (kotoplay.to if Anikoto is down), Gotaku, and aniwaves ship in the app.",
+            "Anikoto (kotoplay.to if Anikoto is down), Gotaku, and aniwaves race live on this phone.",
             sourcesPageSubtitle(listOf("Anikoto", "Gotaku", "aniwaves")),
         )
         assertEquals("Installed sources appear here.", sourcesPageSubtitle(emptyList()))
