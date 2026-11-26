@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -46,6 +47,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -67,6 +69,10 @@ private val DISCOVER_GENRES = listOf(
     "Action", "Adventure", "Comedy", "Drama", "Fantasy",
     "Horror", "Mystery", "Romance", "Sci-Fi", "Slice of Life", "Sports", "Thriller",
 )
+
+private class FilterJob {
+    var job: Job? = null
+}
 
 private val DISCOVER_CATEGORIES = listOf(
     "Trending",
@@ -123,6 +129,7 @@ fun DiscoverFeed(
     var applied by remember { mutableStateOf(DiscoverFilter()) }
     var filtered by remember { mutableStateOf<List<AnimeSummary>>(emptyList()) }
     var filtering by remember { mutableStateOf(false) }
+    val filterJob = remember { FilterJob() }
 
     fun reload() {
         if (demo) {
@@ -180,8 +187,10 @@ fun DiscoverFeed(
     fun apply(next: DiscoverFilter) {
         applied = next
         sheet = false
+        filterJob.job?.cancel()
         if (!next.active()) {
             filtered = emptyList()
+            filtering = false
             return
         }
         if (demo) {
@@ -193,7 +202,7 @@ fun DiscoverFeed(
             return
         }
         filtering = true
-        scope.launch {
+        filterJob.job = scope.launch {
             val found = runCatching {
                 aniList.browse(
                     genre = next.genre,
@@ -201,6 +210,7 @@ fun DiscoverFeed(
                     seasonYear = next.year,
                     format = next.format,
                     status = next.status,
+                    minScore = next.minScore,
                     sort = next.sort,
                     perPage = 24,
                 )
@@ -209,11 +219,7 @@ fun DiscoverFeed(
                 error = friendlyFailure(e.message)
                 emptyList()
             }
-            filtered = if (next.minScore == null) {
-                found
-            } else {
-                found.filter { (it.averageScore ?: 0) >= next.minScore }
-            }
+            filtered = found.distinctBy { it.id }
             filtering = false
         }
     }
@@ -232,8 +238,10 @@ fun DiscoverFeed(
         "Hidden Gems" -> gems
         else -> trending
     }
-    val grid = if (applied.active()) filtered else categoryItems
+    val grid = (if (applied.active()) filtered else categoryItems).distinctBy { it.id }
 
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    val columns = posterColumns(maxWidth)
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(kittyPageBrush(LookState.look != "amoled")),
         contentPadding = PaddingValues(bottom = bottomInset),
@@ -320,18 +328,6 @@ fun DiscoverFeed(
             }
         }
         item {
-            Row(
-                modifier = Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                DISCOVER_GENRES.forEach { genre ->
-                    KittyChip(label = genre, selected = applied.genre == genre, onClick = { onOpenGenre(genre) })
-                }
-            }
-        }
-        item {
             Text(
                 if (applied.active()) "Filtered" else category,
                 color = palette.text,
@@ -352,10 +348,13 @@ fun DiscoverFeed(
                 )
             }
         } else {
-            item {
-                HomePosterGrid(items = grid, onOpen = onOpen)
+            grid.chunked(columns).forEach { row ->
+                item(key = "grid-${row.first().id}", contentType = "poster-row") {
+                    HomePosterLine(row = row, columns = columns, onOpen = onOpen)
+                }
             }
         }
+    }
     }
 
     if (sheet) {

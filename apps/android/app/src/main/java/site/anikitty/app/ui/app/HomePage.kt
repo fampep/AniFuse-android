@@ -487,18 +487,22 @@ private fun heroBadge(anime: AnimeSummary): String {
     return listOfNotNull("SPOTLIGHT", format, state).joinToString(" \u2022 ")
 }
 
+private val synopsisBreak = Regex("<br\\s*/?>", RegexOption.IGNORE_CASE)
+private val synopsisTags = Regex("<[^>]+>")
+private val synopsisSpace = Regex("\\s+")
+
 /** Short plain-text blurb for hero cards. AniList descriptions arrive as HTML. */
 internal fun plainSynopsis(raw: String?): String? {
     val text = raw
-        ?.replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), " ")
-        ?.replace(Regex("<[^>]+>"), " ")
+        ?.replace(synopsisBreak, " ")
+        ?.replace(synopsisTags, " ")
         ?.replace("&quot;", "\"")
         ?.replace("&#039;", "'")
         ?.replace("&apos;", "'")
         ?.replace("&amp;", "&")
         ?.replace("&lt;", "<")
         ?.replace("&gt;", ">")
-        ?.replace(Regex("\\s+"), " ")
+        ?.replace(synopsisSpace, " ")
         ?.trim()
     return text?.takeIf { it.isNotEmpty() }
 }
@@ -526,6 +530,38 @@ internal fun HomeBlock(
     }
 }
 
+internal fun posterColumns(maxWidth: androidx.compose.ui.unit.Dp): Int = when {
+    maxWidth >= 1000.dp -> 6
+    maxWidth >= 840.dp -> 5
+    maxWidth >= 600.dp -> 4
+    else -> 2
+}
+
+@Composable
+internal fun HomePosterLine(
+    row: List<AnimeSummary>,
+    columns: Int,
+    onOpen: (AnimeSummary) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        row.forEach { anime ->
+            HomePosterCell(
+                anime = anime,
+                onOpen = onOpen,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        repeat(columns - row.size) {
+            Spacer(modifier = Modifier.weight(1f))
+        }
+    }
+}
+
 @Composable
 internal fun HomePosterGrid(
     items: List<AnimeSummary>,
@@ -533,29 +569,13 @@ internal fun HomePosterGrid(
 ) {
     if (items.isEmpty()) return
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val columns = when {
-            maxWidth >= 1000.dp -> 6
-            maxWidth >= 840.dp -> 5
-            maxWidth >= 600.dp -> 4
-            else -> 2
-        }
+        val columns = posterColumns(maxWidth)
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp),
+            modifier = Modifier.padding(horizontal = 0.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             items.chunked(columns).forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    row.forEach { anime ->
-                        HomePosterCell(
-                            anime = anime,
-                            onOpen = onOpen,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    repeat(columns - row.size) {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
-                }
+                HomePosterLine(row = row, columns = columns, onOpen = onOpen)
             }
         }
     }

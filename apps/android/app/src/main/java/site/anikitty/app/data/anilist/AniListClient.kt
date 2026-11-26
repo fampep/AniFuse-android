@@ -456,6 +456,7 @@ class AniListClient(
         episodesTo: Int? = null,
         durationFrom: Int? = null,
         durationTo: Int? = null,
+        minScore: Int? = null,
         sort: String = "POPULARITY_DESC",
         page: Int = 1,
         perPage: Int = 24,
@@ -512,6 +513,10 @@ class AniListClient(
         episodesTo?.let { args += "episodes_lesser: $it" }
         durationFrom?.let { args += "duration_greater: $it" }
         durationTo?.let { args += "duration_lesser: $it" }
+        // AniList scores are 0–100. Push the cutoff into the query so a
+        // one-page response is not mistaken for "nothing matches".
+        val scoreFloor = minScore?.takeIf { it in 0..100 }
+        scoreFloor?.let { args += "averageScore_greater: $it" }
         val key = listOf(
             trimmed.lowercase(),
             format,
@@ -529,6 +534,7 @@ class AniListClient(
             episodesTo,
             durationFrom,
             durationTo,
+            scoreFloor,
             sort,
             page,
             perPage,

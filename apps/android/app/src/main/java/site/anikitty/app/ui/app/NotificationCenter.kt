@@ -41,7 +41,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.OkHttpClient
+import site.anikitty.app.data.download.EpisodeDownloadEntity
+import java.util.concurrent.TimeUnit
 import site.anikitty.app.AnikittyApp
 import site.anikitty.app.BuildConfig
 import site.anikitty.app.data.anilist.AniListClient
@@ -58,6 +64,14 @@ import site.anikitty.app.ui.theme.ShimmerBox
 import site.anikitty.app.ui.theme.kittyPageBrush
 import site.anikitty.app.ui.theme.LookState
 
+private val inboxHttp: OkHttpClient by lazy {
+    OkHttpClient.Builder()
+        .connectTimeout(4, TimeUnit.SECONDS)
+        .readTimeout(4, TimeUnit.SECONDS)
+        .callTimeout(4, TimeUnit.SECONDS)
+        .build()
+}
+
 private const val PREFS = "anifuse_inbox"
 private const val KEY_READ = "read"
 private const val KEY_CLEARED = "cleared"
@@ -71,62 +85,90 @@ internal data class InboxNote(
 )
 
 /**
- * Notes the app can actually observe: saved episodes, airings for titles
- * already in the library, and a newer build from the existing release client.
- * An empty list stays empty — nothing is fabricated.
+ * Saved episodes already on the phone. The id ignores progress ticks so
+ * mark-read and clear survive the next download write.
  */
-internal suspend fun loadInboxNotes(
-    context: Context,
-    aniList: AniListClient,
-    history: List<WatchHistoryEntity>,
-): List<InboxNote> = withContext(Dispatchers.IO) {
-    val notes = mutableListOf<InboxNote>()
-    val downloads = runCatching {
-        (context.applicationContext as AnikittyApp).database.episodeDownloadDao().recent()
-    }.getOrDefault(emptyList())
-    downloads.forEach { row ->
+internal fun downloadInboxNotes(rows: List<EpisodeDownloadEntity>): List<InboxNote> =
+    rows.map { row ->
         val state = when (row.phase) {
             DownloadPhase.READY.name -> "Saved on this phone"
             DownloadPhase.RUNNING.name -> "Saving · ${row.progressPercent}%"
             DownloadPhase.FAILED.name -> row.error ?: "Save failed"
             else -> "Queued"
         }
-        notes += InboxNote(
-            id = "dl-${row.anilistId}-${row.episode}-${row.updatedAtEpochMs}",
+        InboxNote(
+            id = "dl-${row.anilistId}-${row.episode}",
             title = row.title.ifBlank { "Episode ${row.episode}" },
             body = "Episode ${row.episode} · $state",
         )
     }
+
+internal suspend fun localInboxNotes(context: Context): List<InboxNote> = withContext(Dispatchers.IO) {
+    val rows = runCatching {
+        (context.applicationContext as AnikittyApp).database.episodeDownloadDao().recent()
+    }.getOrDefault(emptyList())
+    downloadInboxNotes(rows)
+}
+
+/**
+ * Network notes only. Airing and the release check run together and each
+ * gives up quickly, so a dead CDN or a rate limit cannot hold the list.
+ */
+internal suspend fun remoteInboxNotes(
+    context: Context,
+    aniList: AniListClient,
+    history: List<WatchHistoryEntity>,
+): List<InboxNote> = coroutineScope {
     val followed = history.map { it.anilistId }.toSet()
-    if (followed.isNotEmpty()) {
-        val now = System.currentTimeMillis() / 1000L
-        val slots = runCatching {
-            aniList.airingSchedule(now - 3L * 24 * 60 * 60, now + 2L * 24 * 60 * 60, newestFirst = true)
-        }.getOrDefault(emptyList())
-        slots.filter { it.anime.id in followed }.take(12).forEach { slot ->
-            notes += InboxNote(
-                id = "air-${slot.anime.id}-${slot.episode}",
-                title = slot.anime.title,
-                body = "Episode ${slot.episode} is on the airing schedule",
-                anime = slot.anime,
-                episode = slot.episode,
-            )
+    val airing = async {
+        if (followed.isEmpty()) {
+            emptyList()
+        } else {
+            withTimeoutOrNull(6_000) {
+                val now = System.currentTimeMillis() / 1000L
+                runCatching {
+                    aniList.airingSchedule(
+                        now - 3L * 24 * 60 * 60,
+                        now + 2L * 24 * 60 * 60,
+                        newestFirst = true,
+                    )
+                }.getOrDefault(emptyList())
+                    .filter { it.anime.id in followed }
+                    .take(12)
+                    .map { slot ->
+                        InboxNote(
+                            id = "air-${slot.anime.id}-${slot.episode}",
+                            title = slot.anime.title,
+                            body = "Episode ${slot.episode} is on the airing schedule",
+                            anime = slot.anime,
+                            episode = slot.episode,
+                        )
+                    }
+            }.orEmpty()
         }
     }
-    runCatching {
-        val releases = AppReleaseClient().load()
-        val installed = BuildConfig.VERSION_NAME
-        val channel = selectedBuildChannel(BuildChannelStore(context).get(), installed)
-        val remote = channelBuild(channel, releases)
-        if (remote != null && isNewerAppBuild(remote.versionName, installed)) {
-            notes += InboxNote(
-                id = "build-${remote.versionName}",
-                title = "AniFuse ${remote.versionName}",
-                body = "A newer build is published. Open About to install it.",
-            )
-        }
+    val build = async {
+        withTimeoutOrNull(4_000) {
+            runCatching {
+                val releases = AppReleaseClient(inboxHttp).load()
+                val installed = BuildConfig.VERSION_NAME
+                val channel = selectedBuildChannel(BuildChannelStore(context).get(), installed)
+                val remote = channelBuild(channel, releases)
+                if (remote != null && isNewerAppBuild(remote.versionName, installed)) {
+                    listOf(
+                        InboxNote(
+                            id = "build-${remote.versionName}",
+                            title = "AniFuse ${remote.versionName}",
+                            body = "A newer build is published. Open About to install it.",
+                        ),
+                    )
+                } else {
+                    emptyList()
+                }
+            }.getOrDefault(emptyList())
+        }.orEmpty()
     }
-    notes
+    airing.await() + build.await()
 }
 
 @Composable
@@ -143,8 +185,14 @@ internal fun NotificationCenter(
     var read by remember { mutableStateOf(prefs.getStringSet(KEY_READ, emptySet()).orEmpty()) }
     var cleared by remember { mutableStateOf(prefs.getStringSet(KEY_CLEARED, emptySet()).orEmpty()) }
 
-    LaunchedEffect(history.size) {
-        notes = loadInboxNotes(context, aniList, history)
+    val historyKey = remember(history) {
+        history.map { it.anilistId }.distinct().sorted().joinToString(",")
+    }
+    LaunchedEffect(historyKey) {
+        val local = localInboxNotes(context)
+        notes = local
+        val remote = runCatching { remoteInboxNotes(context, aniList, history) }.getOrDefault(emptyList())
+        notes = local + remote
     }
 
     fun persist(nextRead: Set<String>, nextCleared: Set<String>) {
