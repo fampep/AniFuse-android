@@ -242,9 +242,9 @@ internal object FlixCrypto {
     fun shortId(slug: String): String =
         slug.substringBefore('?').substringAfterLast('-').trim()
 
-    /** Saved Ani.pm selections become reanime. Anything else is unchanged. */
+    /** Legacy ids that pointed at a different site. ani.pm stays ani.pm. */
     fun migrateServerId(saved: String?): String? = when (saved) {
-        "anipm" -> "reanime"
+        "settlar", "yozora" -> "anipm"
         else -> saved
     }
 

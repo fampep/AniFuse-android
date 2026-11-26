@@ -98,10 +98,10 @@ import site.anikitty.app.data.tmdb.PersonProfile
 import site.anikitty.app.data.tmdb.TitleArt
 import site.anikitty.app.data.tmdb.TmdbCatalog
 import site.anikitty.app.data.tmdb.tmdbEpisodeNumber
-import site.anikitty.app.data.tmdb.preferEpisodeTitle
-import site.anikitty.app.data.tmdb.preferStill
 import site.anikitty.app.data.tmdb.transparentLogo
 import site.anikitty.app.data.tmdb.VideoClip
+import site.anikitty.app.data.servers.EpisodeArtCatalog
+import site.anikitty.app.data.servers.SiteEpisodeArt
 import site.anikitty.app.data.servers.StreamServer
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
@@ -110,6 +110,7 @@ import site.anikitty.app.ui.components.EpisodeCardRow
 import site.anikitty.app.ui.components.EpisodeCardSkeletonRow
 import site.anikitty.app.ui.components.EpisodeSlide
 import site.anikitty.app.ui.components.HeroBanner
+import site.anikitty.app.ui.components.enrichEpisodeSlides
 import site.anikitty.app.ui.components.rememberDockScroll
 import site.anikitty.app.ui.components.KittyBottomSheet
 import site.anikitty.app.ui.components.KittyChip
@@ -177,7 +178,9 @@ internal fun TitleStage(
     val reduced = prefersReducedMotion()
     val context = LocalContext.current
     val tmdb = remember { TmdbCatalog.shared(context) }
+    val siteArtCatalog = remember { EpisodeArtCatalog.shared(context) }
     var art by remember(detail.id) { mutableStateOf<TitleArt?>(null) }
+    var siteArt by remember(detail.id) { mutableStateOf<Map<Int, SiteEpisodeArt>>(emptyMap()) }
     var backdropIndex by remember(detail.id) { mutableStateOf(0) }
     var episodeSheet by remember(detail.id) { mutableStateOf<EpisodeSlide?>(null) }
     var listSheet by remember(detail.id) { mutableStateOf(false) }
@@ -200,6 +203,9 @@ internal fun TitleStage(
     LaunchedEffect(detail.id, detail.title, detail.seasonYear, detail.format, detail.detailLoaded) {
         art = withContext(Dispatchers.IO) { tmdb.load(detail) }
     }
+    LaunchedEffect(detail.id) {
+        siteArt = withContext(Dispatchers.IO) { siteArtCatalog.load(detail.id) }
+    }
     LaunchedEffect(episodeSheet?.number, art?.tmdbId, art?.seasonNumber, art?.episodeOffset) {
         val slide = episodeSheet ?: return@LaunchedEffect
         val current = art ?: return@LaunchedEffect
@@ -216,23 +222,14 @@ internal fun TitleStage(
         personProfile = loaded
         personFailed = loaded == null
     }
-    // Episode list stays on AniList media. TMDB only enriches stills/titles for this title.
-    val slides = remember(episodeSlides, art) {
-        val episodes = art?.episodes.orEmpty()
-        if (episodes.isEmpty()) {
-            episodeSlides
-        } else {
-            episodeSlides.map { slide ->
-                val episodeArt = episodes[slide.number]
-                slide.copy(
-                    title = preferEpisodeTitle(slide.title, slide.number, episodeArt?.title),
-                    imageUrl = preferStill(slide.imageUrl, episodeArt?.stillUrl),
-                    airLabel = episodeArt?.airLabel ?: slide.airLabel,
-                    overview = episodeArt?.overview,
-                    runtimeMinutes = episodeArt?.runtimeMinutes ?: slide.runtimeMinutes,
-                )
-            }
-        }
+    // Site stills (AniGato / AniZip) first, then AniList streaming, then TMDB.
+    val slides = remember(episodeSlides, art, siteArt, detail.coverImageUrl) {
+        enrichEpisodeSlides(
+            slides = episodeSlides,
+            art = art,
+            siteArt = siteArt,
+            seriesCoverUrl = detail.coverImageUrl,
+        )
     }
     val cast = remember(detail.characters, art) {
         detail.characters.map { person ->

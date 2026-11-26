@@ -139,12 +139,13 @@ android {
             java.srcDir("../../../extensions/providers/animex")
             java.srcDir("../../../extensions/providers/xanime")
             java.srcDir("../../../extensions/providers/aninz")
+            java.srcDir("../../../extensions/providers/anipm")
             java.srcDir("../../../extensions/providers/gogoanime")
             java.srcDir("../../../extensions/providers/anizone")
             java.srcDir("../../../extensions/providers/aniwaves")
             java.srcDir("../../../extensions/providers/animegg")
             java.srcDir("../../../extensions/providers/anigato")
-java.srcDir("../../../extensions/providers/anihosts")
+            java.srcDir("../../../extensions/providers/anihosts")
         }
     }
 }

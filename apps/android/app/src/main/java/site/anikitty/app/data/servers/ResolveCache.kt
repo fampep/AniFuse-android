@@ -18,6 +18,8 @@ class ResolveCache(context: Context) {
         val ids: String,
         val hasSub: Boolean,
         val hasDub: Boolean,
+        val imageUrl: String? = null,
+        val title: String? = null,
     )
 
     fun getShow(provider: String, anilistId: Int): ShowMap? {

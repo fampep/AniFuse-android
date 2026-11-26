@@ -361,6 +361,7 @@ internal fun EpisodeRowCell(
     progress: Float,
     onPick: () -> Unit,
     onOptions: (() -> Unit)?,
+    fallbackArt: String? = null,
 ) {
     val shape = RoundedCornerShape(16.dp)
     val colors = if (current) {
@@ -390,7 +391,7 @@ internal fun EpisodeRowCell(
                 .clip(RoundedCornerShape(10.dp))
                 .background(Color.White.copy(alpha = 0.08f)),
         ) {
-            val thumb = slide.imageUrl
+            val thumb = slide.imageUrl?.takeIf { it.isNotBlank() } ?: fallbackArt
             if (!thumb.isNullOrBlank()) {
                 KittyImage(
                     url = thumb,

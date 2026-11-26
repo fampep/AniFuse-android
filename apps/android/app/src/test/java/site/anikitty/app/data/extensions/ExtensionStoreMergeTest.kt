@@ -11,10 +11,10 @@ import org.junit.Test
 
 class ExtensionStoreMergeTest {
     @Test
-    fun retiredNamesAreAniPmSettlarAndYozora() {
-        assertTrue(isRetiredExtension("anipm"))
+    fun retiredNamesAreSettlarYozoraAndRemovedStores() {
+        assertFalse(isRetiredExtension("anipm"))
+        assertFalse(isRetiredExtension("anipm", "ani.pm"))
         assertTrue(isRetiredExtension("settlar", "Settlar"))
-        assertTrue(isRetiredExtension("custom", "Ani.pm"))
         assertTrue(isRetiredExtension("custom", "Yozora"))
         assertTrue(isRetiredExtension("animenexus", "Anime Nexus"))
         assertTrue(isRetiredExtension("miruro", "Miruro"))
@@ -23,12 +23,13 @@ class ExtensionStoreMergeTest {
     }
 
     @Test
-    fun newerMirrorDropsAniPmFromAnOlderCopy() {
+    fun newerMirrorKeepsLiveAniPmAndNewerReanime() {
         val merged = mergeStoreIndexes(
             listOf(
                 index(
                     url = MIRROR,
                     updatedAt = "2026-11-15",
+                    anipm(),
                     reanime(),
                 ),
                 index(
@@ -39,22 +40,25 @@ class ExtensionStoreMergeTest {
                 ),
             ),
         )
-        assertEquals(listOf("reanime"), merged.extensions.map { it.id })
-        assertEquals("1.0.0", merged.extensions.single().version)
-        assertEquals("1.1", merged.extensions.single().protocol)
+        assertEquals(listOf("anipm", "reanime"), merged.extensions.map { it.id })
+        assertEquals("1.0.0", merged.extensions.first { it.id == "reanime" }.version)
+        assertEquals("1.1", merged.extensions.first { it.id == "reanime" }.protocol)
         assertEquals("2026-11-15", merged.updatedAt)
     }
 
     @Test
-    fun sameDayMirrorStillRefusesAniPm() {
+    fun sameDayMirrorKeepsAniPmAlongsideCommunityRows() {
         val merged = mergeStoreIndexes(
             listOf(
                 index(MIRROR, "2026-11-15", reanime()),
                 index(MONOREPO, "2026-11-15", anipm(), hello()),
             ),
         )
-        assertEquals(listOf("reanime", "site.anikitty.example.hello"), merged.extensions.map { it.id })
-        assertNull(merged.extensions.find { it.name == "Ani.pm" })
+        assertEquals(
+            listOf("reanime", "anipm", "site.anikitty.example.hello"),
+            merged.extensions.map { it.id },
+        )
+        assertEquals("Ani.pm", merged.extensions.first { it.id == "anipm" }.name)
     }
 
     @Test
@@ -103,7 +107,7 @@ class ExtensionStoreMergeTest {
     private fun anipm() = StoreListing(
         id = "anipm",
         name = "Ani.pm",
-        description = "Settlar / Yozora",
+        description = "ani.pm via anipm.pk",
         github = "https://github.com/fampep/anikitty-extensions/tree/main/providers/anipm",
     )
 

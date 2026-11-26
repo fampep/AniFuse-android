@@ -344,6 +344,15 @@ fun PlayerScreen(
     val context = LocalContext.current
     val activity = context as? Activity
     val view = LocalView.current
+    val displaySlides = site.anikitty.app.ui.components.rememberEnrichedEpisodeSlides(
+        anilistId = anilistId,
+        title = title,
+        isMovie = isMovie,
+        totalEpisodes = totalEpisodes,
+        slides = episodeSlides,
+        seriesCoverUrl = fallbackArt,
+        titleHint = titleHint,
+    )
     var error by remember { mutableStateOf<String?>(null) }
     var ready by remember { mutableStateOf(false) }
     var playing by remember { mutableStateOf(true) }
@@ -2626,7 +2635,7 @@ fun PlayerScreen(
                     totalEpisodes = totalEpisodes.coerceAtLeast(1),
                     watchedThrough = watchedThrough,
                     positionFraction = fraction,
-                    slides = episodeSlides,
+                    slides = displaySlides,
                     fallbackArt = fallbackArt,
                     minutesLeft = shelfMinutes.takeIf { it >= 0 },
                     anilistId = anilistId,
@@ -4006,7 +4015,7 @@ fun PlayerScreen(
         val currentEpisodeTitle = if (isMovie) {
             null
         } else {
-            episodeSlides.firstOrNull { it.number == episode }?.title
+            displaySlides.firstOrNull { it.number == episode }?.title
                 ?.takeIf { it.isNotBlank() && !it.equals("Episode $episode", ignoreCase = true) }
         }
         val barTitle = currentEpisodeTitle ?: title
@@ -4147,7 +4156,7 @@ fun PlayerScreen(
                     autoNext = !autoNext
                     playerPrefs.edit().putBoolean("auto_next", autoNext).apply()
                 },
-                episodeSlides = episodeSlides,
+                episodeSlides = displaySlides,
                 anilistId = anilistId,
                 fallbackArt = fallbackArt,
                 minutesLeft = shelfMinutes.takeIf { it >= 0 },

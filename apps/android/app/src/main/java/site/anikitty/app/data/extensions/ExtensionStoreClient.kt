@@ -89,7 +89,7 @@ internal fun parseStoreIndex(raw: String, sourceUrl: String): StoreIndex {
  * anikitty-extensions/main is the catalog. A newer or same-day monorepo copy can
  * add a listing the mirror does not have yet. An older copy cannot put a removed
  * listing back. The same id keeps the newer row; a tie keeps the mirror.
- * Ani.pm / Settlar / Yozora are dropped in either index.
+ * Settlar / Yozora aliases are dropped. Live ani.pm stays.
  */
 internal fun mergeStoreIndexes(loaded: List<StoreIndex>): StoreIndex {
     val clean = loaded.map { index ->

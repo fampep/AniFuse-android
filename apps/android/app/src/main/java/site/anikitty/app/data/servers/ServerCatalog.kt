@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import site.anikitty.app.data.anifuse.AnifuseApiStore
 import site.anikitty.app.data.anifuse.AnifuseFeedCache
 import site.anikitty.app.data.extensions.ExtensionInstaller
@@ -39,6 +40,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
     private val prefs = context.getSharedPreferences("anikitty_servers", Context.MODE_PRIVATE)
     private val providerHealth = AnifuseFeedCache(java.io.File(context.filesDir, "anifuse-cache"))
     private val resolveCache = ResolveCache(context)
+    private val episodeArtCatalog = EpisodeArtCatalog.shared(context)
     private val megaPlayCrypto = MegaPlayCrypto(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -56,6 +58,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         AnimexServer(cache = resolveCache),
         XanimeServer(cache = resolveCache),
         AniNzServer(cache = resolveCache),
+        AniPmServer(cache = resolveCache),
         GogoAnimeServer(cache = resolveCache),
         AnizoneServer(cache = resolveCache),
         AniwavesServer(cache = resolveCache),
@@ -149,6 +152,14 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
             ?: return null
         return anikoto.audioAvailability(anilistId, titleHint)
     }
+
+    /**
+     * Per-episode stills scraped from live sites (AniGato) and AniZip.
+     * Used by the episode selector / details so thumbs are real frames,
+     * not the series poster.
+     */
+    suspend fun episodeArt(anilistId: Int): Map<Int, SiteEpisodeArt> =
+        withContext(Dispatchers.IO) { episodeArtCatalog.load(anilistId) }
 
     fun selectedResolver(): StreamResolver {
         val list = _resolvers.value

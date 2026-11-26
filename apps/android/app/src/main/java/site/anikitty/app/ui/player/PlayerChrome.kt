@@ -300,6 +300,7 @@ internal fun PlayerEpisodeShelf(
                     slide = slide,
                     current = slide.number == episode,
                     progress = if (slide.number == episode) positionFraction else 0f,
+                    fallbackArt = fallbackArt,
                     onPick = { onPickEpisode(slide.number) },
                     onOptions = onToggleWatched?.let { toggle -> { toggle(slide.number) } },
                 )

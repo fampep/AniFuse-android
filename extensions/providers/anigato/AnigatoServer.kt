@@ -85,17 +85,25 @@ class AnigatoServer(
             return cached.map { it.number }
         }
         val body = open(anigatoEpisodesUrl(anilistId), "$ORIGIN/")
-        val numbers = anigatoEpisodeNumbers(body) ?: error(BLOCKED)
+        val art = anigatoEpisodeArt(body)
+        val numbers = if (art.isNotEmpty()) {
+            art.keys.sorted()
+        } else {
+            anigatoEpisodeNumbers(body) ?: error(BLOCKED)
+        }
         if (numbers.isNotEmpty()) {
             cache?.putEpisodes(
                 ID,
                 siteId,
                 numbers.map { number ->
+                    val still = art[number]
                     ResolveCache.CachedEpisode(
                         number = number,
                         ids = number.toString(),
                         hasSub = true,
                         hasDub = true,
+                        imageUrl = still?.imageUrl,
+                        title = still?.title,
                     )
                 },
             )

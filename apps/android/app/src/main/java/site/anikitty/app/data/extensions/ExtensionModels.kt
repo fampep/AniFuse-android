@@ -58,18 +58,18 @@ data class StoreListing(
 )
 
 /**
- * Ani.pm, Settlar, and Yozora are one retired source.
+ * Settlar and Yozora are retired aliases.
  * Anime Nexus and Miruro are removed from the app.
- * The store never lists them.
+ * ani.pm (anipm.pk) is a live bundled provider again — do not retire it.
  */
 internal fun isRetiredExtension(id: String, name: String = ""): Boolean {
     fun norm(raw: String) = raw.trim().lowercase().replace(".", "").replace(" ", "")
     val key = norm(id)
-    if (key == "anipm" || key == "settlar" || key == "yozora" || key == "animenexus" || key == "miruro") {
+    if (key == "settlar" || key == "yozora" || key == "animenexus" || key == "miruro") {
         return true
     }
     val label = norm(name)
-    return label == "anipm" || label == "settlar" || label == "yozora" ||
+    return label == "settlar" || label == "yozora" ||
         label == "animenexus" || label == "miruro"
 }
 
