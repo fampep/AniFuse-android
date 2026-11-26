@@ -1,6 +1,6 @@
 # Contributing to AniFuse
 
-AniKitty is an Android app. Pull requests land on `main` in [`fampep/anikitty`](https://github.com/fampep/anikitty).
+AniFuse is an Android app. Pull requests land on `main` in [`fampep/AniFuse-android`](https://github.com/fampep/AniFuse-android).
 
 ## What to work on
 

@@ -75,9 +75,12 @@ class BuildChannelStore(context: Context) {
     }
 }
 
-/** The channel this installed name belongs to. Dev builds carry `-dev.` */
-fun installedBuildChannel(versionName: String): BuildChannel =
-    if (versionName.contains("-dev.")) BuildChannel.Dev else BuildChannel.Stable
+/** Dev builds use a uBlock Origin `b` counter (`1.2.13b0`) or the older `-dev.N` form. */
+fun installedBuildChannel(versionName: String): BuildChannel {
+    val trimmed = versionName.trim().removePrefix("v").removePrefix("V")
+    val dev = trimmed.contains("-dev.", ignoreCase = true) || DEV_BUILD_SUFFIX.containsMatchIn(trimmed)
+    return if (dev) BuildChannel.Dev else BuildChannel.Stable
+}
 
 /** Saved choice, or the channel of the build already on the phone. */
 fun selectedBuildChannel(stored: BuildChannel?, installedVersion: String): BuildChannel =
@@ -91,7 +94,7 @@ class AppReleaseClient(
 ) {
     suspend fun load(): List<PublishedBuild> = withContext(Dispatchers.IO) {
         val request = Request.Builder()
-            .url("https://api.github.com/repos/fampep/anikitty/releases?per_page=30")
+            .url("https://api.github.com/repos/fampep/AniFuse-android/releases?per_page=30")
             .header("User-Agent", "AniFuse")
             .header("Accept", "application/vnd.github+json")
             .build()
@@ -176,17 +179,29 @@ fun devBuildsSinceStable(releases: List<PublishedBuild>): List<PublishedBuild> {
 
 private data class AppVersion(val numbers: List<Int>, val dev: Int?)
 
-/** `1.2.10-dev.19` and `1.2.9`. The floating `dev` tag is not a version. */
+/**
+ * `1.2.13b4` (uBlock Origin dev/alpha), legacy `1.2.12-dev.28`, and stable `1.2.12`.
+ * The floating `dev` tag is not a version. A leading `v` is ignored.
+ */
 private fun parseAppVersion(raw: String): AppVersion? {
-    val trimmed = raw.trim().removePrefix("v").removePrefix("V")
+    var trimmed = raw.trim().removePrefix("v").removePrefix("V")
     if (trimmed.isEmpty() || trimmed.equals("dev", ignoreCase = true)) return null
-    val core = trimmed.substringBefore('-')
-    if (core.isEmpty() || core.none { it.isDigit() }) return null
-    val numbers = core.split('.').map { piece ->
-        piece.takeWhile { it.isDigit() }.toIntOrNull() ?: return null
+    val dev = when {
+        LEGACY_DEV.containsMatchIn(trimmed) -> {
+            val match = LEGACY_DEV.find(trimmed) ?: return null
+            trimmed = trimmed.removeRange(match.range)
+            match.groupValues[1].toIntOrNull()
+        }
+        DEV_BUILD_SUFFIX.containsMatchIn(trimmed) -> {
+            val match = DEV_BUILD_SUFFIX.find(trimmed) ?: return null
+            trimmed = trimmed.removeRange(match.range)
+            match.groupValues[1].toIntOrNull()
+        }
+        else -> null
     }
+    if (trimmed.isEmpty() || !trimmed.all { it.isDigit() || it == '.' }) return null
+    val numbers = trimmed.split('.').map { it.toIntOrNull() ?: return null }
     if (numbers.isEmpty()) return null
-    val dev = DEV_NUMBER.find(trimmed)?.groupValues?.get(1)?.toIntOrNull()
     return AppVersion(numbers, dev)
 }
 
@@ -237,7 +252,8 @@ fun sideloadUpdate(
     return candidate
 }
 
-private val DEV_NUMBER = Regex("""-dev\.(\d+)""")
+private val LEGACY_DEV = Regex("""-dev\.(\d+)$""", RegexOption.IGNORE_CASE)
+private val DEV_BUILD_SUFFIX = Regex("""b(\d+)$""", RegexOption.IGNORE_CASE)
 
 /**
  * One release list for the whole process. Home throws its banner away on scroll

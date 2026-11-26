@@ -1,4 +1,5 @@
-# Android versionName / versionCode. Pushes to main cut the next dev prerelease.
-# Stable releases stay manual. The dev workflow commits this file with [skip ci].
+# Android versionName / versionCode.
+# Dev and alpha builds use the uBlock Origin form: 1.2.13b0
+# Stable builds are 1.2.13. The release workflow commits this file with [skip ci].
 name=1.2.12-dev.30
 code=259

@@ -11,7 +11,7 @@ Cloud agent tokens still cannot always `createRepository` / flip visibility — 
 ## 1. Make the app repo public (optional community surface)
 
 ```bash
-gh repo edit fampep/anikitty --visibility public --accept-visibility-change-consequences
+gh repo edit fampep/AniFuse-android --visibility public --accept-visibility-change-consequences
 ```
 
 ## 2. Refresh `fampep/anikitty-extensions` after monorepo `extensions/` changes
@@ -20,7 +20,7 @@ Cloud / Cursor tokens **cannot** push `fampep/anikitty-extensions` (no write).
 Run this as **fampep** (laptop or self-hosted worker) after merging store/provider updates:
 
 ```bash
-# from anikitty repo root (on main, clean tree)
+# from the AniFuse-android repo root (on main, clean tree)
 ./extensions/scripts/publish-to-github.sh
 # equivalent:
 #   git subtree split -P extensions -b extensions-publish
@@ -38,7 +38,7 @@ truth.
 ## 3. Topics
 
 ```bash
-gh repo edit fampep/anikitty --add-topic android,anime,compose,kotlin,educational
+gh repo edit fampep/AniFuse-android --add-topic android,anime,compose,kotlin,anifuse
 gh repo edit fampep/anikitty-extensions --add-topic anikitty,extensions,educational
 ```
 

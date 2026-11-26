@@ -26,6 +26,21 @@ class SideloadUpdateTest {
     }
 
     @Test
+    fun ublockStyleDevBuildsCompareWithLegacyNames() {
+        assertTrue(isNewerAppBuild("1.2.12b29", "1.2.12-dev.28"))
+        assertTrue(isNewerAppBuild("1.2.12b30", "1.2.12b29"))
+        assertFalse(isNewerAppBuild("1.2.12b29", "1.2.12b29"))
+        assertTrue(isNewerAppBuild("1.2.12", "1.2.12b29"))
+        assertFalse(isNewerAppBuild("1.2.12b0", "1.2.12"))
+        assertTrue(isNewerAppBuild("1.2.13b0", "1.2.12"))
+        assertTrue(isNewerAppBuild("v1.2.13b1", "1.2.13b0"))
+        assertFalse(isNewerAppBuild("dev", "1.2.13b0"))
+        assertEquals(BuildChannel.Dev, installedBuildChannel("1.2.13b0"))
+        assertEquals(BuildChannel.Dev, installedBuildChannel("1.2.12-dev.28"))
+        assertEquals(BuildChannel.Stable, installedBuildChannel("1.2.13"))
+    }
+
+    @Test
     fun homeBannerFollowsTheSelectedChannel() {
         val releases = listOf(
             build("1.2.9", prerelease = false, at = "2026-11-01T00:00:00Z"),
@@ -78,6 +93,7 @@ class SideloadUpdateTest {
         assertEquals(BuildChannel.Stable, installedBuildChannel("1.2.9"))
         assertEquals(BuildChannel.Stable, selectedBuildChannel(BuildChannel.Stable, "1.2.10-dev.19"))
         assertEquals(BuildChannel.Dev, selectedBuildChannel(null, "1.2.10-dev.19"))
+        assertEquals(BuildChannel.Dev, selectedBuildChannel(null, "1.2.13b4"))
     }
 
     private fun build(name: String, prerelease: Boolean, at: String) = PublishedBuild(

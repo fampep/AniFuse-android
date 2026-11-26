@@ -270,9 +270,9 @@ fun BuildChannelPage(onBack: () -> Unit) {
         item {
             Text(
                 if (channel == BuildChannel.Dev) {
-                    "The dev build is published when new code is merged. These pull requests are the changes since the stable build."
+                    "Dev builds are named like 1.2.13b0. A new one is published when code is merged. These pull requests are the changes since the stable build."
                 } else {
-                    "The stable build is the version for everyday watching. These pull requests are what shipped in it."
+                    "Stable builds are named like 1.2.13. This is the version for everyday watching. These pull requests are what shipped in it."
                 },
                 color = KittyMuted,
                 fontSize = 14.sp,

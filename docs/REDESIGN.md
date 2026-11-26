@@ -1,9 +1,11 @@
 # AniFuse Redesign — Work Log
 
+The app now lives in [`fampep/AniFuse-android`](https://github.com/fampep/AniFuse-android).
+Package id remains `site.anikitty.app`.
+
 Ground-up redesign and AniFuse resolver API integration for the Android app
-(`apps/android`, package `site.anikitty.app`, Kotlin + Jetpack Compose + Media3).
-Work was done directly on the `main` branch of `anikitty/AniFuse` in logical
-commit groups.
+(`apps/android`, Kotlin + Jetpack Compose + Media3).
+The notes below record the original work on `anikitty/AniFuse`.
 
 ## Commit groups
 

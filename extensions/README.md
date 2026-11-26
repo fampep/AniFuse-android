@@ -10,7 +10,7 @@
 
 | Repo | Role |
 |---|---|
-| [`fampep/anikitty`](https://github.com/fampep/anikitty) | Android app. Compiles [providers](./providers) and plays streams on the phone. |
+| [`fampep/AniFuse-android`](https://github.com/fampep/AniFuse-android) | Android app. Compiles [providers](./providers) and plays streams on the phone. |
 | [`fampep/anikitty-extensions`](https://github.com/fampep/anikitty-extensions) | This tree: spec, store, examples, and provider source. Owned by fampep. |
 
 The in-app store loads **one** index:
@@ -18,7 +18,7 @@ The in-app store loads **one** index:
 (the current `main` branch). A refresh skips the raw-file cache. This monorepo
 keeps **no store listings** — [`store/`](./store) only links to the
 extensions repository.
-Maintainer notes: [public GitHub setup](https://github.com/fampep/anikitty/blob/main/docs/public-github-setup.md).
+Maintainer notes: [public GitHub setup](https://github.com/fampep/AniFuse-android/blob/main/docs/public-github-setup.md).
 
 ## License & ownership
 

@@ -4,18 +4,19 @@
   <h1>AniFuse</h1>
 
   <p><strong>Your AniList, on the phone.</strong><br>
-  Catalog and sign-in from AniList. Playback on the device. Progress stays with you.</p>
+  Browse and sign in with AniList. Watch on the device. Progress stays with you.</p>
 
   <p>
-    <a href="https://github.com/fampep/anikitty/releases/latest"><img src="https://img.shields.io/github/v/release/fampep/anikitty?display_name=tag&style=for-the-badge&label=stable&labelColor=0a0a0a&color=f5f5f5" alt="Latest stable release"></a>
-    <a href="https://github.com/fampep/anikitty/releases"><img src="https://img.shields.io/github/v/release/fampep/anikitty?include_prereleases&filter=v1.*&display_name=tag&style=for-the-badge&label=dev&labelColor=0a0a0a&color=f5f5f5" alt="Latest dev prerelease"></a>
-    <a href="https://github.com/fampep/anikitty/releases"><img src="https://img.shields.io/github/downloads/fampep/anikitty/total?style=for-the-badge&label=downloads&labelColor=0a0a0a&color=f5f5f5" alt="Downloads"></a>
-    <a href="https://github.com/fampep/anikitty/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache_2.0-f5f5f5?labelColor=0a0a0a&style=for-the-badge" alt="Apache License 2.0"></a>
+    <a href="https://github.com/fampep/AniFuse-android/releases/latest"><img src="https://img.shields.io/github/v/release/fampep/AniFuse-android?display_name=tag&style=for-the-badge&label=stable&labelColor=0a0a0a&color=f5f5f5" alt="Latest stable release"></a>
+    <a href="https://github.com/fampep/AniFuse-android/releases"><img src="https://img.shields.io/github/v/release/fampep/AniFuse-android?include_prereleases&filter=1%5C.&display_name=tag&style=for-the-badge&label=dev&labelColor=0a0a0a&color=f5f5f5" alt="Latest dev prerelease"></a>
+    <a href="https://github.com/fampep/AniFuse-android/releases"><img src="https://img.shields.io/github/downloads/fampep/AniFuse-android/total?style=for-the-badge&label=downloads&labelColor=0a0a0a&color=f5f5f5" alt="Downloads"></a>
+    <a href="https://github.com/fampep/AniFuse-android/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache_2.0-f5f5f5?labelColor=0a0a0a&style=for-the-badge" alt="Apache License 2.0"></a>
     <img src="https://img.shields.io/badge/Android-8%2B-f5f5f5?labelColor=0a0a0a&style=for-the-badge" alt="Android 8 or newer">
   </p>
 
   <p>
-    <a href="https://github.com/fampep/anikitty/releases/latest"><img src="https://img.shields.io/badge/download-stable-f5f5f5?style=for-the-badge&labelColor=0a0a0a" alt="Download the latest stable release"></a>
+    <a href="https://github.com/fampep/AniFuse-android/releases/latest"><img src="https://img.shields.io/badge/download-stable-f5f5f5?style=for-the-badge&labelColor=0a0a0a" alt="Download the latest stable release"></a>
+    <a href="https://github.com/fampep/AniFuse-android/releases/download/dev/AniFuse_dev.apk"><img src="https://img.shields.io/badge/download-dev-f5f5f5?style=for-the-badge&labelColor=0a0a0a" alt="Download the rolling dev build"></a>
   </p>
 
   <p>
@@ -25,16 +26,9 @@
   <p>
     <a href="https://t.me/Anikittymoe">Telegram</a>
     ·
-    <a href="https://github.com/fampep/anikitty/issues">Issues</a>
+    <a href="https://github.com/fampep/AniFuse-android/issues">Issues</a>
   </p>
 </div>
-
-> [!NOTE]
-> **Rebrand.** AniFuse is the new name for **AniKitty**: the app, the
-> self-hosted [resolver API](https://github.com/fampep/anifuse) and the
-> extension protocol all carry the AniFuse brand from the 1.2.12 line
-> onward. Package ids (`site.anikitty.app`), the `anikitty://` deep link,
-> and older release notes keep the old identifier for compatibility.
 
 > [!WARNING]
 > **Unofficial.** AniFuse is not affiliated with AniList, any studio, or any streaming site.
@@ -43,32 +37,50 @@
 >
 > **You are responsible** for the laws where you are, and for the terms of every site an extension opens.
 >
-> **No warranty. Use at your own risk.** Install APKs only from the [releases of this repository](https://github.com/fampep/anikitty/releases). A file from anywhere else is not this project. Dev builds can break from one day to the next.
+> **No warranty. Use at your own risk.** Install APKs only from the [releases of this repository](https://github.com/fampep/AniFuse-android/releases). A file from anywhere else is not this project.
+
+AniFuse is the Android client. Package id `site.anikitty.app` and the `anikitty://` deep link stay as they are so an existing install updates in place. The self-hosted resolver is [fampep/anifuse](https://github.com/fampep/anifuse).
 
 ## Install
 
-Package `site.anikitty.app`. Android 8 or newer.
+Android 8 or newer. Open the release, download the APK, and allow install from this source if Android asks.
 
-The **stable** button opens the latest full release. Install the APK attached to that release. The stable shield stays on that tag.
+1. **Stable** — [latest stable release](https://github.com/fampep/AniFuse-android/releases/latest). Everyday build. The file is `AniFuse_1.2.13.apk` (the version in the name matches the release).
+2. **Dev** — [rolling APK](https://github.com/fampep/AniFuse-android/releases/download/dev/AniFuse_dev.apk), or the newest prerelease on the [releases page](https://github.com/fampep/AniFuse-android/releases). This is the build from the latest push to `main`. It can break.
 
-**Dev** is the rolling signed build. Every push to `main` publishes the next prerelease, and the same file is also [anikitty-dev.apk](https://github.com/fampep/anikitty/releases/download/dev/anikitty-dev.apk). The dev shield follows the newest `v1.*` tag, including prereleases, and skips the floating `dev` tag. Prefer stable unless you want the newest build.
+The same choice is inside the app under **Profile → App**: Stable or Dev. A newer build on the channel you picked shows up there.
+
+## Releases
+
+Names follow [uBlock Origin](https://github.com/gorhill/uBlock/releases). The GitHub tag and the release title are the version. There is no `v` prefix.
+
+| Channel | Name | Example | When it is published |
+| --- | --- | --- | --- |
+| Stable | `x.y.z` | `1.2.13` | Manual. Run the Release workflow with **stable** checked, or push a commit whose message contains `[stable]`. |
+| Dev / alpha | `x.y.zbN` | `1.2.13b0`, `1.2.13b1` | Every other push to `main`. `b` starts at `0` and counts up. Marked as a prerelease. |
+
+After stable `1.2.12`, the next dev builds are `1.2.13b0`, `1.2.13b1`, and so on. Cutting stable on that line publishes `1.2.13`, then `main` moves to `1.2.14b0`.
+
+Older builds used `1.2.12-dev.28` and a `v` on the tag. Those still install. A phone on `1.2.12-dev.28` treats `1.2.12b29` as newer, and `1.2.12` as newer than either. The floating `dev` tag is only a moving download. It is not a version.
+
+Each numbered release attaches `AniFuse_<version>.apk`, signed with the same key as the previous builds so it installs over them. Version name and version code live in [`VERSION`](VERSION).
 
 ## The app
 
-The APK is the product. It is a local-first Android app (Kotlin, Jetpack Compose, Media3). It does not sign you into a private AniKitty server.
+Local-first Android app: Kotlin, Jetpack Compose, Media3. Sign-in is AniList on the device. There is no AniFuse account.
 
 | | |
 | --- | --- |
-| **Destinations** | Home, Discover, Search, Library, and Profile in a floating glass dock |
-| **Catalog** | AniList search, season, schedule, and title pages |
-| **Sign-in** | AniList. Lists and your profile come from that account |
-| **Library** | Continue watching and watch progress stay on the phone, and can sync to AniList |
-| **Player** | Media3 on the device. Sub and dub, skip, picture-in-picture. Player and cast controls have names for TalkBack |
-| **Cast** | Chromecast from the phone when Play services and a TV are available |
-| **Offline** | Save an episode the player can store, and play that copy later |
-| **Look** | Black-and-white AniFuse theme. Anime artwork carries the colour |
+| **Home** | Cinematic picks, continue watching, and the shelves you keep |
+| **Discover** | Genre, year, season, format, status, and score filters |
+| **Search** | AniList search |
+| **Library** | Watching, plan to watch, completed, and downloads |
+| **Profile** | AniList stats, app builds, and settings |
+| **Player** | Sub and dub, skip intro and outro when the source has timings, speed, picture-in-picture, and Chromecast when a TV is available |
+| **Progress** | Saved on the phone, and synced to AniList when you are signed in |
+| **Look** | Black and white chrome. Colour stays in the artwork |
 
-Streams resolve through the **AniFuse resolver API**: it asks every healthy provider in parallel and returns ranked streams with the headers the CDNs expect. The hosted demo ships by default, and Settings → AniFuse API can point the app at your own instance; its Provider health page shows live status, success rates, and cooldowns. Community extensions still install from the in-app Store or a manifest link, and can be enabled or disabled individually. The app plays URLs — it does not upload episodes.
+Streams go through the **AniFuse resolver API**. It asks the healthy providers and returns ranked URLs with the headers those CDNs expect. The hosted demo is the default. **Settings → AniFuse API** points the app at your own instance and shows provider health. If one source fails mid-episode, the player tries the next source and keeps the playhead. Community extensions install from the in-app store or a manifest link and can be turned off one by one. The app plays URLs. It does not upload episodes.
 
 ## Extensions
 
@@ -76,11 +88,10 @@ Streams resolve through the **AniFuse resolver API**: it asks every healthy prov
 | --- | --- |
 | Author guide | [`extensions/GUIDE.md`](extensions/GUIDE.md) |
 | Protocol | [`extensions/spec/PROTOCOL.md`](extensions/spec/PROTOCOL.md) |
-| Store & submissions | [`fampep/anikitty-extensions` → `store/`](https://github.com/fampep/anikitty-extensions/tree/main/store) |
-| Extension repo | [`fampep/anikitty-extensions`](https://github.com/fampep/anikitty-extensions) |
+| Store | [`fampep/anikitty-extensions`](https://github.com/fampep/anikitty-extensions) · [`store/index.json`](https://github.com/fampep/anikitty-extensions/blob/main/store/index.json) |
 | Disclaimer | [`extensions/DISCLAIMER.md`](extensions/DISCLAIMER.md) |
 
-Community extensions stay with their authors. A link in the store is not fampep running that server.
+A link in the store is not fampep running that server. Community extensions stay with their authors.
 
 ## Build
 
@@ -89,24 +100,12 @@ cd apps/android
 ./gradlew :app:assembleRelease
 ```
 
-The release APK is `apps/android/app/build/outputs/apk/release/`. Version name and version code come from [`VERSION`](VERSION).
+The release APK is `apps/android/app/build/outputs/apk/release/`. Pull requests run unit tests, a debug APK, and lint. Pushes to `main` run the tests again and publish the release APK.
 
 ## License
 
 Copyright 2026 fampep · [Apache License 2.0](LICENSE)
 
-## Disclaimer
-
-> [!WARNING]
-> AniKitty is a client and a player. It is not a streaming service, a studio, or a file host.
->
-> - It is unofficial. It is not affiliated with AniList, any studio, or any streaming site. Those names belong to their owners.
-> - This repository hosts no episodes. An extension returns a URL. The phone plays that URL.
-> - Third-party sites may show ads or send you to a page that is not safe. Anything that pops up during playback comes from that site, not from this app.
-> - You choose the extension. You are responsible for the laws where you are and for the terms of the site you open. A stream that plays is not proof that the use is legal. This project does not give legal advice.
-> - There is no warranty. Sections 7 and 8 of the [Apache License 2.0](LICENSE) are the warranty disclaimer and the limit of liability.
-> - Install only from the [releases of this repository](https://github.com/fampep/anikitty/releases). Dev builds are unstable.
-
 This product uses the TMDB API but is not endorsed or certified by TMDB.
 
-Questions and bugs → [GitHub issues](https://github.com/fampep/anikitty/issues). Chat → [Telegram](https://t.me/Anikittymoe). Support → [Ko-fi](https://ko-fi.com/E6C820K9H8). Pull requests → [CONTRIBUTING.md](CONTRIBUTING.md).
+Questions and bugs → [GitHub issues](https://github.com/fampep/AniFuse-android/issues). Chat → [Telegram](https://t.me/Anikittymoe). Support → [Ko-fi](https://ko-fi.com/E6C820K9H8). Pull requests → [CONTRIBUTING.md](CONTRIBUTING.md).
