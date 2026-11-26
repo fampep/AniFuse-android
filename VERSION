@@ -1,5 +1,5 @@
 # Android versionName / versionCode.
 # Dev and alpha builds use the uBlock Origin form: 1.2.13b0
 # Stable builds are 1.2.13. The release workflow commits this file with [skip ci].
-name=1.2.12b31
-code=260
+name=1.2.12b32
+code=261
