@@ -1907,7 +1907,7 @@ fun PlayerScreen(
         // Keep chrome up while locked so the unlock control stays reachable.
         if (controlsLocked) return@LaunchedEffect
         if (controlsVisible && playing && !scrubbing && panel == PlayerMenuPage.None && !chromeFocused) {
-            delay(if (isCasting) 5_500 else 3_600)
+            delay(if (isCasting) 5_500 else 3_000)
             controlsVisible = false
         }
     }
@@ -2252,11 +2252,23 @@ fun PlayerScreen(
             PlayerMenuPage.None -> Unit
             PlayerMenuPage.Root -> SettingsRoot(compact)
             PlayerMenuPage.Speed -> {
-                listOf(0.75f, 1f, 1.25f, 1.5f, 2f).forEach { rate ->
+                listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { rate ->
                     PlayerMenuRow(
-                        label = if (kotlin.math.abs(rate - 1f) < 0.01f) "Normal" else speedLabel(rate),
+                        label = if (kotlin.math.abs(rate - 1f) < 0.01f) "1.0x" else speedLabel(rate),
                         selected = kotlin.math.abs(playbackSpeed - rate) < 0.01f,
                         onClick = { playbackSpeed = rate },
+                    )
+                }
+                PlayerMenuSectionLabel("Display")
+                listOf(
+                    AspectRatioFrameLayout.RESIZE_MODE_FIT to "Fit",
+                    AspectRatioFrameLayout.RESIZE_MODE_ZOOM to "Fill",
+                    AspectRatioFrameLayout.RESIZE_MODE_FILL to "Zoom",
+                ).forEach { (mode, label) ->
+                    PlayerMenuRow(
+                        label = label,
+                        selected = resizeMode == mode,
+                        onClick = { resizeMode = mode },
                     )
                 }
             }
@@ -2293,6 +2305,26 @@ fun PlayerScreen(
                 }
             }
             PlayerMenuPage.Subs -> {
+                if (onPickAudio != null) {
+                    PlayerMenuSectionLabel("Audio")
+                    PlayerMenuRow(
+                        label = "Sub",
+                        selected = audio != "dub",
+                        onClick = {
+                            selectedAudioId = "auto"
+                            onPickAudio.invoke("sub")
+                        },
+                    )
+                    PlayerMenuRow(
+                        label = "Dub",
+                        selected = audio == "dub",
+                        onClick = {
+                            selectedAudioId = "auto"
+                            onPickAudio.invoke("dub")
+                        },
+                    )
+                }
+                PlayerMenuSectionLabel("Subtitles")
                 if (captionsLoading) {
                     Row(
                         modifier = Modifier
@@ -3208,6 +3240,76 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
+                val phoneChrome = !television && !castScreenUp && panel == PlayerMenuPage.None
+                if (phoneChrome) {
+                    val res = shortQuality(qualityLabel)
+                    val mode = if (audio == "dub") "DUB" else "SUB"
+                    AniFusePlayerChrome(
+                        title = title,
+                        episodeLine = if (isMovie) "Movie" else "Episode $episode",
+                        statusPill = "$res · $mode",
+                        playing = playing,
+                        speedLabel = speedLabel(playbackSpeed),
+                        showEpisodes = !isMovie && onPickEpisode != null && totalEpisodes > 1,
+                        showNext = onNextEpisode != null && episode < totalEpisodes,
+                        castUnavailable = castRouteReason,
+                        onCastUnavailable = { castHint = it },
+                        player = activePlayer,
+                        scrubbing = scrubbing,
+                        scrubValue = scrubValue,
+                        durationMs = durationMs,
+                        skipTimes = skipTimes,
+                        thumbnails = source?.thumbnails,
+                        mediaUrl = source?.url,
+                        onBack = { leaveTheater() },
+                        onLock = {
+                            controlsLocked = true
+                            panel = PlayerMenuPage.None
+                            controlsVisible = false
+                        },
+                        onSettings = {
+                            panel = PlayerMenuPage.Quality
+                            controlsVisible = true
+                        },
+                        onPlayPause = {
+                            if (!swallowCenterClick) toggleOnScreen()
+                            controlsVisible = true
+                        },
+                        onSeekBack = { seekBy(-10_000) },
+                        onSeekForward = { seekBy(10_000) },
+                        onEpisodes = {
+                            panel = PlayerMenuPage.Episodes
+                            controlsVisible = true
+                        },
+                        onSources = {
+                            panel = PlayerMenuPage.Quality
+                            controlsVisible = true
+                        },
+                        onSubtitles = {
+                            panel = PlayerMenuPage.Subs
+                            controlsVisible = true
+                        },
+                        onSpeed = {
+                            panel = PlayerMenuPage.Speed
+                            controlsVisible = true
+                        },
+                        onNext = { goNextEpisode() },
+                        onScrub = {
+                            scrubbing = true
+                            scrubValue = it
+                            controlsVisible = true
+                        },
+                        onScrubFinished = { fraction ->
+                            val p = activePlayer
+                            val raw = (fraction * durationMs).toLong()
+                            val target = if (p != null) safeSeekTarget(raw, p.duration, durationMs) else raw.coerceAtLeast(0L)
+                            p?.seekTo(target)
+                            playhead.ms = target
+                            positionMs = target
+                            scrubbing = false
+                        },
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -3221,7 +3323,7 @@ fun PlayerScreen(
                 )
 
                 // Title strip — only when settings sheet is closed.
-                if (panel == PlayerMenuPage.None) {
+                if (panel == PlayerMenuPage.None && (television || castScreenUp)) {
                     Row(
                         modifier = Modifier
                             .align(Alignment.TopStart)
@@ -3284,7 +3386,7 @@ fun PlayerScreen(
                     }
 
                     // Hidden while the ended up-next card owns the center.
-                    if (!showEndAutoplay && !television) {
+                    if (!showEndAutoplay && !television && castScreenUp) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.Center)
@@ -3319,6 +3421,7 @@ fun PlayerScreen(
                     }
                 }
 
+                if (television || castScreenUp || panel != PlayerMenuPage.None) {
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -3534,6 +3637,7 @@ fun PlayerScreen(
                         }
                     }
                 }
+                }
 
                 if (panel != PlayerMenuPage.None) {
                     PlayerMenuFrame(
@@ -3543,6 +3647,9 @@ fun PlayerScreen(
                         onDismiss = { panel = PlayerMenuPage.None },
                         focusGate = menuFocusGate,
                     ) {
+                        if (!television && panel != PlayerMenuPage.Root) {
+                            PlayerDrawerTabs(page = panel, onSelect = { panel = it })
+                        }
                         PanelContents()
                     }
                 }
@@ -3577,7 +3684,7 @@ fun PlayerScreen(
                 fontWeight = FontWeight.Medium,
                 fontFamily = FontFamily.SansSerif,
                 modifier = Modifier
-                    .align(if (avoidNextCard) Alignment.BottomEnd else Alignment.BottomStart)
+                    .align(if (!television && chromeUp) Alignment.BottomEnd else if (avoidNextCard) Alignment.BottomEnd else Alignment.BottomStart)
                     .then(
                         if (theater) {
                             Modifier.windowInsetsPadding(
