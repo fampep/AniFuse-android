@@ -33,3 +33,9 @@ internal fun sourceFailover(
     val next = (index + 1).takeIf { count > 0 && it in 0 until count }
     return SourceFailover(next, resume)
 }
+
+/** True when a fresh resolve returned URLs this attempt has not already played. */
+internal fun hasNewPlayableUrls(current: Collection<String>, next: Collection<String>): Boolean {
+    if (next.isEmpty()) return false
+    return next.toSet() != current.toSet()
+}

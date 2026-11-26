@@ -44,4 +44,11 @@ class SourceFailoverTest {
         assertNull(midEpisode.nextIndex)
         assertEquals(400L, midEpisode.resumeMs)
     }
+
+    @Test
+    fun freshResolveMustChangeTheUrls() {
+        assertEquals(false, hasNewPlayableUrls(listOf("https://cdn/a"), listOf("https://cdn/a")))
+        assertEquals(false, hasNewPlayableUrls(listOf("https://cdn/a"), emptyList()))
+        assertEquals(true, hasNewPlayableUrls(listOf("https://cdn/a?sig=old"), listOf("https://cdn/a?sig=new")))
+    }
 }
