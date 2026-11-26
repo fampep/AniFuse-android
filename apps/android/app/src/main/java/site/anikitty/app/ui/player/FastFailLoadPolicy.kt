@@ -14,9 +14,11 @@ import java.net.UnknownHostException
 /**
  * A playlist or segment that the CDN has already refused should not sit
  * through Media3's default retries before the next mirror starts.
+ *
+ * Instant failover on hard HTTP failures; one micro-retry on flaky networks.
  */
 @UnstableApi
-internal class FastFailLoadPolicy : DefaultLoadErrorHandlingPolicy(/* minimumLoadableRetryCount = */ 2) {
+internal class FastFailLoadPolicy : DefaultLoadErrorHandlingPolicy(/* minimumLoadableRetryCount = */ 1) {
     override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
         val exception = loadErrorInfo.exception
         val code = (exception as? HttpDataSource.InvalidResponseCodeException)?.responseCode
@@ -34,13 +36,13 @@ internal class FastFailLoadPolicy : DefaultLoadErrorHandlingPolicy(/* minimumLoa
             exception.cause is SocketTimeoutException
         ) {
             // One short breath, then the next mirror — not Media3's long backoff.
-            return if (loadErrorInfo.errorCount <= 1) 180L else C.TIME_UNSET
+            return if (loadErrorInfo.errorCount <= 1) 120L else C.TIME_UNSET
         }
-        if (loadErrorInfo.errorCount >= 2) {
+        if (loadErrorInfo.errorCount >= 1) {
             return C.TIME_UNSET
         }
         return super.getRetryDelayMsFor(loadErrorInfo)
     }
 
-    override fun getMinimumLoadableRetryCount(dataType: Int): Int = 2
+    override fun getMinimumLoadableRetryCount(dataType: Int): Int = 1
 }

@@ -87,7 +87,7 @@ internal fun LiveTimeline(
         while (true) {
             val next = p.bufferedPosition.coerceAtLeast(0L)
             if (next != bufferedMs) bufferedMs = next
-            delay(400)
+            delay(220)
         }
     }
     val buffered = if (durationMs > 0L) {
@@ -153,14 +153,19 @@ internal fun NextEpisodePrompt(
         }
     }
     val countdown = if (ended) secondsLeft else remainSec
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(18.dp)
     Column(
         modifier = modifier
             .widthIn(max = 360.dp)
-            .shadow(16.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.45f))
+            .shadow(20.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.55f))
             .clip(shape)
-            .background(PlayerChrome.Sheet)
-            .border(1.dp, PlayerChrome.SheetStroke, shape)
+            .background(Color(0xF0101012))
+            .background(
+                androidx.compose.ui.graphics.Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
+                ),
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.18f), shape)
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

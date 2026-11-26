@@ -639,11 +639,11 @@ fun PlayerScreen(
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 /* minBufferMs = */ 3_500,
-                /* maxBufferMs = */ 55_000,
-                /* bufferForPlaybackMs = */ 1_200,
-                /* bufferForPlaybackAfterRebufferMs = */ 3_500,
+                /* maxBufferMs = */ 60_000,
+                /* bufferForPlaybackMs = */ 800,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_500,
             )
-            .setBackBuffer(35_000, true)
+            .setBackBuffer(40_000, true)
             .build()
         val metrics = context.resources.displayMetrics
         val seedBitrate = context.getSharedPreferences("anikitty_player", 0)
@@ -652,12 +652,12 @@ fun PlayerScreen(
         val bandwidth = DefaultBandwidthMeter.Builder(context)
             .setInitialBitrateEstimate(seedBitrate.toLong())
             .build()
-        // Snappier ABR: climb sooner when the pipe is healthy, drop faster on stalls.
+        // Flagship ABR: climb on healthy pipe, dump rungs the second stalls hit.
         val adaptive = AdaptiveTrackSelection.Factory(
-            /* minDurationForQualityIncreaseMs = */ 8_000,
-            /* maxDurationForQualityDecreaseMs = */ 4_500,
-            /* minDurationToRetainAfterDiscardMs = */ 18_000,
-            /* bandwidthFraction = */ 0.78f,
+            /* minDurationForQualityIncreaseMs = */ 6_000,
+            /* maxDurationForQualityDecreaseMs = */ 3_200,
+            /* minDurationToRetainAfterDiscardMs = */ 16_000,
+            /* bandwidthFraction = */ 0.74f,
         )
         val selector = DefaultTrackSelector(context, adaptive).apply {
             // Device locale is the default preference. A Danish phone then keeps
@@ -1988,7 +1988,7 @@ fun PlayerScreen(
         // Keep chrome up while locked so the unlock control stays reachable.
         if (controlsLocked) return@LaunchedEffect
         if (controlsVisible && playing && !scrubbing && panel == PlayerMenuPage.None && !chromeFocused) {
-            delay(if (isCasting) 5_500 else 3_000)
+            delay(if (isCasting) 5_500 else 3_800)
             controlsVisible = false
         }
     }
@@ -2898,13 +2898,19 @@ fun PlayerScreen(
         ) {
             Row(
                 modifier = Modifier
+                    .shadow(
+                        elevation = 12.dp,
+                        shape = RoundedCornerShape(999.dp),
+                        ambientColor = Color.Black.copy(alpha = 0.4f),
+                        spotColor = Color.Black.copy(alpha = 0.3f),
+                    )
                     .clip(RoundedCornerShape(999.dp))
                     .background(Color.White)
                     .clearAndSetSemantics {
                         contentDescription = "Playing at double speed"
                         liveRegion = LiveRegionMode.Polite
                     }
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
@@ -2919,43 +2925,57 @@ fun PlayerScreen(
                     color = Color.Black,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
+                    letterSpacing = 0.2.sp,
                 )
             }
         }
         AnimatedVisibility(
             visible = seekFlashMs != 0L,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = fadeIn(tween(90)),
+            exit = fadeOut(tween(160)),
             modifier = Modifier
                 .align(if (seekFlashMs < 0L) Alignment.CenterStart else Alignment.CenterEnd)
                 .padding(horizontal = 28.dp),
         ) {
             val secs = (kotlin.math.abs(seekFlashMs) / 1000L).toInt().coerceAtLeast(1)
             val label = if (seekFlashMs < 0L) "−${secs}s" else "+${secs}s"
+            val flashShape = RoundedCornerShape(20.dp)
             Column(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(Color.Black.copy(alpha = 0.72f))
-                    .border(1.dp, Color.White.copy(alpha = 0.28f), RoundedCornerShape(18.dp))
+                    .shadow(
+                        elevation = 16.dp,
+                        shape = flashShape,
+                        ambientColor = Color.Black.copy(alpha = 0.5f),
+                        spotColor = Color.Black.copy(alpha = 0.35f),
+                    )
+                    .clip(flashShape)
+                    .background(Color(0xCC101012))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
+                        ),
+                    )
+                    .border(1.dp, Color.White.copy(alpha = 0.28f), flashShape)
                     .clearAndSetSemantics {
                         contentDescription = seekFlashDescription(seekFlashMs)
                         liveRegion = LiveRegionMode.Polite
                     }
-                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Icon(
                     if (seekFlashMs < 0L) Icons.Outlined.Replay10 else Icons.Outlined.Forward10,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(28.dp),
+                    modifier = Modifier.size(30.dp),
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     label,
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
+                    fontSize = 17.sp,
+                    letterSpacing = 0.3.sp,
                 )
             }
         }
@@ -3107,73 +3127,145 @@ fun PlayerScreen(
         ) {
             val shown = heldHud ?: return@AnimatedVisibility
             val pct = (shown.level.coerceIn(0f, 1f) * 100f).toInt()
-            val hudShape = RoundedCornerShape(16.dp)
+            val hudShape = RoundedCornerShape(18.dp)
             val hudDescription = when {
                 shown.kind == GestureHudKind.Seek -> "Seek to ${shown.caption ?: "$pct percent"}"
                 shown.kind == GestureHudKind.Brightness -> "Brightness $pct percent"
                 shown.caption != null -> "${shown.caption} volume $pct percent"
                 else -> "Volume $pct percent"
             }
-            Column(
-                modifier = Modifier
-                    .clip(hudShape)
-                    .background(Color.Black.copy(alpha = 0.82f))
-                    .border(0.5.dp, Color.White.copy(alpha = 0.28f), hudShape)
-                    .clearAndSetSemantics {
-                        contentDescription = hudDescription
-                        liveRegion = LiveRegionMode.Polite
-                    }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Icon(
-                    when {
-                        shown.kind == GestureHudKind.Brightness && shown.level < 0.34f ->
-                            Icons.Outlined.BrightnessLow
-                        shown.kind == GestureHudKind.Brightness && shown.level < 0.67f ->
-                            Icons.Outlined.BrightnessMedium
-                        shown.kind == GestureHudKind.Brightness ->
-                            Icons.Outlined.BrightnessHigh
-                        shown.level <= 0.01f -> Icons.AutoMirrored.Outlined.VolumeOff
-                        shown.level < 0.45f -> Icons.AutoMirrored.Outlined.VolumeDown
-                        else -> Icons.AutoMirrored.Outlined.VolumeUp
-                    },
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(22.dp),
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                Box(
+            if (shown.kind == GestureHudKind.Seek) {
+                Row(
                     modifier = Modifier
-                        .width(7.dp)
-                        .height(110.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(Color.White.copy(alpha = 0.16f)),
+                        .shadow(
+                            elevation = 14.dp,
+                            shape = hudShape,
+                            ambientColor = Color.Black.copy(alpha = 0.45f),
+                            spotColor = Color.Black.copy(alpha = 0.3f),
+                        )
+                        .clip(hudShape)
+                        .background(Color(0xCC101012))
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
+                            ),
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.28f), hudShape)
+                        .clearAndSetSemantics {
+                            contentDescription = hudDescription
+                            liveRegion = LiveRegionMode.Polite
+                        }
+                        .padding(horizontal = 18.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Icon(
+                        Icons.Outlined.Forward10,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            shown.caption ?: "$pct%",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(120.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(Color.White.copy(alpha = 0.16f)),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .fillMaxWidth(shown.level.coerceIn(0f, 1f))
+                                    .background(Color.White),
+                            )
+                        }
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .shadow(
+                            elevation = 14.dp,
+                            shape = hudShape,
+                            ambientColor = Color.Black.copy(alpha = 0.45f),
+                            spotColor = Color.Black.copy(alpha = 0.3f),
+                        )
+                        .clip(hudShape)
+                        .background(Color(0xCC101012))
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
+                            ),
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.28f), hudShape)
+                        .clearAndSetSemantics {
+                            contentDescription = hudDescription
+                            liveRegion = LiveRegionMode.Polite
+                        }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(
+                        when {
+                            shown.kind == GestureHudKind.Brightness && shown.level < 0.34f ->
+                                Icons.Outlined.BrightnessLow
+                            shown.kind == GestureHudKind.Brightness && shown.level < 0.67f ->
+                                Icons.Outlined.BrightnessMedium
+                            shown.kind == GestureHudKind.Brightness ->
+                                Icons.Outlined.BrightnessHigh
+                            shown.level <= 0.01f -> Icons.AutoMirrored.Outlined.VolumeOff
+                            shown.level < 0.45f -> Icons.AutoMirrored.Outlined.VolumeDown
+                            else -> Icons.AutoMirrored.Outlined.VolumeUp
+                        },
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
                     Box(
                         modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .fillMaxHeight(shown.level.coerceIn(0f, 1f))
-                            .background(Color.White),
-                    )
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-                if (shown.caption != null) {
+                            .width(8.dp)
+                            .height(118.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(Color.White.copy(alpha = 0.14f)),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .fillMaxHeight(shown.level.coerceIn(0f, 1f))
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color.White.copy(alpha = 0.72f), Color.White),
+                                    ),
+                                ),
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    if (shown.caption != null) {
+                        Text(
+                            shown.caption,
+                            color = Color.White.copy(alpha = 0.72f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                    }
                     Text(
-                        shown.caption,
-                        color = Color.White.copy(alpha = 0.72f),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
+                        "$pct%",
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
                 }
-                Text(
-                    "$pct%",
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp,
-                )
             }
         }
 

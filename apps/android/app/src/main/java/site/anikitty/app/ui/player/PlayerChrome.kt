@@ -66,6 +66,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.key.key
@@ -90,9 +91,13 @@ internal fun PlayerPageBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFF0B0C0E))
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xF0101012), Color(0xE00B0C0E)),
+                ),
+            )
             .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout))
-            .padding(horizontal = 4.dp, vertical = 4.dp),
+            .padding(horizontal = 6.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ChromeDisc(onClick = onBack, size = 48.dp) {
@@ -103,18 +108,31 @@ internal fun PlayerPageBar(
             )
         }
         // One line, like the reference bar: title · episode · show.
-        Text(
-            text = if (episodeLine.isBlank()) title else "$title · $episodeLine",
-            color = Color.White,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 15.sp,
-            letterSpacing = (-0.2).sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        Column(
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = 8.dp),
-        )
+        ) {
+            Text(
+                text = title,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                letterSpacing = (-0.25).sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (episodeLine.isNotBlank()) {
+                Text(
+                    text = episodeLine,
+                    color = Color.White.copy(alpha = 0.58f),
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 
@@ -423,13 +441,21 @@ internal fun ChromeDisc(
             .background(
                 when {
                     accent -> PlayerChrome.Accent
-                    large -> Color.White.copy(alpha = 0.10f)
-                    else -> Color.White.copy(alpha = 0.05f)
+                    large -> Color(0xB3101012)
+                    else -> Color(0x99101012)
                 },
             )
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color.White.copy(alpha = if (accent) 0.18f else 0.10f),
+                        Color.Transparent,
+                    ),
+                ),
+            )
             .border(
-                if (focused) 2.dp else 0.5.dp,
-                if (focused || accent) Color.White else Color.White.copy(alpha = 0.10f),
+                if (focused) 2.dp else 1.dp,
+                if (focused || accent) Color.White else Color.White.copy(alpha = 0.16f),
                 shape,
             )
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)

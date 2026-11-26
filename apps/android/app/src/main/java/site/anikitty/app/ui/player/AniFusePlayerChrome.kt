@@ -44,6 +44,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -92,15 +93,23 @@ internal fun AniFusePlayerChrome(
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(140.dp)
-                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.72f), Color.Transparent))),
+                .height(148.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Black.copy(alpha = 0.78f), Color.Transparent),
+                    ),
+                ),
         )
         Box(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(180.dp)
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f)))),
+                .height(200.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.86f)),
+                    ),
+                ),
         )
         Row(
             modifier = Modifier
@@ -111,18 +120,19 @@ internal fun AniFusePlayerChrome(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ChromeIcon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", onBack)
-            Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+            Column(Modifier.weight(1f).padding(horizontal = 6.dp)) {
                 Text(
                     title,
                     color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
+                    letterSpacing = (-0.2).sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     episodeLine,
-                    color = Color(0xFFA1A1A1),
+                    color = Color.White.copy(alpha = 0.62f),
                     fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -132,13 +142,13 @@ internal fun AniFusePlayerChrome(
                         statusPill,
                         color = Color.White,
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontWeight = FontWeight.SemiBold,
                         modifier = Modifier
                             .padding(top = 6.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .border(1.dp, Color(0xFF292929), RoundedCornerShape(8.dp))
-                            .background(Color(0xCC101010))
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                            .clip(RoundedCornerShape(999.dp))
+                            .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(999.dp))
+                            .background(Color(0xB3101010))
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
                     )
                 }
             }
@@ -152,15 +162,16 @@ internal fun AniFusePlayerChrome(
         }
         Row(
             modifier = Modifier.align(Alignment.Center),
-            horizontalArrangement = Arrangement.spacedBy(22.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             RoundTransport(Icons.Outlined.Replay10, "Back 10 seconds", 56.dp, onSeekBack)
             RoundTransport(
                 if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
                 if (playing) "Pause" else "Play",
-                72.dp,
+                76.dp,
                 onPlayPause,
+                primary = true,
             )
             RoundTransport(Icons.Outlined.Forward10, "Forward 10 seconds", 56.dp, onSeekForward)
         }
@@ -169,7 +180,7 @@ internal fun AniFusePlayerChrome(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.displayCutout))
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
             LiveTimeline(
                 player = player,
@@ -182,7 +193,7 @@ internal fun AniFusePlayerChrome(
                 onScrub = onScrub,
                 onScrubFinished = onScrubFinished,
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -204,6 +215,8 @@ private fun ChromeIcon(icon: ImageVector, description: String, onClick: () -> Un
         modifier = Modifier
             .size(44.dp)
             .clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.08f))
+            .border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape)
             .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -212,33 +225,67 @@ private fun ChromeIcon(icon: ImageVector, description: String, onClick: () -> Un
 }
 
 @Composable
-private fun RoundTransport(icon: ImageVector, description: String, size: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {
+private fun RoundTransport(
+    icon: ImageVector,
+    description: String,
+    size: androidx.compose.ui.unit.Dp,
+    onClick: () -> Unit,
+    primary: Boolean = false,
+) {
+    val shape = CircleShape
     Box(
         modifier = Modifier
             .size(size)
-            .clip(CircleShape)
-            .background(Color(0xCC101010))
-            .border(1.dp, Color(0xFF292929), CircleShape)
+            .shadow(
+                elevation = if (primary) 16.dp else 8.dp,
+                shape = shape,
+                ambientColor = Color.Black.copy(alpha = 0.45f),
+                spotColor = Color.Black.copy(alpha = 0.35f),
+            )
+            .clip(shape)
+            .background(if (primary) Color.White else Color(0xB3101010))
+            .border(
+                1.dp,
+                if (primary) Color.White else Color.White.copy(alpha = 0.16f),
+                shape,
+            )
             .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = description, tint = Color.White, modifier = Modifier.size(if (size > 60.dp) 32.dp else 24.dp))
+        Icon(
+            icon,
+            contentDescription = description,
+            tint = if (primary) Color.Black else Color.White,
+            modifier = Modifier.size(if (size > 60.dp) 34.dp else 24.dp),
+        )
     }
 }
 
 @Composable
 private fun ActionPill(icon: ImageVector, label: String, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(999.dp)
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(Color(0xCC101010))
-            .border(1.dp, Color(0xFF292929), RoundedCornerShape(999.dp))
+            .clip(shape)
+            .background(Color(0xB3101010))
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
+                ),
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.16f), shape)
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(6.dp))
-        Text(label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+        Text(
+            label,
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
     }
 }

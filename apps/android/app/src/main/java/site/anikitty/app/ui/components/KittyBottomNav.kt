@@ -136,12 +136,12 @@ fun KittyBottomNav(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(62.dp)
+                .height(64.dp)
                 .shadow(
-                    elevation = if (nightDock) 22.dp else 12.dp,
+                    elevation = if (nightDock) 26.dp else 14.dp,
                     shape = shape,
-                    ambientColor = Color.Black.copy(alpha = if (nightDock) 0.62f else 0.14f),
-                    spotColor = Color.Black.copy(alpha = if (nightDock) 0.48f else 0.10f),
+                    ambientColor = Color.Black.copy(alpha = if (nightDock) 0.68f else 0.16f),
+                    spotColor = Color.Black.copy(alpha = if (nightDock) 0.52f else 0.12f),
                 )
                 .clip(shape)
                 .background(dock.fill)
@@ -150,7 +150,7 @@ fun KittyBottomNav(
                         colors = listOf(dock.sheenTop, Color.Transparent),
                     ),
                 )
-                .border(1.dp, Color.White.copy(alpha = if (nightDock) 0.16f else 0.40f), shape)
+                .border(1.dp, Color.White.copy(alpha = if (nightDock) 0.20f else 0.44f), shape)
                 .border(1.dp, dock.stroke, shape)
                 .padding(horizontal = 5.dp, vertical = 5.dp),
         ) {

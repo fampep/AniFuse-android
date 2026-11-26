@@ -33,6 +33,7 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -46,7 +47,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import site.anikitty.app.data.skip.SkipTimes
 
 /**
- * Glassy timeline scrubber — soft track, glowing progress rail, springy thumb.
+ * Flagship timeline — soft track, buffered rail, luminous progress bloom,
+ * differentiated skip markers, springy glass thumb.
  */
 @Composable
 fun GlassScrubber(
@@ -73,8 +75,8 @@ fun GlassScrubber(
         label = "scrubProgress",
     )
     val thumbScale by animateFloatAsState(
-        targetValue = if (scrubbing) 1.28f else 1f,
-        animationSpec = spring(dampingRatio = 0.65f, stiffness = Spring.StiffnessMedium),
+        targetValue = if (scrubbing) 1.42f else 1f,
+        animationSpec = spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessMedium),
         label = "thumbScale",
     )
     val latestOnScrub by rememberUpdatedState(onScrub)
@@ -137,7 +139,7 @@ fun GlassScrubber(
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(28.dp)
+                .height(32.dp)
                 .pointerInput(durationMs, trackWidthPx) {
                     awaitEachGesture {
                         val down = awaitFirstDown()
@@ -201,12 +203,11 @@ fun GlassScrubber(
                 },
         ) {
             val cy = size.height / 2f
-            val trackH = (if (scrubbing) 5.dp else 4.dp).toPx()
+            val trackH = (if (scrubbing) 6.dp else 4.5.dp).toPx()
             val radius = CornerRadius(trackH / 2f, trackH / 2f)
-            val unplayed = Color(0xFF2C2C2C)
-            val bufferedColor = Color(0xFF5A5A5A)
+            val unplayed = Color(0xFF242426)
+            val bufferedColor = Color(0xFF6E6E72)
             val played = Color.White
-            val marker = Color.White
 
             drawRoundRect(
                 color = unplayed,
@@ -227,6 +228,20 @@ fun GlassScrubber(
 
             val progressW = size.width * animatedProgress
             if (progressW > 0f) {
+                // Soft bloom under the white rail so the playhead reads luminous.
+                val bloomH = trackH * 2.4f
+                drawRoundRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0f),
+                            Color.White.copy(alpha = if (scrubbing) 0.28f else 0.16f),
+                            Color.White.copy(alpha = 0f),
+                        ),
+                    ),
+                    topLeft = Offset(0f, cy - bloomH / 2f),
+                    size = Size(progressW, bloomH),
+                    cornerRadius = CornerRadius(bloomH / 2f, bloomH / 2f),
+                )
                 drawRoundRect(
                     color = played,
                     topLeft = Offset(0f, cy - trackH / 2f),
@@ -237,11 +252,16 @@ fun GlassScrubber(
 
             if (durationMs > 0 && !skipTimes.isEmpty) {
                 val dur = durationMs.coerceAtLeast(1L).toFloat()
-                skipTimes.segments.forEach { (_, iv) ->
+                skipTimes.segments.forEach { (kind, iv) ->
                     val start = (iv.startMs / dur).coerceIn(0f, 1f)
                     val end = (iv.endMs / dur).coerceIn(0f, 1f)
                     val left = size.width * start
                     val w = (size.width * (end - start)).coerceAtLeast(trackH)
+                    val marker = when (kind) {
+                        "intro" -> Color.White.copy(alpha = 0.55f)
+                        "credits" -> Color.White.copy(alpha = 0.32f)
+                        else -> Color.White.copy(alpha = 0.22f)
+                    }
                     drawRoundRect(
                         color = marker,
                         topLeft = Offset(left, cy - trackH / 2f),
@@ -251,11 +271,16 @@ fun GlassScrubber(
                 }
             }
 
-            val thumbR = 6.dp.toPx() * thumbScale
+            val thumbR = 7.dp.toPx() * thumbScale
             val thumbX = progressW.coerceIn(thumbR, (size.width - thumbR).coerceAtLeast(thumbR))
             drawCircle(
-                color = Color.Black.copy(alpha = 0.28f),
-                radius = thumbR + 2.dp.toPx(),
+                color = Color.Black.copy(alpha = 0.35f),
+                radius = thumbR + 3.dp.toPx(),
+                center = Offset(thumbX, cy),
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.22f),
+                radius = thumbR + 1.5.dp.toPx(),
                 center = Offset(thumbX, cy),
             )
             drawCircle(
@@ -263,6 +288,13 @@ fun GlassScrubber(
                 radius = thumbR,
                 center = Offset(thumbX, cy),
             )
+            if (scrubbing) {
+                drawCircle(
+                    color = Color.Black.copy(alpha = 0.18f),
+                    radius = thumbR * 0.32f,
+                    center = Offset(thumbX, cy),
+                )
+            }
         }
     }
 }

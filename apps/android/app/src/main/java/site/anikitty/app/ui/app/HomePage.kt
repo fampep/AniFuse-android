@@ -738,36 +738,37 @@ private fun ContinueArt(card: HomeContinueCard) {
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
-                .size(48.dp)
+                .size(52.dp)
                 .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.55f))
-                .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape),
+                .background(Color.White)
+                .border(1.dp, Color.White.copy(alpha = 0.9f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 Icons.Rounded.PlayArrow,
                 contentDescription = "Resume",
-                tint = Color.White,
-                modifier = Modifier.size(22.dp),
+                tint = Color.Black,
+                modifier = Modifier.size(26.dp),
             )
         }
         Text(
             card.title,
             color = Color.White,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
             fontSize = 14.sp,
+            letterSpacing = (-0.15).sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 10.dp, end = 10.dp, bottom = 14.dp),
+                .padding(start = 12.dp, end = 12.dp, bottom = 16.dp),
         )
         if (card.progress > 0f) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .height(3.dp)
+                    .height(3.5.dp)
                     .background(Color.White.copy(alpha = 0.18f)),
             ) {
                 Box(
@@ -775,7 +776,7 @@ private fun ContinueArt(card: HomeContinueCard) {
                         .fillMaxHeight()
                         .fillMaxWidth(card.progress.coerceIn(0f, 1f))
                         .clip(RoundedCornerShape(topEnd = 2.dp, bottomEnd = 2.dp))
-                        .background(Color(0xFFDDDDDD)),
+                        .background(Color.White),
                 )
             }
         }
