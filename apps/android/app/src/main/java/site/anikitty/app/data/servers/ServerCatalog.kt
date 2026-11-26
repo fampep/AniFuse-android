@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import site.anikitty.app.data.anifuse.AnifuseApiStore
+import site.anikitty.app.data.anifuse.AnifuseFeedCache
 import site.anikitty.app.data.extensions.ExtensionInstaller
 import site.anikitty.app.data.extensions.ExtensionManifest
 import site.anikitty.app.data.extensions.ExtensionRepository
@@ -37,6 +38,7 @@ import site.anikitty.app.data.extensions.prepareStoreInstall
  */
 class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = AnifuseApiStore(context)) {
     private val prefs = context.getSharedPreferences("anikitty_servers", Context.MODE_PRIVATE)
+    private val providerHealth = AnifuseFeedCache(java.io.File(context.filesDir, "anifuse-cache"))
     private val resolveCache = ResolveCache(context)
     private val megaPlayCrypto = MegaPlayCrypto(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -188,10 +190,15 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         val list = _resolvers.value
         if (list.isEmpty()) error("No stream extensions installed")
         val preferredId = _selectedId.value
-        val ordered = buildList {
-            list.firstOrNull { it.server.id == preferredId }?.let { add(it) }
-            list.filterNot { it.server.id == preferredId }.forEach { add(it) }
-        }
+        val ordered = sinkUnhealthy(
+            ordered = buildList {
+                list.firstOrNull { it.server.id == preferredId }?.let { add(it) }
+                list.filterNot { it.server.id == preferredId }.forEach { add(it) }
+            },
+            down = downProviderNames(),
+            id = { it.server.id },
+            name = { it.server.name },
+        )
         val errors = java.util.Collections.synchronizedList(ArrayList<String>())
         val raced = raceHeadStart(
             count = ordered.size,
@@ -296,6 +303,8 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
             select(list.first().server.id)
         }
     }
+
+    private fun downProviderNames(): Set<String> = providerHealth.downNames()
 
     private companion object {
         const val KEY_SELECTED = "selected_server_id"

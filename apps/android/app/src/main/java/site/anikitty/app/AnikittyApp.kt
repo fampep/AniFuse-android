@@ -77,7 +77,7 @@ class AnikittyApp : Application(), ImageLoaderFactory {
             database.pendingAniListPushDao(),
         )
         anifuseStore = AnifuseApiStore(this)
-        anifuseApi = AnifuseApi(anifuseStore)
+        anifuseApi = AnifuseApi(anifuseStore, java.io.File(filesDir, "anifuse-cache"))
         streamServers = ServerCatalog(this, anifuseStore)
         SubtitleLibrary.install(this)
         serverConfig = ServerConfig(this)

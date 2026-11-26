@@ -176,6 +176,12 @@ import site.anikitty.app.ui.theme.KittySurfaceElevated
 import site.anikitty.app.ui.theme.KittyText
 import site.anikitty.app.ui.theme.kittyPageBrush
 
+private fun screenDepth(screen: Screen): Int = when (screen) {
+    Screen.Tabs -> 0
+    is Screen.Player -> 2
+    else -> 1
+}
+
 private sealed class Screen {
     data object Tabs : Screen()
     data class Detail(
@@ -437,12 +443,25 @@ fun LocalFirstApp(
             return
         }
         Screen.Inbox -> {
-            NotificationCenter(
-                aniList = aniList,
-                history = history,
-                onBack = { screen = Screen.Tabs },
-                onOpen = { anime, episode -> openDetail(anime, episode) },
-            )
+            Box(modifier = Modifier.fillMaxSize()) {
+                NotificationCenter(
+                    aniList = aniList,
+                    history = history,
+                    onBack = { screen = Screen.Tabs },
+                    onOpen = { anime, episode -> openDetail(anime, episode) },
+                )
+                DockOverlay(
+                    tabs = tabs,
+                    selectedId = if (tab == "store") "profile" else tab,
+                    profileImageUrl = aniListAuth.avatarUrl,
+                    onSelect = { id ->
+                        screen = Screen.Tabs
+                        tab = id
+                    },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
+            return
         }
         Screen.Continue -> {
             Box(modifier = Modifier.fillMaxSize()) {
@@ -501,15 +520,20 @@ fun LocalFirstApp(
 
     @Composable
     fun PhoneTabs(modifier: Modifier) {
+        val reducedTabs = prefersReducedMotion()
         AnimatedContent(
             targetState = tab,
             transitionSpec = {
-                val order = listOf("home", "discover", "search", "library", "profile", "store")
-                val forward = order.indexOf(targetState).coerceAtLeast(0) >=
-                    order.indexOf(initialState).coerceAtLeast(0)
-                val dir = if (forward) 1 else -1
-                (slideInHorizontally(tween(280)) { it / 8 * dir } + fadeIn(tween(220))) togetherWith
-                    (slideOutHorizontally(tween(200)) { -it / 10 * dir } + fadeOut(tween(160)))
+                if (reducedTabs) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else {
+                    val order = listOf("home", "discover", "search", "library", "profile", "store")
+                    val forward = order.indexOf(targetState).coerceAtLeast(0) >=
+                        order.indexOf(initialState).coerceAtLeast(0)
+                    val dir = if (forward) 1 else -1
+                    (slideInHorizontally(tween(280, easing = FastOutSlowInEasing)) { it / 8 * dir } + fadeIn(tween(220))) togetherWith
+                        (slideOutHorizontally(tween(200, easing = FastOutSlowInEasing)) { -it / 10 * dir } + fadeOut(tween(160)))
+                }
             },
             label = "tabFade",
             modifier = modifier,
@@ -697,7 +721,10 @@ fun LocalFirstApp(
                     if (reducedMotion) {
                         EnterTransition.None togetherWith ExitTransition.None
                     } else {
-                        fadeIn(tween(240)) togetherWith fadeOut(tween(180))
+                        val forward = screenDepth(targetState) >= screenDepth(initialState)
+                        val dir = if (forward) 1 else -1
+                        (slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it / 5 * dir } + fadeIn(tween(200))) togetherWith
+                            (slideOutHorizontally(tween(240, easing = FastOutSlowInEasing)) { -it / 6 * dir } + fadeOut(tween(160)))
                     }
                 },
                 label = "watch",
@@ -1141,14 +1168,6 @@ fun LocalFirstApp(
                 Box(modifier = Modifier.fillMaxSize()) {
                     KittyAtmosphere()
                     PhoneTabs(Modifier.fillMaxSize())
-                    val profileAvatar = aniLinkTick.let { aniListAuth.avatarUrl }
-                    DockOverlay(
-                        tabs = tabs,
-                        selectedId = if (tab == "store") "profile" else tab,
-                        profileImageUrl = profileAvatar,
-                        onSelect = { tab = it },
-                        modifier = Modifier.align(Alignment.BottomCenter),
-                    )
                 }
             }
         }
@@ -1158,14 +1177,16 @@ fun LocalFirstApp(
             }
         }
         val television = isTelevision()
-        if (screen is Screen.Detail && !television) {
+        if (!television && (screen is Screen.Tabs || screen is Screen.Detail)) {
             DockOverlay(
                 tabs = tabs,
                 selectedId = if (tab == "store") "profile" else tab,
                 profileImageUrl = aniListAuth.avatarUrl,
                 onSelect = { id ->
-                    detailBackStack = emptyList()
-                    screen = Screen.Tabs
+                    if (screen is Screen.Detail) {
+                        detailBackStack = emptyList()
+                        screen = Screen.Tabs
+                    }
                     tab = id
                 },
                 modifier = Modifier.align(Alignment.BottomCenter),

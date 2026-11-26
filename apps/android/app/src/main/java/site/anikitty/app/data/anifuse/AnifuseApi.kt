@@ -3,12 +3,16 @@
 
 package site.anikitty.app.data.anifuse
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import org.json.JSONObject
 import site.anikitty.app.data.extensions.ExtensionHttp
+import java.io.File
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 
@@ -25,10 +29,16 @@ class AnifuseApiException(message: String, cause: Throwable? = null) :
  * feed, and liveness. Responses are cached with short TTLs that mirror the
  * server's own cache so the UI never hammers the host.
  */
-class AnifuseApi(private val store: AnifuseApiStore) {
+class AnifuseApi(
+    private val store: AnifuseApiStore,
+    diskRoot: File? = null,
+) {
 
     private data class Cached(val at: Long, val value: Any?)
     private val cache = ConcurrentHashMap<String, Cached>()
+    private val disk = diskRoot?.let { AnifuseFeedCache(it) }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val refreshing = ConcurrentHashMap<String, kotlinx.coroutines.Deferred<Unit>>()
 
     suspend fun health(): AnifuseHealth = cached("health", HEALTH_TTL_MS) {
         val (code, body) = get("/healthz")
@@ -36,12 +46,27 @@ class AnifuseApi(private val store: AnifuseApiStore) {
         healthFromJson(JSONObject(body))
     }
 
-    suspend fun providers(forceRefresh: Boolean = false): List<AnifuseProvider> =
-        cached("providers", PROVIDERS_TTL_MS, forceRefresh) {
-            val (code, body) = get("/v1/providers")
-            if (code !in 200..299) fail(code, body)
-            providersFromJson(JSONObject(body))
+    suspend fun providers(forceRefresh: Boolean = false): List<AnifuseProvider> {
+        val key = "providers"
+        fresh<List<AnifuseProvider>>(key, PROVIDERS_TTL_MS, forceRefresh)?.let { return it }
+        staleBody("providers.json", AnifuseFeedCache.STALE_FEED_MS, forceRefresh)?.let { body ->
+            val parsed = providersFromJson(JSONObject(body))
+            rememberProviders(parsed, diskAge("providers.json"))
+            refreshLater(key) { loadProviders() }
+            return parsed
         }
+        return loadProviders()
+    }
+
+    private suspend fun loadProviders(): List<AnifuseProvider> {
+        val (code, body) = get("/v1/providers")
+        if (code !in 200..299) fail(code, body)
+        disk?.write("providers.json", body)
+        val parsed = providersFromJson(JSONObject(body))
+        disk?.writeDown(parsed.filter { it.down }.flatMap { listOf(it.id, it.name) })
+        cache["providers"] = Cached(System.currentTimeMillis(), parsed)
+        return parsed
+    }
 
     /**
      * Aggregated newest-episodes feed. [provider] pins one site, [search]
@@ -62,15 +87,66 @@ class AnifuseApi(private val store: AnifuseApiStore) {
         }
         val path = if (params.isEmpty()) "/v1/latest" else "/v1/latest?${params.joinToString("&")}"
         val key = "latest:$path"
-        return cached(key, LATEST_TTL_MS, forceRefresh) {
-            val (code, body) = get(path)
-            if (code !in 200..299) fail(code, body)
-            latestFromJson(JSONObject(body))
+        val diskName = "latest-${path.hashCode().toUInt().toString(16)}.json"
+        fresh<List<AnifuseLatestItem>>(key, LATEST_TTL_MS, forceRefresh)?.let { return it }
+        staleBody(diskName, AnifuseFeedCache.STALE_FEED_MS, forceRefresh)?.let { body ->
+            val parsed = latestFromJson(JSONObject(body))
+            val age = diskAge(diskName)
+            cache[key] = Cached(System.currentTimeMillis() - age, parsed)
+            if (age >= LATEST_TTL_MS) refreshLater(key) { loadLatest(path, key, diskName) }
+            return parsed
         }
+        return loadLatest(path, key, diskName)
+    }
+
+    private suspend fun loadLatest(path: String, key: String, diskName: String): List<AnifuseLatestItem> {
+        val (code, body) = get(path)
+        if (code !in 200..299) fail(code, body)
+        disk?.write(diskName, body)
+        val parsed = latestFromJson(JSONObject(body))
+        cache[key] = Cached(System.currentTimeMillis(), parsed)
+        return parsed
     }
 
     /** All feeds expire at once when the endpoint changes. */
-    fun invalidate() = cache.clear()
+    fun invalidate() {
+        cache.clear()
+        disk?.clear()
+    }
+
+    private fun <T> fresh(key: String, ttlMs: Long, forceRefresh: Boolean): T? {
+        if (forceRefresh) return null
+        val hit = cache[key] ?: return null
+        if (System.currentTimeMillis() - hit.at >= ttlMs) return null
+        @Suppress("UNCHECKED_CAST")
+        return hit.value as T
+    }
+
+    private fun staleBody(name: String, maxAgeMs: Long, forceRefresh: Boolean): String? {
+        if (forceRefresh) return null
+        return disk?.read(name, maxAgeMs)
+    }
+
+    private fun diskAge(name: String): Long = disk?.ageMs(name) ?: 0L
+
+    private fun rememberProviders(parsed: List<AnifuseProvider>, age: Long) {
+        cache["providers"] = Cached(System.currentTimeMillis() - age, parsed)
+    }
+
+    private fun refreshLater(key: String, block: suspend () -> Unit) {
+        val existing = refreshing[key]
+        if (existing != null && existing.isActive) return
+        val job = scope.async {
+            try {
+                block()
+            } catch (_: Exception) {
+            } finally {
+                refreshing.remove(key)
+            }
+        }
+        val raced = refreshing.putIfAbsent(key, job)
+        if (raced != null && raced !== job) job.cancel()
+    }
 
     private suspend fun <T> cached(
         key: String,
