@@ -250,7 +250,6 @@ import site.anikitty.app.ui.theme.PlayerChrome
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 /** Soft “next episode?” offer when this much remains. */
@@ -488,7 +487,6 @@ fun PlayerScreen(
     val playbackReady = sessionStartedOffline != null
     val downloadScope = rememberCoroutineScope()
     val download = if (anilistId > 0) source?.let { downloadStatus(it, savedRow?.toSaved()) } else null
-    val stripBytes = remember { AtomicInteger(SegmentStripDataSource.DEFAULT_STRIP_BYTES) }
     var castUnavailable by remember { mutableStateOf(CastStartup.reason) }
     var castHelper by remember { mutableStateOf<CastSessionHelper?>(null) }
     val castRouteReason = castUnavailable ?: if (castHelper == null) CAST_UNAVAILABLE else null
@@ -598,42 +596,29 @@ fun PlayerScreen(
         }
     }
 
-    // Fresh DefaultTrackSelector per ExoPlayer — release() owns the selector, so a
-    // remembered shared instance would be detached after the first quality switch.
+    val playbackSource = source?.let { sourceForPlayback(it, playbackSaved) }
+    val playbackLocal = playbackSource?.url?.let { url ->
+        url.startsWith("file:") || url.startsWith("android.resource:") || url.startsWith("content:")
+    } == true
+    val playbackHlsOffline = source != null && usesHlsCache(source, playbackSaved)
+    // The player lives for the episode. A dead CDN swaps the media item in
+    // this instance so the surface, audio session, and playhead stay put.
     val playerBundle = remember(
-        source?.url,
-        source?.subtitles,
-        source?.gotakuObf,
+        anilistId,
+        episode,
         playAttempt,
         playbackReady,
-        source?.let { savedLocalFile(it, playbackSaved)?.absolutePath },
-        if (source != null && usesHlsCache(source, playbackSaved)) playbackSaved?.url else null,
-        if (source != null && usesHlsCache(source, playbackSaved)) playbackSaved?.hlsStreams else null,
+        playbackLocal,
+        playbackHlsOffline,
+        if (playbackHlsOffline) playbackSaved?.hlsStreams else null,
     ) {
-        if (!playbackReady || source == null) return@remember null
-        val playing = sourceForPlayback(source, playbackSaved)
-        val hlsOffline = usesHlsCache(source, playbackSaved)
-        val httpFactory = PlaybackHttp.factory(
-            headers = playing.headers,
-            userAgent = playing.headers["User-Agent"] ?: DEFAULT_UA,
-        )
-        val gotakuFactory = GotakuObfDataSource.Factory(httpFactory).also {
-            it.updateObf(playing.gotakuObf)
-        }
-        val flixFactory = FlixUnwrapDataSource.Factory(
-            gotakuFactory,
-            java.util.concurrent.atomic.AtomicReference(playing.flix),
-        )
-        // Gotaku and reanime must not inherit MegaPlay's default PNG strip.
-        stripBytes.set(resolvedStripBytes(playing))
-        val localFile = playing.url.startsWith("file:") ||
-            playing.url.startsWith("android.resource:") ||
-            playing.url.startsWith("content:")
-        val upstream = SegmentStripDataSource.Factory(flixFactory, stripBytes = stripBytes)
-        val factory = when {
-            localFile -> DefaultDataSource.Factory(context)
-            hlsOffline -> cacheDataSourceFactory(context, anilistId, episode, upstream)
-            else -> upstream
+        if (!playbackReady) return@remember null
+        val pipeline = PlaybackPipeline()
+        playbackSource?.let(pipeline::apply)
+        val topFactory = when {
+            playbackLocal -> DefaultDataSource.Factory(context)
+            playbackHlsOffline -> cacheDataSourceFactory(context, anilistId, episode, pipeline.strip)
+            else -> pipeline.strip
         }
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(2_500, 40_000, 1_500, 2_000)
@@ -648,41 +633,15 @@ fun PlayerScreen(
                 .build()
         }
         val exo = ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(factory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(topFactory))
             .setLoadControl(loadControl)
             .setTrackSelector(selector)
             .build()
             .apply {
-                val itemBuilder = MediaItem.Builder().setUri(playing.url)
-                hlsStreamKeys(if (hlsOffline) playbackSaved?.hlsStreams else null)
-                    .takeIf { it.isNotEmpty() }
-                    ?.let(itemBuilder::setStreamKeys)
-                // Gotaku and AnimeX playlists have no .m3u8 suffix but are HLS.
-                if (playing.hls || playing.url.contains(".m3u8", ignoreCase = true) || playing.gotakuObf != null) {
-                    itemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
-                }
-                // The provider's own captions ride the first media item.
-                val seeded = playing.subtitles
-                val configs = seeded.mapIndexedNotNull { index, track ->
-                    subtitleConfig(track, default = index == 0)
-                }
-                if (configs.isNotEmpty()) {
-                    itemBuilder.setSubtitleConfigurations(configs)
-                }
-                setMediaItem(itemBuilder.build())
-                // A new episode rebuilds this player. While the TV has the
-                // show, that rebuild must not start the phone as well.
-                val quiet = castPhoneShouldStayQuiet(
-                    casting = isCasting,
-                    handoff = castAttachStarted && !isCasting && !castClientGaveUp,
-                    pending = castPending && !castClientGaveUp,
-                )
-                playWhenReady = !quiet
                 videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
                 playbackParameters = PlaybackParameters(playbackSpeed)
-                prepare()
             }
-        PlayerBundle(exo, selector)
+        PlayerBundle(exo, selector, pipeline)
     }
     val player = playerBundle?.player
     val trackSelector = playerBundle?.trackSelector
@@ -711,6 +670,8 @@ fun PlayerScreen(
             guard++
         }
         val resume = exo.playWhenReady
+        val playing = source?.let { sourceForPlayback(it, playbackSaved) }
+        if (playing != null) playerBundle?.pipeline?.apply(playing)
         exo.setMediaItem(current.buildUpon().setSubtitleConfigurations(configs).build(), false)
         exo.prepare()
         exo.playWhenReady = resume
@@ -753,6 +714,49 @@ fun PlayerScreen(
     val latestStartPositionMs by rememberUpdatedState(startPositionMs)
     val latestAllowHistory by rememberUpdatedState(allowHistoryFallback)
     val playhead = remember { Playhead() }
+    // Same player, next URL. setMediaItem(item, position) opens at the playhead
+    // that existed when the previous CDN died, instead of preparing at zero
+    // and hoping a later seek still has a duration.
+    LaunchedEffect(
+        player,
+        playbackSource?.url,
+        playbackSource?.headers,
+        playbackSource?.gotakuObf,
+        playbackSource?.flix,
+        playbackSource?.hls,
+        playbackSource?.subtitles,
+        playbackHlsOffline,
+        playbackSaved?.hlsStreams,
+    ) {
+        val exo = player ?: return@LaunchedEffect
+        val playing = playbackSource ?: return@LaunchedEffect
+        val bundle = playerBundle ?: return@LaunchedEffect
+        bundle.pipeline.apply(playing)
+        val start = resumeAtMs.coerceAtLeast(0L)
+        val itemBuilder = MediaItem.Builder().setUri(playing.url)
+        hlsStreamKeys(if (playbackHlsOffline) playbackSaved?.hlsStreams else null)
+            .takeIf { it.isNotEmpty() }
+            ?.let(itemBuilder::setStreamKeys)
+        if (playing.hls || playing.url.contains(".m3u8", ignoreCase = true) || playing.gotakuObf != null) {
+            itemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
+        }
+        val configs = playing.subtitles.mapIndexedNotNull { index, track ->
+            subtitleConfig(track, default = index == 0)
+        }
+        if (configs.isNotEmpty()) itemBuilder.setSubtitleConfigurations(configs)
+        val quiet = castPhoneShouldStayQuiet(
+            casting = isCasting,
+            handoff = castAttachStarted && !isCasting && !castClientGaveUp,
+            pending = castPending && !castClientGaveUp,
+        )
+        exo.setMediaItem(itemBuilder.build(), start)
+        exo.prepare()
+        exo.playWhenReady = !quiet
+        if (start > 1_500L) {
+            positionMs = start
+            playhead.ms = start
+        }
+    }
     val playingOffline = source?.let { savedLocalFile(it, playbackSaved) } != null ||
         (source != null && usesHlsCache(source, playbackSaved))
     var wasOffline by remember(anilistId, episode) { mutableStateOf(false) }
@@ -949,6 +953,31 @@ fun PlayerScreen(
         if (helper != null) catchCastPlayhead(helper, castSentPositionMs, requested)
     }
 
+    val castFailUrl = remember { arrayOfNulls<String>(1) }
+    fun failCastSource(message: String, liveMs: Long) {
+        val currentUrl = latestSources.getOrNull(latestSourceIndex)?.url
+        if (currentUrl != null && castFailUrl[0] == currentUrl) return
+        castFailUrl[0] = currentUrl
+        val decision = sourceFailover(
+            index = latestSourceIndex,
+            count = latestSources.size,
+            livePositionMs = liveMs,
+            heldResumeMs = resumeAtMs,
+            historyMs = latestStartPositionMs,
+            allowHistory = latestAllowHistory,
+        )
+        if (decision.nextIndex != null) {
+            resumeAtMs = decision.resumeMs
+            positionMs = decision.resumeMs
+            playhead.ms = decision.resumeMs
+            didSeekStart = false
+            allowHistoryFallback = false
+            sourceIndex = decision.nextIndex
+            return
+        }
+        handEpisodeBackToPhone(message, receiverStillPlaying = false)
+    }
+
     fun castFailed(message: String) {
         if (!castAlive.get()) return
         if (message == "Chromecast is not connected") {
@@ -971,7 +1000,7 @@ fun PlayerScreen(
             castHint = "Starting on your TV…"
             return
         }
-        handEpisodeBackToPhone(message, receiverStillPlaying = false)
+        failCastSource(message, playhead.ms)
     }
 
     var castSentSubtitleKey by remember(anilistId, episode, source?.url) { mutableStateOf("") }
@@ -1090,11 +1119,10 @@ fun PlayerScreen(
             val castErrors = object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
                     if (!castAlive.get() || !isCasting) return
-                    handEpisodeBackToPhone(
-                        error.message?.takeIf { it.isNotBlank() }
-                            ?: "Chromecast could not play this stream",
-                        receiverStillPlaying = false,
-                    )
+                    val message = error.message?.takeIf { it.isNotBlank() }
+                        ?: "Chromecast could not play this stream"
+                    val live = runCatching { helper.castPlayer.currentPosition }.getOrDefault(playhead.ms)
+                    failCastSource(message, live)
                 }
             }
             helper.attachScreen()
@@ -1365,10 +1393,10 @@ fun PlayerScreen(
                 },
                 onError = { message ->
                     if (!castAlive.get()) return@load
-                    handEpisodeBackToPhone(
-                        message,
-                        receiverStillPlaying = castHelper?.casting == true,
-                    )
+                    val live = runCatching {
+                        castHelper?.castPlayer?.currentPosition ?: playhead.ms
+                    }.getOrDefault(playhead.ms)
+                    failCastSource(message, live)
                 },
             ),
         )
@@ -1505,18 +1533,22 @@ fun PlayerScreen(
             }
 
             override fun onPlayerError(e: PlaybackException) {
-                if (sourceIndex + 1 < sources.size) {
-                    val pos = activePlayer?.currentPosition?.coerceAtLeast(0L) ?: playhead.ms
-                    // Prefer live position, then an in-flight quality resume target,
-                    // and only then watch-history — never rewind a quality switch.
-                    resumeAtMs = when {
-                        pos > 2_000L -> pos
-                        resumeAtMs > 2_000L -> resumeAtMs
-                        allowHistoryFallback && startPositionMs > 2_000L -> startPositionMs
-                        else -> pos.coerceAtLeast(resumeAtMs)
-                    }
+                val pos = activePlayer?.currentPosition?.coerceAtLeast(0L) ?: playhead.ms
+                val decision = sourceFailover(
+                    index = sourceIndex,
+                    count = sources.size,
+                    livePositionMs = pos,
+                    heldResumeMs = resumeAtMs,
+                    historyMs = startPositionMs,
+                    allowHistory = allowHistoryFallback,
+                )
+                if (decision.nextIndex != null) {
+                    resumeAtMs = decision.resumeMs
+                    positionMs = decision.resumeMs
+                    playhead.ms = decision.resumeMs
                     didSeekStart = false
-                    sourceIndex += 1
+                    allowHistoryFallback = false
+                    sourceIndex = decision.nextIndex
                 } else {
                     val cause = e.cause?.message?.takeIf { it.isNotBlank() }
                     error = friendlyFailure(
@@ -3837,6 +3869,7 @@ private fun subtitleConfig(
 private data class PlayerBundle(
     val player: ExoPlayer,
     val trackSelector: DefaultTrackSelector,
+    val pipeline: PlaybackPipeline,
 )
 
 private data class PlayerClock(
