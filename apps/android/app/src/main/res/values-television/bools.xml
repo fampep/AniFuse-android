@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Selected when uiMode is television. The same APK keeps the phone layouts elsewhere. -->
+    <bool name="is_television">true</bool>
+</resources>

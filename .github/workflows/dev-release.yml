@@ -1,0 +1,286 @@
+name: Dev release
+
+# Every push to main publishes the next dev prerelease.
+# The version commit message contains [skip ci], and GitHub does not
+# start a new run from the workflow token, so this does not loop.
+# README version badges read the GitHub releases API. This workflow
+# does not edit the README. A floating "dev" release is replaced in
+# place; numbered tags are never deleted.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      stable:
+        description: Cut a stable release of the current dev line, then bump main to the next dev
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dev-release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip ci]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Next dev version
+        id: ver
+        run: |
+          message="${{ github.event.head_commit.message }}"
+          if { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.stable }}" = "true" ]; } || [[ "$message" == *"[stable]"* ]]; then
+            current="$(grep -E '^name=' VERSION | head -1 | cut -d= -f2- | tr -d '[:space:]')"
+            code="$(grep -E '^code=' VERSION | head -1 | cut -d= -f2- | tr -d '[:space:]')"
+            base="${current%-dev.*}"
+            if [ "$base" = "$current" ]; then
+              # A pull request already set the stable name and code. Publish that cut.
+              name="$current"
+            else
+              name="$base"
+              code="$((code + 1))"
+            fi
+            printf '%s\n' '# Android versionName / versionCode. Pushes to main cut the next dev prerelease.' '# Stable releases stay manual. The dev workflow commits this file with [skip ci].' "name=${name}" "code=${code}" > VERSION
+            echo "stable=true" >> "$GITHUB_OUTPUT"
+          else
+            read -r name code < <(bash scripts/next-dev-version.sh)
+            echo "stable=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # Dependencies and the wrapper are the slowest cold-start cost. A warm
+      # cache skips re-downloading every AndroidX / Media3 / Compose artifact.
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('apps/android/gradle/wrapper/gradle-wrapper.properties', 'apps/android/**/*.gradle.kts') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      # The commandline tools zip and the SDK packages rarely change, so keep
+      # them between runs instead of downloading them on every push.
+      - name: Cache Android SDK
+        uses: actions/cache@v4
+        with:
+          path: ~/android-sdk
+          key: android-sdk-v2
+          restore-keys: |
+            android-sdk-
+
+      - name: Install SDK packages
+        run: |
+          SDK="$HOME/android-sdk"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          mkdir -p "$SDK/cmdline-tools" "$SDK/licenses"
+          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$SDK/licenses/android-sdk-license"
+          if [ ! -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            tmp="$(mktemp -d)"
+            curl -fsSL -o "$tmp/cmdtools.zip" https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
+            unzip -q "$tmp/cmdtools.zip" -d "$tmp"
+            mv "$tmp/cmdline-tools" "$SDK/cmdline-tools/latest"
+          fi
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK" "platforms;android-35" "build-tools;35.0.0"
+
+      # Same key for every dev and stable APK so a later build can install over this one.
+      # All four signing secrets win when they are set. Otherwise sign with the committed
+      # CI key, which is the identity already installed on devices.
+      - name: Release signing
+        env:
+          KEYSTORE_B64: ${{ secrets.ANIKITTY_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANIKITTY_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANIKITTY_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANIKITTY_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            cat > apps/android/keystore.properties <<EOF
+          storeFile=${RUNNER_TEMP}/release.jks
+          storePassword=${STORE_PASSWORD}
+          keyAlias=${KEY_ALIAS}
+          keyPassword=${KEY_PASSWORD}
+          EOF
+          else
+            echo "Signing secrets are unset. Using apps/android/signing/anikitty-ci.key."
+            cat > apps/android/keystore.properties <<EOF
+          storeFile=${{ github.workspace }}/apps/android/signing/anikitty-ci.key
+          storePassword=anikitty-ci
+          keyAlias=anikitty
+          keyPassword=anikitty-ci
+          EOF
+          fi
+
+      # Tests and the release APK in one Gradle invocation: one daemon start,
+      # one dependency graph, and the build cache warm for the next run. A red
+      # test still fails before the version commit, so nothing is published.
+      - name: Test and build release APK
+        working-directory: apps/android
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
+        run: chmod +x ./gradlew && ./gradlew :app:testDebugUnitTest :app:assembleRelease --build-cache --stacktrace
+
+      - name: Commit version
+        id: commit
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          built="$(git rev-parse HEAD)"
+          stable="${{ steps.ver.outputs.stable }}"
+          made_version_commit=false
+          git add VERSION
+          if ! git diff --cached --quiet; then
+            git commit -m "Cut ${{ steps.ver.outputs.name }} [skip ci]"
+            made_version_commit=true
+          fi
+          # A pull request may already have written the stable name, so VERSION
+          # has no diff. Still bump main to the next dev line after that cut.
+          if [ "$stable" = "true" ]; then
+            bash scripts/next-dev-version.sh >/dev/null
+            git add VERSION
+            git commit -m "Cut next dev after ${{ steps.ver.outputs.name }} [skip ci]"
+          fi
+          # The release tag is the cut the APK was built from. On a stable run
+          # that commit is the parent of the follow-up next-dev commit when
+          # this job wrote the stable name, and the checkout when a pull
+          # request already had.
+          release_sha() {
+            if [ "$stable" = "true" ] && [ "$made_version_commit" = "true" ]; then
+              git rev-parse HEAD^
+            elif [ "$made_version_commit" = "true" ]; then
+              git rev-parse HEAD
+            else
+              printf '%s\n' "$built"
+            fi
+          }
+          # Another merge can land on main while Gradle runs. Pushing this
+          # version commit is then rejected. If that newer commit is real
+          # code, its own release builds an APK that already includes this
+          # one, so this run stops before it publishes the older APK.
+          if git push origin HEAD:main; then
+            echo "sha=$(release_sha)" >> "$GITHUB_OUTPUT"
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git fetch --depth=50 origin main
+          if git merge-base --is-ancestor "$built" origin/main \
+            && git log --format=%s "$built"..origin/main | grep -qv '\[skip ci\]'; then
+            echo "main moved past ${built} with a new commit. That push has its own release."
+            echo "sha=$(release_sha)" >> "$GITHUB_OUTPUT"
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$(git rev-parse HEAD)" = "$built" ]; then
+            echo "Could not push main, and this run has no version commit to replay."
+            exit 1
+          fi
+          if ! git rebase --onto origin/main "$built" HEAD; then
+            git rebase --abort || true
+            tip="$(git log -1 --format=%s origin/main)"
+            if git merge-base --is-ancestor "$built" origin/main && printf '%s' "$tip" | grep -q '\[skip ci\]'; then
+              echo "A version commit is already on main. This older APK is not published."
+              echo "sha=$(release_sha)" >> "$GITHUB_OUTPUT"
+              echo "pushed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Could not replay the version commit onto main."
+            exit 1
+          fi
+          git push origin HEAD:main
+          echo "sha=$(release_sha)" >> "$GITHUB_OUTPUT"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        if: steps.commit.outputs.pushed == 'true'
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ steps.ver.outputs.stable }}" = "true" ]; then
+            # Dev prereleases sit above the last stable, so a short release
+            # list can miss it. Walk newest-first until a full release.
+            prev="$(gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" --jq '.[] | select(.prerelease==false) | .tag_name' | head -n 1)"
+          else
+            prev="$(gh release list --repo "${{ github.repository }}" --limit 1 --json tagName --jq '.[0].tagName')"
+          fi
+          test -n "$prev"
+          echo "previous=$prev" >> "$GITHUB_OUTPUT"
+          gh api --method POST "repos/${{ github.repository }}/releases/generate-notes" \
+            -f tag_name="v${{ steps.ver.outputs.name }}" \
+            -f previous_tag_name="$prev" \
+            -f target_commitish="${{ steps.commit.outputs.sha }}" \
+            --jq .body > notes.md
+          header="docs/release-notes/v${{ steps.ver.outputs.name }}.md"
+          if [ -f "$header" ]; then
+            tmp="$(mktemp)"
+            cat "$header" > "$tmp"
+            printf '\n' >> "$tmp"
+            cat notes.md >> "$tmp"
+            mv "$tmp" notes.md
+          fi
+
+      - name: Publish prerelease
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ steps.ver.outputs.name }}"
+          repo="${{ github.repository }}"
+          sha="${{ steps.commit.outputs.sha }}"
+          cp apps/android/app/build/outputs/apk/release/app-release.apk \
+            "anikitty-${version}.apk"
+          # Rolling download at /releases/download/dev/anikitty-dev.apk.
+          # Recreate it before the numbered release so the numbered tag
+          # stays the newest prerelease (the README dev badge). This
+          # replaces only the floating "dev" tag.
+          if [ "${{ steps.ver.outputs.stable }}" != "true" ]; then
+            cp "anikitty-${version}.apk" anikitty-dev.apk
+            if ! {
+              if gh release view dev --repo "$repo" >/dev/null 2>&1; then
+                gh release delete dev --repo "$repo" --yes --cleanup-tag
+              fi
+              gh release create dev \
+                --repo "$repo" \
+                --target "$sha" \
+                --prerelease \
+                --title "dev" \
+                --notes "Rolling dev build. This tag moves. Numbered prereleases stay on their own tags." \
+                anikitty-dev.apk
+            }; then
+              echo "Rolling dev release was not updated. The numbered release still publishes."
+            fi
+          fi
+          flags=()
+          if [ "${{ steps.ver.outputs.stable }}" != "true" ]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "v${version}" \
+            --repo "$repo" \
+            --target "$sha" \
+            --title "$version" \
+            ${flags[@]+"${flags[@]}"} \
+            --notes-file notes.md \
+            "anikitty-${version}.apk" \
+            docs/brand/anikitty-icon-512.png

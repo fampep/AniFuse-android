@@ -1,0 +1,6 @@
+/data/
+anilist.env
+*.db
+*.db-*
+/server
+/dedicated-server

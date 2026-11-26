@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fallbacks. The television bucket supplies the 10-foot sizes. Phone screens do not read these. -->
+    <dimen name="tv_overscan_horizontal">16dp</dimen>
+    <dimen name="tv_overscan_vertical">12dp</dimen>
+    <dimen name="tv_row_gap">16dp</dimen>
+    <dimen name="tv_card_gap">10dp</dimen>
+    <dimen name="tv_card_width">112dp</dimen>
+    <dimen name="tv_card_height">168dp</dimen>
+    <dimen name="tv_hero_height">200dp</dimen>
+    <dimen name="tv_nav_width">148dp</dimen>
+    <dimen name="tv_nav_item_height">44dp</dimen>
+    <dimen name="tv_focus_stroke">2dp</dimen>
+    <dimen name="tv_title">28sp</dimen>
+    <dimen name="tv_row_title">16sp</dimen>
+    <dimen name="tv_card_title">13sp</dimen>
+    <dimen name="tv_body">14sp</dimen>
+    <dimen name="tv_nav_label">15sp</dimen>
+</resources>
