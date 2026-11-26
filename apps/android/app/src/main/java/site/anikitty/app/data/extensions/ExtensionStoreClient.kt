@@ -15,52 +15,13 @@ class ExtensionStoreClient(
         var last: String? = null
         for (url in indexUrls) {
             val result = runCatching {
-                parseIndex(ExtensionHttp.getString(url), sourceUrl = url)
+                parseStoreIndex(ExtensionHttp.getString(url), sourceUrl = url)
             }
             if (result.isSuccess) loaded += result.getOrThrow()
             else last = result.exceptionOrNull()?.message
         }
         if (loaded.isEmpty()) error(last ?: "Could not load extension store")
         mergeStoreIndexes(loaded)
-    }
-
-    private fun parseIndex(raw: String, sourceUrl: String): StoreIndex {
-        val o = JSONObject(raw)
-        val protocol = o.optString("protocol").takeIf { it.isNotBlank() } ?: "1.1"
-        val arr = o.getJSONArray("extensions")
-        val list = buildList {
-            for (i in 0 until arr.length()) {
-                val e = arr.getJSONObject(i)
-                val id = e.getString("id")
-                val name = e.getString("name")
-                if (isRetiredExtension(id, name)) continue
-                add(
-                    StoreListing(
-                        id = id,
-                        name = name,
-                        description = e.optString("description", ""),
-                        github = e.getString("github"),
-                        author = e.optString("author", ""),
-                        featured = e.optBoolean("featured", false),
-                        manifestPath = e.optString("manifestPath")
-                            .takeIf { it.isNotBlank() },
-                        iconUrl = e.optString("iconUrl").takeIf { it.isNotBlank() },
-                        siteUrl = e.optString("siteUrl").takeIf { it.isNotBlank() },
-                        version = e.optString("version").takeIf { it.isNotBlank() },
-                        protocol = e.optString("protocol").takeIf { it.isNotBlank() }
-                            ?: protocol,
-                        deprecated = e.optBoolean("deprecated", false),
-                    ),
-                )
-            }
-        }
-        return StoreIndex(
-            apiVersion = o.optInt("apiVersion", 1),
-            updatedAt = o.optString("updatedAt", null)?.takeIf { it.isNotBlank() },
-            extensions = list,
-            sourceUrl = sourceUrl,
-            sourceUrls = listOf(sourceUrl),
-        )
     }
 
     companion object {
@@ -82,6 +43,46 @@ class ExtensionStoreClient(
         const val SUBMIT_FALLBACK_URL =
             "https://github.com/fampep/anikitty/issues/new?template=extension_submit.yml"
     }
+}
+
+/** Store index JSON. Tests use this so CI does not depend on a live GitHub pin. */
+internal fun parseStoreIndex(raw: String, sourceUrl: String): StoreIndex {
+    val o = JSONObject(raw)
+    val protocol = o.optString("protocol").takeIf { it.isNotBlank() } ?: "1.1"
+    val arr = o.getJSONArray("extensions")
+    val list = buildList {
+        for (i in 0 until arr.length()) {
+            val e = arr.getJSONObject(i)
+            val id = e.getString("id")
+            val name = e.getString("name")
+            if (isRetiredExtension(id, name)) continue
+            add(
+                StoreListing(
+                    id = id,
+                    name = name,
+                    description = e.optString("description", ""),
+                    github = e.getString("github"),
+                    author = e.optString("author", ""),
+                    featured = e.optBoolean("featured", false),
+                    manifestPath = e.optString("manifestPath")
+                        .takeIf { it.isNotBlank() },
+                    iconUrl = e.optString("iconUrl").takeIf { it.isNotBlank() },
+                    siteUrl = e.optString("siteUrl").takeIf { it.isNotBlank() },
+                    version = e.optString("version").takeIf { it.isNotBlank() },
+                    protocol = e.optString("protocol").takeIf { it.isNotBlank() }
+                        ?: protocol,
+                    deprecated = e.optBoolean("deprecated", false),
+                ),
+            )
+        }
+    }
+    return StoreIndex(
+        apiVersion = o.optInt("apiVersion", 1),
+        updatedAt = o.optString("updatedAt", null)?.takeIf { it.isNotBlank() },
+        extensions = list,
+        sourceUrl = sourceUrl,
+        sourceUrls = listOf(sourceUrl),
+    )
 }
 
 /**

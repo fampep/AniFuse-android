@@ -317,6 +317,7 @@ fun PlayerScreen(
     title: String,
     episode: Int,
     sources: List<PlayableSource>,
+    onRefreshSources: (suspend () -> List<PlayableSource>)? = null,
     anilistId: Int = 0,
     titleHint: String? = null,
     loadAniSkip: suspend (malId: Int, episode: Int) -> List<AniSkipStamp> =
@@ -350,7 +351,8 @@ fun PlayerScreen(
     var scrubbing by remember { mutableStateOf(false) }
     var scrubValue by remember { mutableFloatStateOf(0f) }
     var playAttempt by remember { mutableIntStateOf(0) }
-    var sourceIndex by remember(sources, playAttempt) { mutableIntStateOf(0) }
+    var playlist by remember(sources) { mutableStateOf(sources) }
+    var sourceIndex by remember(playlist, playAttempt) { mutableIntStateOf(0) }
     var skipTimes by remember { mutableStateOf(SkipTimes()) }
     var didSeekStart by remember { mutableStateOf(false) }
     var resumeAtMs by remember { mutableLongStateOf(startPositionMs) }
@@ -438,7 +440,7 @@ fun PlayerScreen(
     var sleepTick by remember { mutableIntStateOf(0) }
     var sleepNote by remember { mutableStateOf<String?>(null) }
 
-    val source = sources.getOrNull(sourceIndex)
+    val source = playlist.getOrNull(sourceIndex)
     // The source's own captions are the captions: whatever the provider
     // reports is what plays. The subtitle library API is no longer used.
     var librarySubtitles by remember(anilistId, episode) {
@@ -707,7 +709,7 @@ fun PlayerScreen(
         if (!isCasting) controlsVisible = true
     }
     val latestActive by rememberUpdatedState(activePlayer)
-    val latestSources by rememberUpdatedState(sources)
+    val latestSources by rememberUpdatedState(playlist)
     val latestSourceIndex by rememberUpdatedState(sourceIndex)
     val latestTitle by rememberUpdatedState(title)
     val latestEpisode by rememberUpdatedState(episode)
@@ -954,6 +956,37 @@ fun PlayerScreen(
     }
 
     val castFailUrl = remember { arrayOfNulls<String>(1) }
+    val freshResolve = remember(anilistId, episode, playAttempt) { java.util.concurrent.atomic.AtomicBoolean(false) }
+    var refreshingSources by remember(anilistId, episode) { mutableStateOf(false) }
+
+    fun recoverExhausted(message: String, resumeMs: Long, fromCast: Boolean) {
+        val refresh = onRefreshSources
+        if (refresh != null && freshResolve.compareAndSet(false, true)) {
+            refreshingSources = true
+            error = null
+            resumeAtMs = resumeMs
+            positionMs = resumeMs
+            playhead.ms = resumeMs
+            didSeekStart = false
+            allowHistoryFallback = false
+            downloadScope.launch {
+                val fresh = kotlinx.coroutines.withTimeoutOrNull(45_000) {
+                    runCatching { refresh() }.getOrNull().orEmpty()
+                }.orEmpty()
+                refreshingSources = false
+                if (hasNewPlayableUrls(playlist.map { it.url }, fresh.map { it.url })) {
+                    playlist = fresh
+                } else {
+                    error = message
+                    if (fromCast) handEpisodeBackToPhone(message, receiverStillPlaying = false)
+                }
+            }
+            return
+        }
+        error = message
+        if (fromCast) handEpisodeBackToPhone(message, receiverStillPlaying = false)
+    }
+
     fun failCastSource(message: String, liveMs: Long) {
         val currentUrl = latestSources.getOrNull(latestSourceIndex)?.url
         if (currentUrl != null && castFailUrl[0] == currentUrl) return
@@ -975,7 +1008,7 @@ fun PlayerScreen(
             sourceIndex = decision.nextIndex
             return
         }
-        handEpisodeBackToPhone(message, receiverStillPlaying = false)
+        recoverExhausted(message, decision.resumeMs, fromCast = true)
     }
 
     fun castFailed(message: String) {
@@ -1536,7 +1569,7 @@ fun PlayerScreen(
                 val pos = activePlayer?.currentPosition?.coerceAtLeast(0L) ?: playhead.ms
                 val decision = sourceFailover(
                     index = sourceIndex,
-                    count = sources.size,
+                    count = playlist.size,
                     livePositionMs = pos,
                     heldResumeMs = resumeAtMs,
                     historyMs = startPositionMs,
@@ -1551,10 +1584,11 @@ fun PlayerScreen(
                     sourceIndex = decision.nextIndex
                 } else {
                     val cause = e.cause?.message?.takeIf { it.isNotBlank() }
-                    error = friendlyFailure(
+                    val message = friendlyFailure(
                         listOfNotNull(e.message, cause).joinToString(" — ")
                             .ifBlank { "Playback failed" },
                     )
+                    recoverExhausted(message, decision.resumeMs, fromCast = false)
                 }
             }
         }
@@ -1567,7 +1601,7 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(sources, playAttempt) {
+    LaunchedEffect(playlist, playAttempt) {
         val live = playhead.ms
         sourceIndex = 0
         // A Sub/Dub reload reuses this screen. Keep the live playhead instead of
@@ -1575,7 +1609,7 @@ fun PlayerScreen(
         resumeAtMs = if (live > 1_500L) live else startPositionMs
         didSeekStart = false
         allowHistoryFallback = live <= 1_500L
-        if (sources.isEmpty()) error = "No playable source"
+        if (playlist.isEmpty()) error = "No playable source"
     }
 
     // Parent may load watch-history into startPositionMs after first composition.
@@ -1959,7 +1993,7 @@ fun PlayerScreen(
     }
 
     fun pickQuality(index: Int) {
-        if (index == sourceIndex || index !in sources.indices) return
+        if (index == sourceIndex || index !in playlist.indices) return
         resumeAtMs = activePlayer?.currentPosition?.coerceAtLeast(0L) ?: playhead.ms
         didSeekStart = false
         allowHistoryFallback = false
@@ -2206,9 +2240,9 @@ fun PlayerScreen(
                         onClick = { selectedVideoId = opt.id },
                     )
                 }
-                if (sources.size > 1) {
+                if (playlist.size > 1) {
                     PlayerMenuSectionLabel("Sources")
-                    sources.forEachIndexed { index, src ->
+                    playlist.forEachIndexed { index, src ->
                         val meta = listOfNotNull(
                             src.serverName?.takeIf { it.isNotBlank() },
                             src.quality?.takeIf { it.isNotBlank() },
@@ -2937,10 +2971,10 @@ fun PlayerScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 CircularProgressIndicator(color = PlayerChrome.Accent)
-                if (sourceIndex > 0 && sources.size > 1) {
+                if (sourceIndex > 0 && playlist.size > 1) {
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        "Source ${sourceIndex + 1} of ${sources.size}",
+                        "Source ${sourceIndex + 1} of ${playlist.size}",
                         color = PlayerChrome.Paper,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -3026,6 +3060,16 @@ fun PlayerScreen(
                         nearEndDismissed = true
                     }
                 },
+            )
+        }
+
+        if (refreshingSources && error == null) {
+            Text(
+                "Looking for a fresh stream…",
+                color = PlayerChrome.Paper,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                modifier = Modifier.align(Alignment.Center),
             )
         }
 

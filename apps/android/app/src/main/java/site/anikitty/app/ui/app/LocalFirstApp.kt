@@ -892,6 +892,25 @@ fun LocalFirstApp(
                 title = current.anime.title,
                 episode = current.episode,
                 sources = current.sources,
+                onRefreshSources = {
+                    if (demo || site.anikitty.app.data.demo.DemoLibrary.find(current.anime.id) != null) {
+                        emptyList()
+                    } else {
+                        val resolved = streamServers.resolveWithFailover(
+                            anilistId = current.anime.id,
+                            episode = current.episode,
+                            audio = playerAudio,
+                            titleHint = current.anime.streamTitleHint(),
+                        ).sources
+                        site.anikitty.app.data.servers.SourceBadgeCache.remember(
+                            context,
+                            current.anime.id,
+                            current.episode,
+                            resolved,
+                        )
+                        resolved
+                    }
+                },
                 anilistId = current.anime.id,
                 titleHint = current.anime.streamTitleHint(),
                 loadAniSkip = streamServers::aniSkipStamps,
