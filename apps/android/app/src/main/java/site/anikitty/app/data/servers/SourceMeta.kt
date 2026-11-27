@@ -68,6 +68,9 @@ object BuiltInSourceMeta {
     /** aniwaves.tv states resolution on the embed master playlist. */
     fun aniwaves(streamInf: String, audioMode: String): SourceFields = fromHls(streamInf, audioMode, null)
 
+    /** 2dhive.com labels mirrors (BabaStream / Wavy / HiAnime); height comes from the label when present. */
+    fun twodhive(streamInf: String, audioMode: String): SourceFields = fromHls(streamInf, audioMode, null)
+
     /**
      * animegg.org names each file on the embed, for example "1080p" or "HD".
      * The grade is kept only when that label states one.

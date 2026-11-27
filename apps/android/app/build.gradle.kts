@@ -149,6 +149,7 @@ android {
             java.srcDir("../../../extensions/providers/oneko")
             java.srcDir("../../../extensions/providers/anirex")
             java.srcDir("../../../extensions/providers/animeheaven")
+            java.srcDir("../../../extensions/providers/2dhive")
         }
     }
 }
