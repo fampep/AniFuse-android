@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import site.anikitty.app.data.servers.resolveHeadStartMs
 import site.anikitty.app.data.servers.sinkUnhealthy
 import java.io.File
 
@@ -58,5 +59,30 @@ class AnifuseFeedCacheTest {
             name = { it },
         )
         assertEquals(listOf("gogo", "anizone"), selectedDown)
+    }
+
+    @Test
+    fun aLocalFailureHoldsForThreeMinutesAndASuccessClearsIt() {
+        val dir = File.createTempFile("pulse", "").apply {
+            delete()
+            mkdirs()
+        }
+        var now = 10_000L
+        val cache = AnifuseFeedCache(dir) { now }
+        cache.notePulse(listOf("AniHosts"), ok = false)
+        assertEquals(setOf("anihosts"), cache.pulseDownKeys())
+        cache.notePulse(listOf("AniHosts"), ok = true)
+        assertTrue(cache.pulseDownKeys().isEmpty())
+        cache.notePulse(listOf("gogo"), ok = false)
+        now += AnifuseFeedCache.LOCAL_HOLD_MS + 5
+        assertTrue(cache.pulseDownKeys().isEmpty())
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun aColdPreferredResolverLosesItsHeadStart() {
+        assertEquals(900L, resolveHeadStartMs(anyDown = false, preferredCold = false))
+        assertEquals(350L, resolveHeadStartMs(anyDown = true, preferredCold = false))
+        assertEquals(0L, resolveHeadStartMs(anyDown = true, preferredCold = true))
     }
 }

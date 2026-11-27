@@ -23,3 +23,13 @@ internal fun <T> sinkUnhealthy(
     }
     return listOf(head) + live + dead
 }
+
+/**
+ * Head start before the next resolvers join the race.
+ * A preferred host we already know is down must not hold the episode for 900ms.
+ */
+internal fun resolveHeadStartMs(anyDown: Boolean, preferredCold: Boolean): Long = when {
+    preferredCold -> 0L
+    anyDown -> 350L
+    else -> 900L
+}

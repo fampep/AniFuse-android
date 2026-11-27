@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -41,7 +40,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -78,7 +76,6 @@ private data class DockColors(
     val selected: Color,
     val idle: Color,
     val ink: Color,
-    val sheenTop: Color,
 )
 
 @Composable
@@ -91,7 +88,6 @@ private fun dockColors(): DockColors {
             selected = Color.White,
             idle = Color(0xFF8A8A8A),
             ink = Color(0xFF080808),
-            sheenTop = Color.White.copy(alpha = 0.16f),
         )
     } else {
         DockColors(
@@ -100,7 +96,6 @@ private fun dockColors(): DockColors {
             selected = palette.accent,
             idle = palette.muted,
             ink = palette.onAccent,
-            sheenTop = Color.White.copy(alpha = 0.42f),
         )
     }
 }
@@ -141,15 +136,7 @@ fun KittyBottomNav(
                     ambientColor = Color.Black.copy(alpha = if (nightDock) 0.72f else 0.16f),
                     spotColor = Color.Black.copy(alpha = if (nightDock) 0.55f else 0.12f),
                 )
-                .clip(shape)
-                .background(dock.fill)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(dock.sheenTop, Color.Transparent),
-                    ),
-                )
-                .border(1.dp, Color.White.copy(alpha = if (nightDock) 0.20f else 0.44f), shape)
-                .border(1.dp, dock.stroke, shape)
+                .stageFrosted(shape)
                 .padding(horizontal = 6.dp, vertical = 6.dp),
         ) {
             if (tabs.isNotEmpty()) {
@@ -168,16 +155,10 @@ fun KittyBottomNav(
                 )
                 Box(
                     Modifier
-                        .offset(x = tabWidth * slide)
+                        .graphicsLayer { translationX = tabWidth.toPx() * slide }
                         .width(tabWidth)
                         .fillMaxHeight()
                         .padding(horizontal = 2.dp)
-                        .shadow(
-                            elevation = 10.dp,
-                            shape = RoundedCornerShape(22.dp),
-                            ambientColor = Color.White.copy(alpha = 0.18f),
-                            spotColor = Color.White.copy(alpha = 0.12f),
-                        )
                         .clip(RoundedCornerShape(22.dp))
                         .background(dock.selected),
                 )
@@ -218,8 +199,10 @@ fun KittyBottomNav(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
                                 onClick = {
-                                    KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
-                                    onSelect(tab.id)
+                                    if (!selected) {
+                                        KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
+                                        onSelect(tab.id)
+                                    }
                                 },
                             )
                             .graphicsLayer {
@@ -273,6 +256,7 @@ fun KittySideNav(
 ) {
     val dock = dockColors()
     val palette = LocalKittyPalette.current
+    val view = LocalView.current
     Column(
         modifier = modifier
             .width(196.dp)
@@ -313,7 +297,10 @@ fun KittySideNav(
                         color = if (selected && !focused) dock.selected else Color.Transparent,
                         shape = shape,
                     )
-                    .clickable { onSelect(tab.id) }
+                    .clickable {
+                        if (!selected) KittyHaptics.perform(view, KittyHaptics.Kind.Confirm)
+                        onSelect(tab.id)
+                    }
                     .padding(horizontal = 12.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),

@@ -80,6 +80,7 @@ import site.anikitty.app.data.mediaFormatLabel
 import site.anikitty.app.data.watchedAgo
 import site.anikitty.app.ui.components.HeroBanner
 import site.anikitty.app.ui.components.StageGlassDisc
+import site.anikitty.app.ui.components.stageFrosted
 import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.components.StageSlider
 import site.anikitty.app.ui.components.KittyImage
@@ -160,9 +161,7 @@ internal fun HomeBar(
         Row(
             modifier = Modifier
                 .padding(start = 2.dp)
-                .clip(RoundedCornerShape(999.dp))
-                .background(Color.White.copy(alpha = if (palette.dark) 0.08f else 0.92f))
-                .border(1.dp, Color.White.copy(alpha = if (palette.dark) 0.16f else 0.40f), RoundedCornerShape(999.dp))
+                .stageFrosted(RoundedCornerShape(999.dp))
                 .padding(horizontal = 4.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -303,9 +302,7 @@ internal fun HomeFeatured(
                     .align(Alignment.BottomStart)
                     .padding(start = 16.dp, end = 16.dp, bottom = 22.dp)
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(Color(0xCC101010))
-                    .border(1.dp, Color(0xFF292929), RoundedCornerShape(22.dp))
+                    .stageFrosted(RoundedCornerShape(22.dp))
                     .spacePress { onOpen(anime) }
                     .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {

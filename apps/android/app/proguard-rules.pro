@@ -21,6 +21,7 @@
 # only because they are not minified. Keep the whole package so the options
 # provider, the session service, and the relay all survive shrinking.
 -keep class site.anikitty.app.cast.** { *; }
+-keep class site.anikitty.app.ui.player.PlaybackSessionService { *; }
 -keepattributes *Annotation*
 -dontwarn com.google.android.gms.cast.**
 -dontwarn com.google.android.gms.cast.framework.**
