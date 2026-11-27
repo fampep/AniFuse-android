@@ -43,6 +43,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import site.anikitty.app.ui.components.EpisodeCarousel
 import site.anikitty.app.ui.components.EpisodeSlide
 import site.anikitty.app.ui.components.KittyImage
+import site.anikitty.app.ui.components.stageGlassPlate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -89,23 +90,26 @@ internal fun PlayerPageBar(
     modifier: Modifier = Modifier,
 ) {
     val barShape = RoundedCornerShape(18.dp)
+    val view = androidx.compose.ui.platform.LocalView.current
     Row(
         modifier = modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout))
             .padding(horizontal = 10.dp, vertical = 8.dp)
-            .clip(barShape)
-            .background(Color(0xD6101012))
-            .background(
-                Brush.verticalGradient(
-                    listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
-                ),
-            )
-            .border(1.dp, Color.White.copy(alpha = 0.14f), barShape)
+            .stageGlassPlate(shape = barShape, elevated = true)
             .padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ChromeDisc(onClick = onBack, size = 44.dp) {
+        site.anikitty.app.ui.components.StageGlassDisc(
+            onClick = {
+                site.anikitty.app.ui.theme.KittyHaptics.perform(
+                    view,
+                    site.anikitty.app.ui.theme.KittyHaptics.Kind.Tick,
+                )
+                onBack()
+            },
+            size = 44.dp,
+        ) {
             Icon(
                 Icons.AutoMirrored.Rounded.ArrowBack,
                 contentDescription = "Back",
@@ -440,43 +444,32 @@ internal fun ChromeDisc(
     focusRequester: FocusRequester? = null,
     content: @Composable () -> Unit,
 ) {
-    val shape = CircleShape
+    val view = androidx.compose.ui.platform.LocalView.current
     var focused by remember { mutableStateOf(false) }
-    val grow = if (isTelevision()) 1.02f else 1.06f
-    Box(
-        modifier = modifier
-            .size(size)
-            .scale(if (focused) grow else 1f)
-            .clip(shape)
-            .background(
-                when {
-                    accent -> PlayerChrome.Accent
-                    large -> Color(0xB3101012)
-                    else -> Color(0x99101012)
+    site.anikitty.app.ui.components.StageGlassDisc(
+        onClick = {
+            site.anikitty.app.ui.theme.KittyHaptics.perform(
+                view,
+                if (accent || large) {
+                    site.anikitty.app.ui.theme.KittyHaptics.Kind.Confirm
+                } else {
+                    site.anikitty.app.ui.theme.KittyHaptics.Kind.Tick
                 },
             )
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color.White.copy(alpha = if (accent) 0.18f else 0.10f),
-                        Color.Transparent,
-                    ),
-                ),
-            )
-            .border(
-                if (focused) 2.dp else 1.dp,
-                if (focused || accent) Color.White else Color.White.copy(alpha = 0.16f),
-                shape,
-            )
+            onClick()
+        },
+        modifier = modifier
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                role = Role.Button,
-                onClick = onClick,
+            .then(
+                if (focused) {
+                    Modifier.border(2.dp, Color.White, CircleShape)
+                } else {
+                    Modifier
+                },
             ),
-        contentAlignment = Alignment.Center,
+        size = size,
+        selected = accent || focused,
         content = { content() },
     )
 }

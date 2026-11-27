@@ -4,8 +4,6 @@
 package site.anikitty.app.ui.player
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,7 +21,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -43,18 +40,20 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import site.anikitty.app.data.skip.SkipTimes
+import site.anikitty.app.ui.app.spacePress
+import site.anikitty.app.ui.components.StageGlassDisc
+import site.anikitty.app.ui.components.stageGlassPlate
+import site.anikitty.app.ui.theme.KittyHaptics
 
 @Composable
 internal fun AniFusePlayerChrome(
@@ -145,9 +144,7 @@ internal fun AniFusePlayerChrome(
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier
                             .padding(top = 6.dp)
-                            .clip(RoundedCornerShape(999.dp))
-                            .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(999.dp))
-                            .background(Color(0xB3101010))
+                            .stageGlassPlate(shape = RoundedCornerShape(999.dp))
                             .padding(horizontal = 10.dp, vertical = 4.dp),
                     )
                 }
@@ -211,19 +208,13 @@ internal fun AniFusePlayerChrome(
 
 @Composable
 private fun ChromeIcon(icon: ImageVector, description: String, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .clip(CircleShape)
-            .background(Color(0xCC121214))
-            .background(
-                Brush.verticalGradient(
-                    listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
-                ),
-            )
-            .border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape)
-            .clickable(role = Role.Button, onClick = onClick),
-        contentAlignment = Alignment.Center,
+    val view = LocalView.current
+    StageGlassDisc(
+        onClick = {
+            KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
+            onClick()
+        },
+        size = 44.dp,
     ) {
         Icon(icon, contentDescription = description, tint = Color.White, modifier = Modifier.size(22.dp))
     }
@@ -237,25 +228,17 @@ private fun RoundTransport(
     onClick: () -> Unit,
     primary: Boolean = false,
 ) {
-    val shape = CircleShape
-    Box(
-        modifier = Modifier
-            .size(size)
-            .shadow(
-                elevation = if (primary) 16.dp else 8.dp,
-                shape = shape,
-                ambientColor = Color.Black.copy(alpha = 0.45f),
-                spotColor = Color.Black.copy(alpha = 0.35f),
+    val view = LocalView.current
+    StageGlassDisc(
+        onClick = {
+            KittyHaptics.perform(
+                view,
+                if (primary) KittyHaptics.Kind.Confirm else KittyHaptics.Kind.Tick,
             )
-            .clip(shape)
-            .background(if (primary) Color.White else Color(0xB3101010))
-            .border(
-                1.dp,
-                if (primary) Color.White else Color.White.copy(alpha = 0.16f),
-                shape,
-            )
-            .clickable(role = Role.Button, onClick = onClick),
-        contentAlignment = Alignment.Center,
+            onClick()
+        },
+        size = size,
+        selected = primary,
     ) {
         Icon(
             icon,
@@ -268,23 +251,20 @@ private fun RoundTransport(
 
 @Composable
 private fun ActionPill(icon: ImageVector, label: String, onClick: () -> Unit) {
+    val view = LocalView.current
     val shape = RoundedCornerShape(999.dp)
     Row(
         modifier = Modifier
-            .clip(shape)
-            .background(Color(0xB3101010))
-            .background(
-                Brush.verticalGradient(
-                    listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
-                ),
-            )
-            .border(1.dp, Color.White.copy(alpha = 0.16f), shape)
-            .clickable(role = Role.Button, onClick = onClick)
+            .stageGlassPlate(shape = shape)
+            .spacePress {
+                KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
+                onClick()
+            }
             .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-        Spacer(Modifier.width(6.dp))
+        Spacer(modifier = Modifier.width(6.dp))
         Text(
             label,
             color = Color.White,
