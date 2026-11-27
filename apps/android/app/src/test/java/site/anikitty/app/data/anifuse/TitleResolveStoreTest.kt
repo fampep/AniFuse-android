@@ -18,7 +18,17 @@ class TitleResolveStoreTest {
     fun putIsReadableBeforeAndAfterFlush() {
         val file = tmp.newFile("titles.json")
         val store = TitleResolveStore(file, flushDelayMs = 60_000L)
-        store.put("one piece", AnimeSummary(id = 21, title = "One Piece"))
+        store.put(
+            "one piece",
+            AnimeSummary(
+                id = 21,
+                title = "One Piece",
+                coverImageUrl = null,
+                episodes = null,
+                format = null,
+                averageScore = null,
+            ),
+        )
         assertEquals(21, store.get("one piece")?.id)
         store.flushNow()
         val reloaded = TitleResolveStore(file, flushDelayMs = 60_000L)
