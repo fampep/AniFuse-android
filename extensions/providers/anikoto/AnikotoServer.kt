@@ -52,7 +52,9 @@ class AnikotoServer(
         require(anilistId > 0) { "anilistId required" }
         require(episode > 0) { "episode required" }
         val mode = if (audio.equals("dub", ignoreCase = true)) "dub" else "sub"
-        if (hostAnswers(ANIKOTO_BASE)) {
+        val anikotoUp = hostAnswers(ANIKOTO_BASE)
+        val kotoUp = hostAnswers(KOTOPLAY_BASE)
+        if (anikotoUp) {
             val primary = try {
                 resolveAnikoto(anilistId, episode, audio, titleHint)
             } catch (cancelled: CancellationException) {
@@ -62,7 +64,7 @@ class AnikotoServer(
             }
             if (!primary.isNullOrEmpty()) return@withContext primary
         }
-        if (hostAnswers(KOTOPLAY_BASE)) {
+        if (kotoUp) {
             val mirror = try {
                 resolveKotoplay(anilistId, episode, mode, titleHint)
             } catch (cancelled: CancellationException) {
@@ -72,7 +74,8 @@ class AnikotoServer(
             }
             if (!mirror.isNullOrEmpty()) return@withContext mirror
         }
-        error("No playable $mode sources")
+        if (!anikotoUp && !kotoUp) error(BLOCKED)
+        error(MISSING)
     }
 
     /** anikoto.cz watch page, episode list, and MegaPlay embeds. */
@@ -713,6 +716,8 @@ class AnikotoServer(
 
     companion object {
         const val ID = "anikoto"
+        const val MISSING = "Anikoto does not have this episode."
+        const val BLOCKED = "Anikoto could not be reached."
 
         private const val ANIKOTO_BASE = "https://anikoto.cz"
         private const val KOTOPLAY_BASE = "https://kotoplay.to"

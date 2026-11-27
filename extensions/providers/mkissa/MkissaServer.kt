@@ -70,6 +70,7 @@ class MkissaServer(
             .put("search", JSONObject().put("query", title).put("sortBy", "Name_ASC").put("sortDirection", "ASC"))
             .put("limit", 20)
         val body = post(API, graphql(SEARCH_QUERY, variables))
+        if (body.code == 404) error(MISSING)
         if (body.code !in 200..299) error(BLOCKED)
         val hit = mkissaPickShow(body.text, anilistId, episode, mode) ?: error(MISSING)
         cache?.putShow(ID, anilistId, hit.id, hit.id)
@@ -99,6 +100,7 @@ class MkissaServer(
             .put("k", MkissaCrypto.LANE)
             .put("aaReq", token)
         val body = post(API, graphql(EPISODE_QUERY, variables, extensions))
+        if (body.code == 404) return null
         if (body.code !in 200..299) error(BLOCKED)
         return unwrapEpisode(body.text, lane.key)
     }

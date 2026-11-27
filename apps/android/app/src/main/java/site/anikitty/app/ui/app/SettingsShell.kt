@@ -56,6 +56,7 @@ import site.anikitty.app.ui.icons.FluentuiSystemIconsAlertOutline
 import site.anikitty.app.ui.icons.FluentuiSystemIconsArrowSync
 import site.anikitty.app.ui.icons.FluentuiSystemIconsMoviesAndTvOutline
 import site.anikitty.app.ui.icons.FluentuiSystemIconsPlayFilled
+import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.KittyGlass
 import site.anikitty.app.ui.theme.kittyGlassSoft
 import androidx.compose.material3.Button
@@ -604,6 +605,7 @@ internal fun SettingsFeed(
     val television = isTelevision()
     val apiEndpoint by anifuseStore.baseUrl.collectAsState()
     val disabledExtIds by catalog.extensions.disabled.collectAsState()
+    val coldKeys = remember(resolvers, selectedId, disabledExtIds) { catalog.coldProviderKeys() }
     // Disabled extensions leave the failover chain but stay listed on the
     // sources page so they can be re-enabled.
     val sourceRows = remember(resolvers, installedExt, disabledExtIds) {
@@ -882,11 +884,13 @@ internal fun SettingsFeed(
                         val isExtension = installedExt.any { it.id == server.id }
                         val isBundled = server.id in catalog.bundledSiteIds
                         val isEnabled = catalog.extensions.isEnabled(server.id)
+                        val cold = server.id.lowercase() in coldKeys ||
+                            server.name.trim().lowercase() in coldKeys
                         Column(
                             modifier = Modifier
                                 .padding(horizontal = 20.dp)
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .stageGlassPlate(shape = RoundedCornerShape(16.dp), elevated = selected && isEnabled)
                                 .then(
                                     if (isEnabled) {
                                         Modifier.spacePress { catalog.select(server.id) }
@@ -897,15 +901,12 @@ internal fun SettingsFeed(
                                 .semantics {
                                     contentDescription = sourceRowDescription(server.name, isExtension, selected)
                                 }
-                                .background(palette.surface)
-                                .border(
-                                    0.5.dp,
+                                .then(
                                     if (selected && isEnabled) {
-                                        palette.text.copy(alpha = 0.45f)
+                                        Modifier.border(0.5.dp, palette.accent, RoundedCornerShape(16.dp))
                                     } else {
-                                        palette.text.copy(alpha = 0.08f)
+                                        Modifier
                                     },
-                                    RoundedCornerShape(12.dp),
                                 )
                                 .padding(14.dp),
                         ) {
@@ -931,10 +932,24 @@ internal fun SettingsFeed(
                                                     "ACTIVE",
                                                     modifier = Modifier
                                                         .clip(RoundedCornerShape(999.dp))
-                                                        .background(palette.text)
+                                                        .background(palette.accent)
                                                         .padding(horizontal = 8.dp, vertical = 3.dp)
                                                         .clearAndSetSemantics { },
-                                                    color = palette.page,
+                                                    color = palette.onAccent,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 10.sp,
+                                                )
+                                            }
+                                            cold && isEnabled -> {
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    "COLD",
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(999.dp))
+                                                        .background(palette.text.copy(alpha = 0.1f))
+                                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                                        .clearAndSetSemantics { },
+                                                    color = palette.faint,
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 10.sp,
                                                 )
@@ -957,7 +972,8 @@ internal fun SettingsFeed(
                                     }
                                     Text(
                                         when {
-                                            isBundled -> "Live site"
+                                            isBundled && cold -> "Live site · cooled after a hard fail"
+                                            isBundled -> "Live site · in the race"
                                             isExtension -> "Extension"
                                             else -> "Source"
                                         },

@@ -333,21 +333,15 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         }
     }
 
+    /** Soft-blocked provider ids/names from the last hard failures. */
+    fun coldProviderKeys(): Set<String> = downProviderNames()
+
     private fun downProviderNames(): Set<String> =
         providerHealth.downNames() + providerHealth.pulseDownKeys()
 
     /** Soft-block providers that just hard-failed so the next race skips them first. */
     private fun rememberProviderDown(resolver: StreamResolver, message: String?) {
-        val msg = message.orEmpty().lowercase()
-        val hard = "could not be reached" in msg ||
-            "blocked" in msg ||
-            "timeout" in msg ||
-            "empty sources" in msg ||
-            "403" in msg ||
-            "503" in msg ||
-            "challenge" in msg ||
-            "cloudflare" in msg
-        if (!hard) return
+        if (!isHardProviderFailure(message)) return
         val keys = listOf(resolver.server.id, resolver.server.name)
         providerHealth.notePulse(keys, ok = false)
         val next = providerHealth.downNames() +

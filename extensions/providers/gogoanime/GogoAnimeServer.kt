@@ -67,6 +67,7 @@ class GogoAnimeServer(
         for (query in gogoQueries(title)) {
             val body = get("$ORIGIN/?s=${enc(query)}", siteHeaders())
             if (gogoBlocked(body.code, body.text)) error(BLOCKED)
+            if (body.code == 404) continue
             if (body.code !in 200..299) error(BLOCKED)
             val show = gogoPickShow(gogoSearchHits(body.text), title, dub) ?: continue
             remember(anilistId, dub, show.url)
@@ -84,6 +85,7 @@ class GogoAnimeServer(
         }
         val body = get(seriesUrl, siteHeaders())
         if (gogoBlocked(body.code, body.text)) error(BLOCKED)
+        if (body.code == 404) error(MISSING)
         if (body.code !in 200..299) error(BLOCKED)
         val rows = gogoEpisodes(body.text)
         if (rows.isNotEmpty()) {
@@ -106,6 +108,7 @@ class GogoAnimeServer(
     private fun openPlayers(episodeUrl: String, dub: Boolean): List<GogoPlayer> {
         val body = get(episodeUrl, siteHeaders())
         if (gogoBlocked(body.code, body.text)) error(BLOCKED)
+        if (body.code == 404) error(MISSING)
         if (body.code !in 200..299) error(BLOCKED)
         return gogoPlayers(body.text, dub).ifEmpty { error(MISSING) }
     }
@@ -113,6 +116,7 @@ class GogoAnimeServer(
     private fun openPlayer(player: GogoPlayer, dub: Boolean): PlayableSource? {
         val page = get(player.url, siteHeaders())
         if (gogoBlocked(page.code, page.text)) error(BLOCKED)
+        if (page.code == 404) return null
         if (page.code !in 200..299) return null
         val frame = gogoFrame(page.text) ?: return null
         return when (gogoHost(frame)) {
