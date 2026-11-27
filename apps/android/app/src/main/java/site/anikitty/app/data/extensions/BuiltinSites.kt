@@ -48,6 +48,19 @@ internal fun builtinStoreListings(): List<StoreListing> = listOf(
         protocol = "1.1",
         playsOnDevice = true,
     ),
+    StoreListing(
+        id = TWODHIVE_ID,
+        name = "2Dhive",
+        description = "On-device 2dhive.com resolve. BabaStream, Wavy, and HiAnime play on this phone.",
+        github = TWODHIVE_SITE,
+        author = "2dhive.com",
+        featured = true,
+        iconUrl = "https://www.google.com/s2/favicons?domain=2dhive.com&sz=128",
+        siteUrl = TWODHIVE_SITE,
+        version = "site",
+        protocol = "1.1",
+        playsOnDevice = true,
+    ),
 )
 
 internal const val ANIREX_ID = "anirex"
@@ -56,6 +69,8 @@ internal const val ANIMEHEAVEN_ID = "animeheaven"
 internal const val ANIMEHEAVEN_SITE = "https://animeheaven.me/"
 internal const val ONEKO_ID = "oneko"
 internal const val ONEKO_SITE = "https://beta.0neko.cc/"
+internal const val TWODHIVE_ID = "twodhive"
+internal const val TWODHIVE_SITE = "https://2dhive.com/"
 
 internal fun isCatalogSite(listing: StoreListing): Boolean = !listing.playsOnDevice
 
