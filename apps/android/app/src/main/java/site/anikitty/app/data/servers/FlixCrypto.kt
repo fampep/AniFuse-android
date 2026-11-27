@@ -245,6 +245,7 @@ internal object FlixCrypto {
     /** Legacy ids that pointed at a different site. ani.pm stays ani.pm. */
     fun migrateServerId(saved: String?): String? = when (saved) {
         "settlar", "yozora" -> "anipm"
+        "anivault" -> "anirex"
         else -> saved
     }
 

@@ -10,22 +10,22 @@ package site.anikitty.app.data.extensions
  */
 internal fun builtinStoreListings(): List<StoreListing> = listOf(
     StoreListing(
-        id = ANIVAULT_ID,
-        name = "AniVault",
-        description = "Every AniVault server. The file plays on this phone.",
-        github = ANIVAULT_SITE,
-        author = "anivault.tv",
+        id = ANIREX_ID,
+        name = "AniRex",
+        description = "On-device anirex.to resolve. FlixCloud plays on this phone.",
+        github = ANIREX_SITE,
+        author = "anirex.to",
         featured = true,
-        iconUrl = "https://www.google.com/s2/favicons?domain=anivault.tv&sz=128",
-        siteUrl = ANIVAULT_SITE,
+        iconUrl = "https://www.google.com/s2/favicons?domain=anirex.to&sz=128",
+        siteUrl = ANIREX_SITE,
         version = "site",
         protocol = "1.1",
         playsOnDevice = true,
     ),
 )
 
-internal const val ANIVAULT_ID = "anivault"
-internal const val ANIVAULT_SITE = "https://anivault.tv/"
+internal const val ANIREX_ID = "anirex"
+internal const val ANIREX_SITE = "https://anirex.to/"
 
 internal fun isCatalogSite(listing: StoreListing): Boolean = !listing.playsOnDevice
 
