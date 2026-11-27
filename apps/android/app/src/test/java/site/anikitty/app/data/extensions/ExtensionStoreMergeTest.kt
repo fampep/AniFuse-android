@@ -40,7 +40,7 @@ class ExtensionStoreMergeTest {
                 ),
             ),
         )
-        assertEquals(listOf("anipm", "reanime"), merged.extensions.map { it.id })
+        assertEquals(listOf("anipm", "reanime", "anivault"), merged.extensions.map { it.id })
         assertEquals("1.0.0", merged.extensions.first { it.id == "reanime" }.version)
         assertEquals("1.1", merged.extensions.first { it.id == "reanime" }.protocol)
         assertEquals("2026-11-15", merged.updatedAt)
@@ -55,7 +55,7 @@ class ExtensionStoreMergeTest {
             ),
         )
         assertEquals(
-            listOf("reanime", "anipm", "site.anikitty.example.hello"),
+            listOf("reanime", "anipm", "site.anikitty.example.hello", "anivault"),
             merged.extensions.map { it.id },
         )
         assertEquals("Ani.pm", merged.extensions.first { it.id == "anipm" }.name)
@@ -90,6 +90,38 @@ class ExtensionStoreMergeTest {
         val reanime = merged.extensions.first { it.id == "reanime" }
         assertEquals("1.0.1", reanime.version)
         assertTrue(merged.extensions.any { it.id == "site.anikitty.example.hello" })
+    }
+
+    @Test
+    fun anivaultStaysOnTheListAndOpensTheSite() {
+        val merged = mergeStoreIndexes(listOf(index(MIRROR, "2026-11-15", reanime())))
+        val vault = merged.extensions.first { it.id == ANIVAULT_ID }
+        assertEquals(ANIVAULT_SITE, vault.siteUrl)
+        assertFalse(vault.playsOnDevice)
+        assertTrue(isCatalogSite(vault))
+        assertTrue(storeListingMatches(vault, "anivault.tv"))
+        assertEquals(
+            StoreCardRole.OpenSite,
+            storeCardRole(
+                selected = false,
+                deprecated = false,
+                onDevice = false,
+                bundled = false,
+                sample = false,
+                catalogSite = true,
+            ),
+        )
+        assertEquals(
+            StoreCardRole.Use,
+            storeCardRole(
+                selected = false,
+                deprecated = false,
+                onDevice = true,
+                bundled = false,
+                sample = false,
+                catalogSite = true,
+            ),
+        )
     }
 
     private fun reanime(version: String = "1.0.0", deprecated: Boolean = false) = StoreListing(

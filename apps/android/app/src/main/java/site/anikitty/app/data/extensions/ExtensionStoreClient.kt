@@ -123,6 +123,9 @@ internal fun mergeStoreIndexes(loaded: List<StoreIndex>): StoreIndex {
         addAll(extensions)
         addAll(rest)
     }
+    for (site in builtinStoreListings()) {
+        if (site.id !in byId) byId[site.id] = site
+    }
     val newestAt = clean.maxOf { it.updatedAt.orEmpty() }.takeIf { it.isNotEmpty() }
     return StoreIndex(
         apiVersion = base.apiVersion,

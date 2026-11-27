@@ -55,6 +55,11 @@ data class StoreListing(
      * the playback race. Live bundled sites are never marked this way.
      */
     val deprecated: Boolean = false,
+    /**
+     * False when the store knows the site but this phone has no resolver for it.
+     * The card opens the site. It does not join the playback race.
+     */
+    val playsOnDevice: Boolean = true,
 )
 
 /**
