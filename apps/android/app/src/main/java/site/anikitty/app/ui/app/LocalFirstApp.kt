@@ -831,12 +831,15 @@ fun LocalFirstApp(
                                 usedFallback = false,
                             )
                         } else {
-                            val warmed = site.anikitty.app.data.servers.PlayableWarmCache.take(
+                            val warmedRaw = site.anikitty.app.data.servers.PlayableWarmCache.take(
                                 anilistId = current.anime.id,
                                 episode = nextEpisode,
                                 audio = nextAudio,
                             )
-                            if (warmed != null) {
+                            val warmed = warmedRaw?.let {
+                                site.anikitty.app.data.servers.PlayableWarmProbe.filterAlive(it)
+                            }.orEmpty()
+                            if (warmed.isNotEmpty()) {
                                 val warmServer = runCatching {
                                     streamServers.selectedResolver().server
                                 }.getOrElse {
@@ -1067,17 +1070,21 @@ fun LocalFirstApp(
                                 episode = next,
                                 audio = playerAudio,
                             )
-                            val resolved = existing ?: streamServers.resolveWithFailover(
+                            val resolvedRaw = existing ?: streamServers.resolveWithFailover(
                                 anilistId = current.anime.id,
                                 episode = next,
                                 audio = playerAudio,
                                 titleHint = current.anime.streamTitleHint(),
-                            ).sources.also { sources ->
+                            ).sources
+                            val resolved = site.anikitty.app.data.servers.PlayableWarmProbe
+                                .filterAlive(resolvedRaw)
+                                .ifEmpty { resolvedRaw }
+                            if (resolved.isNotEmpty()) {
                                 site.anikitty.app.data.servers.PlayableWarmCache.put(
                                     anilistId = current.anime.id,
                                     episode = next,
                                     audio = playerAudio,
-                                    sources = sources,
+                                    sources = resolved,
                                 )
                             }
                             site.anikitty.app.data.servers.SourceBadgeCache.remember(
@@ -2071,6 +2078,17 @@ private fun prefetchCovers(context: android.content.Context, animes: List<AnimeS
             coil.request.ImageRequest.Builder(context)
                 .data(url)
                 .size(360, 540)
+                .memoryCacheKey(key)
+                .diskCacheKey(key)
+                .build(),
+        )
+    }
+    animes.take(8).mapNotNull { it.bannerImageUrl }.distinct().forEach { url ->
+        val key = site.anikitty.app.ui.components.coverCacheKey(url, 1280, 720)
+        loader.enqueue(
+            coil.request.ImageRequest.Builder(context)
+                .data(url)
+                .size(1280, 720)
                 .memoryCacheKey(key)
                 .diskCacheKey(key)
                 .build(),

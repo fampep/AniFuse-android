@@ -49,6 +49,7 @@ import site.anikitty.app.ui.icons.FluentuiSystemIconsArrowSync
 import site.anikitty.app.ui.icons.FluentuiSystemIconsBookmarkOutline
 import site.anikitty.app.ui.icons.FluentuiSystemIconsMoviesAndTvFilled
 import site.anikitty.app.ui.icons.FluentuiSystemIconsStarFilled
+import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.kittyGlassSoft
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -327,9 +328,7 @@ fun MySpaceFeed(
                         .fillMaxWidth()
                         .windowInsetsPadding(WindowInsets.statusBars)
                         .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .clip(RoundedCornerShape(28.dp))
-                        .background(Color(0xFF101010))
-                        .border(1.dp, Color(0xFF292929), RoundedCornerShape(28.dp))
+                        .stageGlassPlate(shape = RoundedCornerShape(28.dp), elevated = true)
                         .padding(18.dp),
                 ) {
                     Row(

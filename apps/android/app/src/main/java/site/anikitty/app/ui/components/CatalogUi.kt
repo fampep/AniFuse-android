@@ -701,7 +701,7 @@ fun KittyPosterRow(
             contentPadding = PaddingValues(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            items(items, key = { it.id }) { anime ->
+            items(items, key = { it.id }, contentType = { "poster" }) { anime ->
                 KittyPosterCard(
                     anime = anime,
                     onClick = { onOpen(anime) },

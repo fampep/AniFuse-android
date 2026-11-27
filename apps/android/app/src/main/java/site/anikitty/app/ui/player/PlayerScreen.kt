@@ -126,6 +126,7 @@ import site.anikitty.app.cast.reduceCastAttach
 import site.anikitty.app.cast.reduceCastGiveUp
 import site.anikitty.app.cast.safeSeekTarget
 import site.anikitty.app.ui.components.EpisodeSlide
+import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.KittyDarkPalette
 import site.anikitty.app.ui.theme.KittyHaptics
 import site.anikitty.app.ui.theme.LocalKittyPalette
@@ -1126,16 +1127,18 @@ fun PlayerScreen(
             SourceRecovery.NextSource -> {
                 if (fromCast) {
                     failCastSource(message, liveMs)
-                } else if (decision.nextIndex != null) {
-                    val next = nextIndexSkippingDead(fromCast = false) ?: decision.nextIndex
-                    resumeAtMs = decision.resumeMs
-                    positionMs = decision.resumeMs
-                    playhead.ms = decision.resumeMs
-                    didSeekStart = false
-                    allowHistoryFallback = false
-                    sourceIndex = next
                 } else {
-                    recoverExhausted(message, decision.resumeMs, fromCast = false)
+                    val next = nextIndexSkippingDead(fromCast = false)
+                    if (next != null) {
+                        resumeAtMs = decision.resumeMs
+                        positionMs = decision.resumeMs
+                        playhead.ms = decision.resumeMs
+                        didSeekStart = false
+                        allowHistoryFallback = false
+                        sourceIndex = next
+                    } else {
+                        recoverExhausted(message, decision.resumeMs, fromCast = false)
+                    }
                 }
             }
             SourceRecovery.GiveUp -> {
@@ -3437,13 +3440,35 @@ fun PlayerScreen(
         }
 
         if (refreshingSources && error == null) {
-            Text(
-                "Looking for a fresh stream…",
-                color = PlayerChrome.Paper,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp,
-                modifier = Modifier.align(Alignment.Center),
-            )
+            val failoverView = androidx.compose.ui.platform.LocalView.current
+            androidx.compose.runtime.LaunchedEffect(refreshingSources) {
+                site.anikitty.app.ui.theme.KittyHaptics.perform(
+                    failoverView,
+                    site.anikitty.app.ui.theme.KittyHaptics.Kind.Error,
+                )
+            }
+            val hostHint = deadHosts.lastOrNull()?.takeIf { it.isNotBlank() }
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 28.dp)
+                    .stageGlassPlate(shape = RoundedCornerShape(18.dp), elevated = true)
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    if (hostHint != null) "Switching source · $hostHint" else "Looking for a fresh stream…",
+                    color = PlayerChrome.Paper,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                )
+                Text(
+                    "Probing the next healthy CDN",
+                    color = PlayerChrome.Graphite,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
         }
 
         if (error != null) {

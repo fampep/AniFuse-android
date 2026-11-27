@@ -53,8 +53,8 @@ internal fun playbackHost(url: String): String {
 
 /**
  * Next source whose host has not already failed this episode.
- * When every later host is marked dead, the immediate neighbor is still
- * returned so playback does not stop with an untried URL left in the list.
+ * Returns null once every remaining host is in [deadHosts] so the player
+ * can force a fresh resolve instead of looping a known-dead CDN.
  */
 internal fun nextHealthySource(urls: List<String>, fromIndex: Int, deadHosts: Set<String>): Int? {
     val start = fromIndex + 1
@@ -63,7 +63,7 @@ internal fun nextHealthySource(urls: List<String>, fromIndex: Int, deadHosts: Se
         val host = playbackHost(urls[index])
         if (host.isEmpty() || host !in deadHosts) return index
     }
-    return start
+    return null
 }
 
 /**

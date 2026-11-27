@@ -43,34 +43,41 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import site.anikitty.app.ui.theme.prefersReducedMotion
 
 @Composable
 fun SplashScreen(onFinished: () -> Unit) {
     var startAnimation by remember { mutableStateOf(false) }
+    val reduced = prefersReducedMotion()
+    val holdMs = when {
+        reduced -> 120L
+        HomeShelfMemory.fresh() -> 420L
+        else -> 900L
+    }
 
     val progress by animateFloatAsState(
         targetValue = if (startAnimation) 1f else 0f,
-        animationSpec = tween(520, easing = FastOutSlowInEasing),
+        animationSpec = tween(if (reduced) 0 else 520, easing = FastOutSlowInEasing),
         label = "progress",
     )
 
     val sweepAnim by animateFloatAsState(
         targetValue = if (startAnimation) 1f else 0f,
-        animationSpec = tween(1800, easing = FastOutSlowInEasing),
+        animationSpec = tween(if (reduced) 0 else 700, easing = FastOutSlowInEasing),
         label = "sweep",
     )
 
     val ink = LocalKittyPalette.current.text
     val fillAlphaAnim by animateFloatAsState(
-        targetValue = if (sweepAnim > 0.6f) 1f else 0f,
-        animationSpec = tween(1000, easing = LinearEasing),
+        targetValue = if (sweepAnim > 0.6f || reduced) 1f else 0f,
+        animationSpec = tween(if (reduced) 0 else 400, easing = LinearEasing),
         label = "fillAlpha",
     )
 
     LaunchedEffect(Unit) {
-        delay(100)
+        delay(40)
         startAnimation = true
-        delay(2800)
+        delay(holdMs)
         onFinished()
     }
 

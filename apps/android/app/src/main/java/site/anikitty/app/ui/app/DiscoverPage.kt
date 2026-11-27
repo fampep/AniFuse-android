@@ -150,7 +150,15 @@ fun DiscoverFeed(
             loading = false
             return
         }
-        loading = true
+        // Paint last-known shelves immediately so Discover never blank-shimmers.
+        if (HomeShelfMemory.trending.isNotEmpty()) {
+            trending = HomeShelfMemory.trending
+            popular = HomeShelfMemory.popular.ifEmpty { HomeShelfMemory.seasonal }
+            seasonNow = HomeShelfMemory.seasonal
+            loading = false
+        } else {
+            loading = true
+        }
         error = null
         scope.launch {
             runCatching {
