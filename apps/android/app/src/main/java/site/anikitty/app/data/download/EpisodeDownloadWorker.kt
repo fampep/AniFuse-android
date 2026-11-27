@@ -20,13 +20,22 @@ import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import site.anikitty.app.AnikittyApp
+import site.anikitty.app.data.servers.PlayableWarmCache
+import site.anikitty.app.data.servers.PlayableWarmProbe
+import site.anikitty.app.data.servers.PlaybackHostHealth
 import site.anikitty.app.data.servers.PlaybackHttp
+import site.anikitty.app.data.servers.playableHost
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
 import okhttp3.Request
+
+/** One drain at a time, even if an older per-episode job is still scheduled. */
+private val downloadLaneEntered = AtomicBoolean(false)
 
 @OptIn(UnstableApi::class)
 class EpisodeDownloadWorker(
@@ -34,26 +43,78 @@ class EpisodeDownloadWorker(
     params: WorkerParameters,
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val anilistId = inputData.getInt(DOWNLOAD_ANILIST_ID, 0)
-        val episode = inputData.getInt(DOWNLOAD_EPISODE, 0)
-        if (anilistId <= 0 || episode < 0) return Result.failure()
+        if (!downloadLaneEntered.compareAndSet(false, true)) return Result.success()
+        try {
+            return drain()
+        } finally {
+            downloadLaneEntered.set(false)
+        }
+    }
+
+    private suspend fun drain(): Result {
         val dao = (applicationContext as AnikittyApp).database.episodeDownloadDao()
-        val row = dao.get(anilistId, episode) ?: return Result.success()
+        val deferred = HashSet<Pair<Int, Int>>()
+        var waits = 0
+        while (!isStopped) {
+            val rows = dao.active().map { row ->
+                LaneCandidate(row.anilistId, row.episode, row.url, row.updatedAtEpochMs)
+            }
+            when (val pick = nextLaneDownload(rows, PlaybackHostHealth.playingHost(), deferred)) {
+                LaneChoice.Idle -> return Result.success()
+                LaneChoice.Wait -> {
+                    if (waits >= LANE_YIELD_SLICES) return Result.retry()
+                    waits++
+                    delay(LANE_YIELD_SLICE_MS)
+                }
+                is LaneChoice.Run -> {
+                    waits = 0
+                    val row = dao.get(pick.anilistId, pick.episode) ?: continue
+                    when (runOne(dao, row)) {
+                        LaneStep.Continue -> Unit
+                        LaneStep.Defer -> deferred += pick.anilistId to pick.episode
+                        LaneStep.RetryLane -> return Result.retry()
+                    }
+                }
+            }
+        }
+        return Result.retry()
+    }
+
+    private enum class LaneStep { Continue, Defer, RetryLane }
+
+    private suspend fun runOne(dao: EpisodeDownloadDao, row: EpisodeDownloadEntity): LaneStep {
         if (!row.url.startsWith("http://") && !row.url.startsWith("https://")) {
             publish(dao, row, DownloadPhase.FAILED.name, 0, null, "Can't save this source")
-            return Result.failure()
+            return LaneStep.Continue
         }
         try {
-            setForeground(foreground(row, 0))
+            setForeground(foreground(row, row.progressPercent))
         } catch (_: Exception) {
             // A blocked notification still leaves the save running. The shelf shows it.
         }
-        if (!publish(dao, row, DownloadPhase.RUNNING.name, 0, null, null)) return Result.success()
+        if (!publish(dao, row, DownloadPhase.RUNNING.name, 0, null, null)) return LaneStep.Continue
         return try {
             if (row.hls) downloadHls(dao, row) else downloadFile(dao, row)
+            LaneStep.Continue
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (rejected: DownloadHostRejectedException) {
+            val swapped = retargetToShadow(dao, row)
+            if (swapped == null) {
+                dropPartial(row)
+                publish(dao, row, DownloadPhase.FAILED.name, 0, null, httpFailure(rejected.code))
+            }
+            LaneStep.Continue
         } catch (error: Exception) {
+            val code = httpCodeIn(error)
+            if (code != null && downloadTransfer(code, 0) == DownloadTransfer.Swap) {
+                val swapped = retargetToShadow(dao, row)
+                if (swapped == null) {
+                    dropPartial(row)
+                    publish(dao, row, DownloadPhase.FAILED.name, 0, null, httpFailure(code))
+                }
+                return LaneStep.Continue
+            }
             val retryable = error is IOException && runAttemptCount < 3
             val wrote = publish(
                 dao,
@@ -63,8 +124,8 @@ class EpisodeDownloadWorker(
                 localPath = null,
                 error = if (retryable) null else downloadErrorMessage(error),
             )
-            if (!wrote) return Result.success()
-            if (retryable) Result.retry() else Result.failure()
+            if (!wrote) return LaneStep.Continue
+            if (retryable) LaneStep.Defer else LaneStep.Continue
         }
     }
 
@@ -85,9 +146,14 @@ class EpisodeDownloadWorker(
                 request.header("User-Agent", userAgent)
                 resume.rangeHeader?.let { request.header("Range", it) }
                 PlaybackHttp.client.newCall(request.build()).execute().use { response ->
-                    if (response.code == 416) {
-                        part.delete()
-                        throw java.io.IOException("Couldn't resume this episode")
+                    when (downloadTransfer(response.code, already)) {
+                        DownloadTransfer.Restart -> {
+                            part.delete()
+                            throw IOException("Couldn't resume this episode")
+                        }
+                        DownloadTransfer.Swap -> throw DownloadHostRejectedException(response.code)
+                        DownloadTransfer.Fail -> throw DownloadRejectedException(httpFailure(response.code))
+                        DownloadTransfer.Resume, DownloadTransfer.Replace -> Unit
                     }
                     if (!response.isSuccessful) {
                         throw DownloadRejectedException(httpFailure(response.code))
@@ -135,9 +201,12 @@ class EpisodeDownloadWorker(
                     if (stopped) part.delete()
                 }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
             // A dropped connection keeps the partial file so the next try can Range-resume.
-            if (error !is java.io.IOException) part.delete()
+            // A refused host keeps it too, until the swap decides the bytes are useless.
+            if (error !is IOException) part.delete()
             throw error
         }
         if (!part.exists()) return Result.success()
@@ -249,14 +318,79 @@ class EpisodeDownloadWorker(
             if (!key.equals("User-Agent", ignoreCase = true)) request.header(key, value)
         }
         PlaybackHttp.client.newCall(request.build()).execute().use { response ->
-            if (!response.isSuccessful) return null
+            if (!response.isSuccessful) {
+                if (downloadTransfer(response.code, 0) == DownloadTransfer.Swap) {
+                    throw DownloadHostRejectedException(response.code)
+                }
+                return null
+            }
             val body = response.body ?: return null
             val playlist = HlsPlaylistParser().parse(android.net.Uri.parse(url), body.byteStream())
             if (playlist !is HlsMultivariantPlaylist) return null
             hlsPlanFromPlaylist(playlist)
         }
+    } catch (rejected: DownloadHostRejectedException) {
+        throw rejected
     } catch (_: Exception) {
         null
+    }
+
+    /**
+     * A 403 or 5xx takes the probed shadow when one exists, otherwise one
+     * resolve that skips the dead host. A different host drops the partial.
+     */
+    private suspend fun retargetToShadow(
+        dao: EpisodeDownloadDao,
+        row: EpisodeDownloadEntity,
+    ): EpisodeDownloadEntity? {
+        val host = playableHost(row.url)
+        if (host.isNotEmpty()) PlaybackHostHealth.note(host, ok = false)
+        val audio = downloadAudioHint(row.sourceKey)
+        val cached = buildList {
+            PlayableWarmCache.peek(row.anilistId, row.episode, audio, PlayableWarmCache.LANE_SHADOW)
+                ?.let { addAll(it) }
+            PlayableWarmCache.peek(row.anilistId, row.episode, audio, PlayableWarmCache.LANE_STANDBY)
+                ?.let { addAll(it) }
+        }
+        var pick = inheritDownloadSource(row.url, cached, emptyList())
+        if (pick != null && !PlayableWarmProbe.alive(pick)) pick = null
+        if (pick == null) {
+            val fresh = try {
+                (applicationContext as AnikittyApp).streamServers.resolveWithFailover(
+                    anilistId = row.anilistId,
+                    episode = row.episode,
+                    audio = audio,
+                    avoidHost = host.ifBlank { null },
+                ).sources
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                emptyList()
+            }
+            pick = inheritDownloadSource(row.url, emptyList(), fresh) ?: return null
+            if (!PlayableWarmProbe.alive(pick)) return null
+        }
+        val chosen = pick ?: return null
+        if (!keepPartialForNextUrl(row.url, chosen.url)) dropPartial(row)
+        val now = System.currentTimeMillis()
+        val wrote = dao.retarget(
+            anilistId = row.anilistId,
+            episode = row.episode,
+            previousUrl = row.url,
+            previousUpdatedAt = row.updatedAtEpochMs,
+            url = chosen.url,
+            headersJson = encodeHeaders(chosen.headers),
+            sourceKey = sourceKey(chosen),
+            hls = isHlsSource(chosen),
+            stripBytes = resolvedStripBytes(chosen),
+            updatedAtEpochMs = now,
+        )
+        if (wrote == 0) return null
+        return dao.get(row.anilistId, row.episode)
+    }
+
+    private fun dropPartial(row: EpisodeDownloadEntity) {
+        removeSavedBytes(applicationContext, row)
     }
 
     private suspend fun stopOrRetry(dao: EpisodeDownloadDao, row: EpisodeDownloadEntity): Result {

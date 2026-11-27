@@ -86,14 +86,23 @@ internal fun sourceKey(source: PlayableSource): String {
 internal fun savedMatches(saved: SavedEpisode, source: PlayableSource): Boolean =
     saved.sourceKey == sourceKey(source)
 
-internal fun downloadStatus(source: PlayableSource, saved: SavedEpisode?): DownloadStatus {
+internal fun downloadStatus(
+    source: PlayableSource,
+    saved: SavedEpisode?,
+    yieldToPlayback: Boolean = false,
+    ahead: Int = 0,
+): DownloadStatus {
     val blocked = offlineBlockReason(source)
     if (blocked != null) return DownloadStatus(blocked, canStart = false, canRemove = false)
     val row = saved?.takeIf { savedMatches(it, source) }
         ?: return DownloadStatus("Download", canStart = true, canRemove = false)
     return when (row.phase) {
         DownloadPhase.QUEUED -> DownloadStatus(
-            "Queued",
+            when {
+                yieldToPlayback -> "Waiting"
+                ahead > 0 -> "In line"
+                else -> "Queued"
+            },
             canStart = false,
             canRemove = true,
             removeLabel = "Cancel",
@@ -222,6 +231,9 @@ internal fun decodeHeaders(raw: String): Map<String, String> {
 
 /** Messages we wrote ourselves. Anything else becomes a generic failure. */
 internal class DownloadRejectedException(message: String) : Exception(message)
+
+/** The CDN refused the file. The lane may swap to the shadow host and keep the partial. */
+internal class DownloadHostRejectedException(val code: Int) : java.io.IOException(httpFailure(code))
 
 internal fun downloadErrorMessage(error: Throwable): String = when (error) {
     is DownloadRejectedException -> error.message ?: "Couldn't save this episode"

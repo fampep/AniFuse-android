@@ -54,7 +54,10 @@ import site.anikitty.app.AnikittyApp
 import site.anikitty.app.BuildConfig
 import site.anikitty.app.data.anilist.AniListClient
 import site.anikitty.app.data.anilist.AnimeSummary
-import site.anikitty.app.data.download.DownloadPhase
+import site.anikitty.app.data.download.LaneCandidate
+import site.anikitty.app.data.download.downloadAhead
+import site.anikitty.app.data.download.downloadShelfSubtitle
+import site.anikitty.app.data.servers.PlaybackHostHealth
 import site.anikitty.app.data.local.WatchHistoryEntity
 import site.anikitty.app.ui.components.KittyImage
 import site.anikitty.app.ui.components.stageArrive
@@ -93,26 +96,36 @@ internal data class InboxNote(
  * Saved episodes already on the phone. The id ignores progress ticks so
  * mark-read and clear survive the next download write.
  */
-internal fun downloadInboxNotes(rows: List<EpisodeDownloadEntity>): List<InboxNote> =
-    rows.map { row ->
-        val state = when (row.phase) {
-            DownloadPhase.READY.name -> "Saved on this phone"
-            DownloadPhase.RUNNING.name -> "Saving · ${row.progressPercent}%"
-            DownloadPhase.FAILED.name -> row.error ?: "Save failed"
-            else -> "Queued"
-        }
+internal fun downloadInboxNotes(
+    rows: List<EpisodeDownloadEntity>,
+    playingHost: String? = null,
+): List<InboxNote> {
+    val lane = rows.filter { it.phase == "QUEUED" || it.phase == "RUNNING" }.map { row ->
+        LaneCandidate(row.anilistId, row.episode, row.url, row.updatedAtEpochMs)
+    }
+    return rows.map { row ->
+        val state = downloadShelfSubtitle(
+            episode = row.episode,
+            phase = row.phase,
+            percent = row.progressPercent,
+            error = row.error,
+            url = row.url,
+            playingHost = playingHost,
+            ahead = downloadAhead(row.updatedAtEpochMs, row.anilistId, row.episode, lane),
+        ).substringAfter(" · ")
         InboxNote(
             id = "dl-${row.anilistId}-${row.episode}",
             title = row.title.ifBlank { "Episode ${row.episode}" },
             body = "Episode ${row.episode} · $state",
         )
     }
+}
 
 internal suspend fun localInboxNotes(context: Context): List<InboxNote> = withContext(Dispatchers.IO) {
     val rows = runCatching {
         (context.applicationContext as AnikittyApp).database.episodeDownloadDao().recent()
     }.getOrDefault(emptyList())
-    downloadInboxNotes(rows)
+    downloadInboxNotes(rows, PlaybackHostHealth.playingHost())
 }
 
 /**

@@ -84,6 +84,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import site.anikitty.app.AnikittyApp
 import site.anikitty.app.data.download.EpisodeDownloadEntity
+import site.anikitty.app.data.download.LaneCandidate
+import site.anikitty.app.data.download.downloadAhead
+import site.anikitty.app.data.download.downloadShelfSubtitle
+import site.anikitty.app.data.servers.PlaybackHostHealth
 import kotlin.coroutines.cancellation.CancellationException
 import site.anikitty.app.data.anilist.AniListClient
 import site.anikitty.app.data.anilist.AniListMediaListEntry
@@ -1267,12 +1271,24 @@ private fun postersForTab(
         return history.map { entry -> historyCard(entry) }
     }
     if (tab == "Downloads") {
+        val playing = PlaybackHostHealth.playingHost()
+        val lane = downloads.filter { it.phase == "QUEUED" || it.phase == "RUNNING" }.map { row ->
+            LaneCandidate(row.anilistId, row.episode, row.url, row.updatedAtEpochMs)
+        }
         return downloads.map { row ->
             SpaceCard(
                 key = "dl-${row.anilistId}-${row.episode}",
                 title = row.title.ifBlank { "Episode ${row.episode}" },
                 imageUrl = null,
-                subtitle = "EP ${row.episode} · ${row.phase}",
+                subtitle = downloadShelfSubtitle(
+                    episode = row.episode,
+                    phase = row.phase,
+                    percent = row.progressPercent,
+                    error = row.error,
+                    url = row.url,
+                    playingHost = playing,
+                    ahead = downloadAhead(row.updatedAtEpochMs, row.anilistId, row.episode, lane),
+                ),
                 progress = (row.progressPercent / 100f).coerceIn(0f, 1f),
                 anime = AnimeSummary(
                     id = row.anilistId,

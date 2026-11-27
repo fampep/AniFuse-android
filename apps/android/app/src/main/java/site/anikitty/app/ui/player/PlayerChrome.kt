@@ -175,13 +175,15 @@ internal fun PlayerEpisodeShelf(
     onShare: () -> Unit = {},
     shareEnabled: Boolean = false,
     downloadEnabled: Boolean = false,
+    downloadLabel: String = "Download",
     onDownload: () -> Unit = {},
     onRemoveDownload: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val showGrid = !isMovie && totalEpisodes > 1
     val audioLabel = if (audio == "dub") "Dub" else "Sub"
-    val downloadSaved = onRemoveDownload != null
+    val canStartDownload = downloadEnabled
+    val downloadSaved = downloadLabel == "Saved"
     val headline = episodeTitle?.takeIf { it.isNotBlank() } ?: title
     val slides = remember(episodeSlides, totalEpisodes) {
         if (episodeSlides.isNotEmpty()) {
@@ -270,10 +272,11 @@ internal fun PlayerEpisodeShelf(
                 onShare = onShare,
                 shareEnabled = shareEnabled,
                 onDownload = {
-                    if (downloadSaved) onRemoveDownload?.invoke() else onDownload()
+                    if (canStartDownload) onDownload() else onRemoveDownload?.invoke()
                 },
-                downloadEnabled = downloadSaved || downloadEnabled,
+                downloadEnabled = canStartDownload || onRemoveDownload != null,
                 downloadSaved = downloadSaved,
+                downloadLabel = downloadLabel,
                 watched = watchedThrough >= episode,
                 watchedEnabled = onToggleWatched != null,
                 onToggleWatched = { onToggleWatched?.invoke(episode) },

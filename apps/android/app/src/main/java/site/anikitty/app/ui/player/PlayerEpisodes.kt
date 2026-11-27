@@ -619,6 +619,7 @@ internal fun PlayerActionRow(
     onDownload: () -> Unit,
     downloadEnabled: Boolean,
     downloadSaved: Boolean,
+    downloadLabel: String = if (downloadSaved) "Saved" else "Download",
     watched: Boolean,
     watchedEnabled: Boolean,
     onToggleWatched: () -> Unit,
@@ -639,7 +640,7 @@ internal fun PlayerActionRow(
         )
         ActionCircle(
             icon = Icons.Rounded.Download,
-            label = if (downloadSaved) "Saved" else "Download",
+            label = downloadLabel,
             active = downloadSaved,
             enabled = downloadEnabled,
             onClick = onDownload,

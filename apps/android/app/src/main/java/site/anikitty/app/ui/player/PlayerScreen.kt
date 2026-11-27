@@ -229,6 +229,7 @@ import site.anikitty.app.data.download.EpisodeDownloadEntity
 import site.anikitty.app.data.download.EpisodeDownloads
 import site.anikitty.app.data.download.cacheDataSourceFactory
 import site.anikitty.app.data.download.DownloadPhase
+import site.anikitty.app.data.download.downloadButtonLabel
 import site.anikitty.app.data.download.downloadStatus
 import site.anikitty.app.data.download.encodeHeaders
 import site.anikitty.app.data.download.hlsStreamKeys
@@ -551,7 +552,18 @@ fun PlayerScreen(
     }
     val playbackReady = sessionStartedOffline != null
     val downloadScope = rememberCoroutineScope()
-    val download = if (anilistId > 0) source?.let { downloadStatus(it, savedRow?.toSaved()) } else null
+    val download = if (anilistId > 0) {
+        source?.let { current ->
+            val playing = PlaybackHostHealth.playingHost()
+            downloadStatus(
+                current,
+                savedRow?.toSaved(),
+                yieldToPlayback = playing != null && playableHost(current.url) == playing,
+            )
+        }
+    } else {
+        null
+    }
     var castUnavailable by remember { mutableStateOf(CastStartup.reason) }
     var castHelper by remember { mutableStateOf<CastSessionHelper?>(null) }
     val castRouteReason = castUnavailable ?: if (castHelper == null) CAST_UNAVAILABLE else null
@@ -1054,6 +1066,14 @@ fun PlayerScreen(
             }
         }
     }
+    LaunchedEffect(ready, source?.url) {
+        if (!ready) return@LaunchedEffect
+        val host = playbackHost(source?.url.orEmpty())
+        if (host.isNotEmpty()) PlaybackHostHealth.notePlaying(host)
+    }
+    DisposableEffect(Unit) {
+        onDispose { PlaybackHostHealth.notePlaying(null) }
+    }
     val latestArmShadow by rememberUpdatedState(onArmShadow)
     LaunchedEffect(ready, source?.url, anilistId, episode, playbackLocal, sessionStartedOffline) {
         if (!ready || playbackLocal || sessionStartedOffline == true) return@LaunchedEffect
@@ -1065,6 +1085,7 @@ fun PlayerScreen(
         delay(SHADOW_ARM_DELAY_MS)
         if (playbackHost(source?.url.orEmpty()) != host) return@LaunchedEffect
         PlaybackHostHealth.note(host, ok = true)
+        PlaybackHostHealth.notePlaying(host)
         val armed = try {
             arm(host, latestSources)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -4606,6 +4627,7 @@ fun PlayerScreen(
                 },
                 shareEnabled = anilistId > 0,
                 downloadEnabled = download?.canStart == true,
+                downloadLabel = download?.let(::downloadButtonLabel) ?: "Download",
                 onDownload = {
                     val current = source
                     if (current != null && download?.canStart == true) {

@@ -25,6 +25,16 @@ internal object PlaybackHostHealth {
     private var dir: File? = null
     private var lastBody: String? = null
 
+    @Volatile
+    private var playing: String? = null
+
+    /** The CDN the player is reading right now. Downloads on this host wait. */
+    fun notePlaying(host: String?) {
+        playing = host?.trim()?.lowercase()?.ifBlank { null }
+    }
+
+    fun playingHost(): String? = playing
+
     fun attach(root: File) {
         synchronized(lock) {
             if (dir?.absolutePath == root.absolutePath && marks.isNotEmpty()) return
@@ -69,6 +79,7 @@ internal object PlaybackHostHealth {
 
     /** Tests keep the ledger off disk. */
     fun detach() {
+        playing = null
         synchronized(lock) {
             dir = null
             lastBody = null

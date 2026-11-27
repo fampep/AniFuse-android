@@ -7,12 +7,13 @@ import android.app.NotificationManager
 import android.content.Context
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
+import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
-import androidx.work.workDataOf
+import java.util.concurrent.TimeUnit
 import site.anikitty.app.AnikittyApp
 import site.anikitty.app.data.servers.PlayableSource
 
@@ -53,23 +54,17 @@ internal object EpisodeDownloads {
         )
         dao.upsert(row)
         val request = OneTimeWorkRequestBuilder<EpisodeDownloadWorker>()
-            .setInputData(
-                workDataOf(
-                    DOWNLOAD_ANILIST_ID to anilistId,
-                    DOWNLOAD_EPISODE to episode,
-                ),
-            )
             .setConstraints(
                 Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
                     .build(),
             )
+            .setBackoffCriteria(BackoffPolicy.LINEAR, 10, TimeUnit.SECONDS)
             .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            downloadWorkName(anilistId, episode),
-            ExistingWorkPolicy.REPLACE,
-            request,
-        )
+        val work = WorkManager.getInstance(context)
+        // A job left over from the per-episode names must not run beside the lane.
+        work.cancelUniqueWork(downloadWorkName(anilistId, episode))
+        work.enqueueUniqueWork(DOWNLOAD_LANE, ExistingWorkPolicy.KEEP, request)
     }
 
     suspend fun remove(context: Context, row: EpisodeDownloadEntity) {
@@ -78,9 +73,9 @@ internal object EpisodeDownloads {
         // Drop the row before cancelling work. An HLS save that sees a stop
         // while the row is still current would queue itself again.
         dao.delete(row.anilistId, row.episode)
-        WorkManager.getInstance(app).cancelUniqueWork(
-            downloadWorkName(row.anilistId, row.episode),
-        )
+        val work = WorkManager.getInstance(app)
+        work.cancelUniqueWork(downloadWorkName(row.anilistId, row.episode))
+        if (dao.active().isEmpty()) work.cancelUniqueWork(DOWNLOAD_LANE)
         app.getSystemService(NotificationManager::class.java)
             ?.cancel(downloadNotificationId(row.anilistId, row.episode))
         removeSavedBytes(app, row)
