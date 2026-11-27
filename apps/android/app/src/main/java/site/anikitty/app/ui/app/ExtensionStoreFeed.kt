@@ -1015,8 +1015,8 @@ private fun providerSource(id: String): String = when (id) {
     "aniwaves" -> "https://github.com/fampep/anikitty-extensions/tree/main/providers/aniwaves"
     "animegg" -> "https://github.com/fampep/anikitty-extensions/tree/main/providers/animegg"
     "anigato" -> "https://github.com/fampep/anikitty-extensions/tree/main/providers/anigato"
-    "oneko" -> "https://beta.0neko.cc/"
-    "anirex" -> "https://anirex.to/"
-    "animeheaven" -> "https://animeheaven.me/"
+    "oneko" -> "https://github.com/fampep/AniFuse-android/tree/main/extensions/providers/oneko"
+    "anirex" -> "https://github.com/fampep/AniFuse-android/tree/main/extensions/providers/anirex"
+    "animeheaven" -> "https://github.com/fampep/AniFuse-android/tree/main/extensions/providers/animeheaven"
     else -> "https://github.com/fampep/anikitty-extensions"
 }

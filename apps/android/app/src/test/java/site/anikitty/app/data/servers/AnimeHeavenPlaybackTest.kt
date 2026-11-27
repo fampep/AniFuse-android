@@ -4,6 +4,7 @@
 package site.anikitty.app.data.servers
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -24,18 +25,6 @@ class AnimeHeavenPlaybackTest {
             <div class='watch2 bc'>2</div></a>
         """.trimIndent()
         assertEquals("cd9a4996ea3e27887d22a26e6ce3113f", animeHeavenEpisodeKey(page, 1))
-        val gate = """
-            <source src='https://ax.animeheaven.me/video.mp4?token' type='video/mp4'>
-            <source src='https://ct.animeheaven.me/video.mp4?token&error' type='video/mp4'>
-            <source src='https://cz.animeheaven.me/video.mp4?token' type='video/mp4'>
-        """.trimIndent()
-        assertEquals(
-            listOf(
-                "https://ax.animeheaven.me/video.mp4?token",
-                "https://cz.animeheaven.me/video.mp4?token",
-            ),
-            animeHeavenMp4s(gate),
-        )
         assertEquals(
             listOf("Frieren", "Sousou no Frieren"),
             animeHeavenTitles("Frieren || Sousou no Frieren || mal:52991"),
@@ -46,5 +35,25 @@ class AnimeHeavenPlaybackTest {
             "${AnimeHeavenServer.SITE}/fastsearch.php?xhr=1&s=Frieren",
             animeHeavenSearchUrl("Frieren"),
         )
+    }
+
+    @Test
+    fun gateSkipsPromoAxClipAndKeepsEpisodeCdns() {
+        val key = "cd9a4996ea3e27887d22a26e6ce3113f"
+        val gate = """
+            <source src='https://ax.animeheaven.me/video.mp4?2c523c8cd9cc129bd13fc7407fa81220&eed805517af9a226eed805517af9a226' type='video/mp4'>
+            <source src='https://po.animeheaven.me/video.mp4?$key&4d1e113ced4c173b973411868406121a' type='video/mp4'>
+            <source src='https://ct.animeheaven.me/video.mp4?$key&4d1e113ced4c173b973411868406121a&error' type='video/mp4'>
+            <source src='https://ck.animeheaven.me/video.mp4?$key&4d1e113ced4c173b973411868406121a&error2' type='video/mp4'>
+            <source src='https://po.animeheaven.me/video.mp4?$key&4d1e113ced4c173b973411868406121a' type='video/mp4'>
+        """.trimIndent()
+        assertEquals(
+            listOf("https://po.animeheaven.me/video.mp4?$key&4d1e113ced4c173b973411868406121a"),
+            animeHeavenMp4s(gate, episodeKey = key),
+        )
+        assertTrue(animeHeavenPromoHost("https://ax.animeheaven.me/video.mp4?ad"))
+        assertFalse(animeHeavenPromoHost("https://po.animeheaven.me/video.mp4?$key"))
+        assertTrue(animeHeavenSiteOnly("Watch episode on animeheaven.me for Elite members"))
+        assertFalse(isHardProviderFailure(AnimeHeavenServer.SITE_ONLY))
     }
 }

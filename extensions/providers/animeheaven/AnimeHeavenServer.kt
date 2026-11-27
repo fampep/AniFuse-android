@@ -54,8 +54,11 @@ class AnimeHeavenServer(
         val gate = heavenFetch(http, jar, "$SITE/gate.php", animeUrl)
         if (gate.code == 404) error(MISSING)
         val gateBody = gate.body ?: error(BLOCKED)
-        val files = animeHeavenMp4s(gateBody)
-        if (files.isEmpty()) error(MISSING)
+        val files = animeHeavenMp4s(gateBody, episodeKey = key)
+        if (files.isEmpty()) {
+            if (animeHeavenSiteOnly(gateBody)) error(SITE_ONLY)
+            error(MISSING)
+        }
         namedByServer(
             files.mapIndexed { index, url ->
                 PlayableSource(
@@ -95,6 +98,8 @@ class AnimeHeavenServer(
         const val MISSING = "AnimeHeaven does not have this episode."
         const val BLOCKED = "AnimeHeaven could not be reached."
         const val DUB = "AnimeHeaven only has subbed episodes."
+        /** Soft — their gate only returned the site promo clip, not the episode. */
+        const val SITE_ONLY = "AnimeHeaven only plays this on their site."
         const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -102,6 +107,7 @@ class AnimeHeavenServer(
         fun playbackHeaders(): Map<String, String> = linkedMapOf(
             "User-Agent" to USER_AGENT,
             "Referer" to "$SITE/gate.php",
+            "Origin" to SITE,
             "Accept" to "*/*",
         )
     }
@@ -168,17 +174,46 @@ internal fun animeHeavenEpisodeKey(html: String, episode: Int): String? {
     return null
 }
 
-/** Direct mp4 mirrors from gate.php. Fallback CDNs marked with &error are skipped. */
-internal fun animeHeavenMp4s(html: String): List<String> {
-    if (Regex("(?i)watch\\s+episode\\s+on\\s+animeheaven\\.me").containsMatchIn(heavenPlain(html))) {
-        return emptyList()
-    }
-    return Regex("(?i)<source\\b[^>]*>").findAll(html).map { anchorAttr(it.value, "src") }
+/**
+ * Direct mp4 mirrors from gate.php.
+ *
+ * The first `<source>` is often `ax.animeheaven.me` — a tiny promo clip that
+ * tells the viewer to watch on the site / Elite. Real episode mirrors carry
+ * the episode key in the query and live on hosts like `po` / `cz` / `ct`.
+ */
+internal fun animeHeavenMp4s(html: String, episodeKey: String? = null): List<String> {
+    if (animeHeavenSiteOnly(html)) return emptyList()
+    val raw = Regex("(?i)<source\\b[^>]*>").findAll(html).map { anchorAttr(it.value, "src") }
         .filter { it.startsWith("http://") || it.startsWith("https://") }
         .filter { runCatching { java.net.URI(it).path.orEmpty().endsWith(".mp4", ignoreCase = true) }.getOrDefault(false) }
         .filter { !it.contains("&error", ignoreCase = true) }
         .distinct()
         .toList()
+    val key = episodeKey?.trim().orEmpty()
+    val episode = raw.filter { url ->
+        !animeHeavenPromoHost(url) && (key.isEmpty() || url.contains(key, ignoreCase = true))
+    }
+    if (episode.isNotEmpty()) return episode
+    // No key-matched row — still skip the promo CDN so Media3 never plays gif.mp4.
+    return raw.filterNot(::animeHeavenPromoHost)
+}
+
+/** Gate page that only advertises watching on animeheaven.me / Elite. */
+internal fun animeHeavenSiteOnly(html: String): Boolean {
+    val plain = heavenPlain(html)
+    if (Regex("(?i)watch\\s+episode\\s+on\\s+animeheaven\\.me").containsMatchIn(plain)) return true
+    if (Regex("(?i)\\belite\\b").containsMatchIn(plain) &&
+        Regex("(?i)watch\\s+(it\\s+)?on\\s+(our\\s+)?site").containsMatchIn(plain)
+    ) {
+        return true
+    }
+    return false
+}
+
+/** `ax.` serves the short “watch on site” promo, not the episode. */
+internal fun animeHeavenPromoHost(url: String): Boolean {
+    val host = runCatching { java.net.URI(url).host.orEmpty().lowercase() }.getOrDefault("")
+    return host == "ax.animeheaven.me" || host.startsWith("ax.")
 }
 
 internal data class HeavenReply(val code: Int, val body: String?)
