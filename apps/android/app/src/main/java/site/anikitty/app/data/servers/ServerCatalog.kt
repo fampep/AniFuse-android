@@ -41,7 +41,9 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
     private val providerHealth = AnifuseFeedCache(java.io.File(context.filesDir, "anifuse-cache"))
 
     init {
-        PlaybackHostHealth.attach(java.io.File(context.filesDir, "playback-hosts"))
+        val hostDir = java.io.File(context.filesDir, "playback-hosts")
+        PlaybackHostHealth.attach(hostDir)
+        AniVaultLead.attach(hostDir)
     }
     private val resolveCache = ResolveCache(context)
     private val episodeArtCatalog = EpisodeArtCatalog.shared(context)

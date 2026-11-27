@@ -55,7 +55,8 @@ class AniVaultServer(
         require(anilistId > 0) { "anilistId required" }
         require(episode > 0) { "episode required" }
         val shortId = findShortId(anilistId, titleHint)
-        val buttons = anivaultButtons(audio)
+        val lead = AniVaultLead.preferred(anilistId, audio)
+        val buttons = anivaultLeadFirst(anivaultButtons(audio), lead)
         val avoid = coroutineContext[AvoidPlaybackHost]?.host
         val hits = CopyOnWriteArrayList<Pair<Int, PlayableSource>>()
         val asked = ConcurrentHashMap.newKeySet<String>()
@@ -76,7 +77,12 @@ class AniVaultServer(
                         } catch (_: Exception) {
                             null
                         } ?: return@async
-                        anivaultPlayable(body, button.label, playbackHeaders())?.let { hits += order to it }
+                        anivaultPlayable(
+                            body,
+                            button.label,
+                            playbackHeaders(),
+                            leadKey = anivaultAskKey(button),
+                        )?.let { hits += order to it }
                         anivaultListedServers(body).forEach { name ->
                             val extra = button.copy(server = name, label = name)
                             if (asked.add(anivaultAskKey(extra))) pending += (order + 1_000) to extra
@@ -85,7 +91,7 @@ class AniVaultServer(
                 }.awaitAll()
             }
         }
-        val ordered = anivaultOrdered(hits)
+        val ordered = anivaultLeadSources(anivaultOrdered(hits), lead)
         val accepted = sourcesAvoidingHost(ordered, avoid).ifEmpty { ordered }
         if (accepted.isEmpty()) error("AniVault could not find this episode")
         return@withContext namedByServer(accepted, server.name)
@@ -174,7 +180,37 @@ internal fun anivaultButtons(audio: String): List<AniVaultButton> = when {
 }
 
 internal fun anivaultAskKey(button: AniVaultButton): String =
-    "${button.endpoint}\u0000${button.audio}\u0000${button.server.orEmpty().trim().lowercase()}"
+    "${button.endpoint}|${button.audio}|${button.server.orEmpty().trim().lowercase()}"
+
+/** Audio mode baked into a lead key. Empty when the key is not one of ours. */
+internal fun anivaultLeadMode(leadKey: String): String? {
+    val mode = leadKey.split('|').getOrNull(1)?.trim()?.lowercase().orEmpty()
+    return mode.takeIf { it.isNotEmpty() && leadKey.split('|').size == 3 }
+}
+
+/** The server that played this show last, then every other server in site order. */
+internal fun anivaultLeadFirst(buttons: List<AniVaultButton>, leadKey: String?): List<AniVaultButton> {
+    if (leadKey.isNullOrBlank()) return buttons
+    val index = buttons.indexOfFirst { anivaultAskKey(it) == leadKey }
+    if (index <= 0) return buttons
+    val lead = buttons[index]
+    return buildList(buttons.size) {
+        add(lead)
+        buttons.forEachIndexed { i, button -> if (i != index) add(button) }
+    }
+}
+
+/** Same order for the files that actually came back. A missing lead stays out. */
+internal fun anivaultLeadSources(sources: List<PlayableSource>, leadKey: String?): List<PlayableSource> {
+    if (leadKey.isNullOrBlank()) return sources
+    val index = sources.indexOfFirst { it.leadKey == leadKey }
+    if (index <= 0) return sources
+    val lead = sources[index]
+    return buildList(sources.size) {
+        add(lead)
+        sources.forEachIndexed { i, source -> if (i != index) add(source) }
+    }
+}
 
 /** Keep every file AniVault returned, in the order their buttons are drawn. */
 internal fun anivaultOrdered(hits: List<Pair<Int, PlayableSource>>): List<PlayableSource> {
@@ -253,7 +289,12 @@ internal fun anivaultListedServers(body: String): List<String> {
 }
 
 /** Direct file from one AniVault button. Embed-only answers are skipped. */
-internal fun anivaultPlayable(body: String, label: String, headers: Map<String, String>): PlayableSource? {
+internal fun anivaultPlayable(
+    body: String,
+    label: String,
+    headers: Map<String, String>,
+    leadKey: String? = null,
+): PlayableSource? {
     val root = runCatching { JSONObject(body) }.getOrNull() ?: return null
     if (root.optBoolean("iframeOnly")) return null
     val playlist = root.optString("m3u8").trim()
@@ -270,7 +311,74 @@ internal fun anivaultPlayable(body: String, label: String, headers: Map<String, 
         label = label,
         hls = hls,
         audioLanguage = null,
+        leadKey = leadKey,
     )
+}
+
+/**
+ * Which AniVault server played a show. The next episode asks that server
+ * first. The file sits beside host health so a cache clear does not wipe it.
+ */
+internal object AniVaultLead {
+    private val memory = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val lock = Any()
+    private var file: java.io.File? = null
+
+    fun attach(dir: java.io.File) {
+        synchronized(lock) {
+            dir.mkdirs()
+            file = java.io.File(dir, "anivault-lead.txt")
+            loadLocked()
+        }
+    }
+
+    fun reset() {
+        synchronized(lock) {
+            memory.clear()
+            file?.delete()
+        }
+    }
+
+    fun note(anilistId: Int, leadKey: String) {
+        val mode = anivaultLeadMode(leadKey) ?: return
+        if (anilistId <= 0) return
+        synchronized(lock) {
+            memory[slot(anilistId, mode)] = leadKey.trim()
+            saveLocked()
+        }
+    }
+
+    fun preferred(anilistId: Int, audio: String): String? = memory[slot(anilistId, audio)]
+
+    private fun slot(anilistId: Int, audio: String) = "$anilistId\t${audio.trim().lowercase()}"
+
+    private fun loadLocked() {
+        val text = runCatching { file?.takeIf { it.isFile }?.readText() }.getOrNull().orEmpty()
+        memory.clear()
+        text.lineSequence().forEach { line ->
+            val parts = line.split('\t', limit = 3)
+            if (parts.size == 3 && parts[0].isNotBlank() && parts[2].isNotBlank()) {
+                memory["${parts[0]}\t${parts[1]}"] = parts[2]
+            }
+        }
+    }
+
+    private fun saveLocked() {
+        val target = file ?: return
+        val body = memory.entries.joinToString("\n") { (slot, key) ->
+            val id = slot.substringBefore('\t')
+            val mode = slot.substringAfter('\t')
+            "$id\t$mode\t$key"
+        }
+        runCatching {
+            val tmp = java.io.File(target.parentFile, "${target.name}.tmp")
+            tmp.writeText(body)
+            if (!tmp.renameTo(target)) {
+                target.writeText(body)
+                tmp.delete()
+            }
+        }
+    }
 }
 
 private fun anivaultNorm(value: String): String =
