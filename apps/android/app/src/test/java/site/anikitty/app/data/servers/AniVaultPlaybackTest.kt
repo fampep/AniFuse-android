@@ -3,116 +3,83 @@
 
 package site.anikitty.app.data.servers
 
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AniVaultPlaybackTest {
     @Test
-    fun peersFollowTheSiteOrderAndSkipAniVaultItself() {
-        val available = listOf(
-            stub("gogoanime"),
-            stub("anivault"),
-            stub("anizone"),
-            stub("anikoto"),
-            stub("extra"),
+    fun subButtonsFollowTheSiteOrder() {
+        val buttons = anivaultButtons("sub")
+        assertEquals("Hd-1", buttons.first().server)
+        assertEquals("anikoto_stream.php", buttons.first().endpoint)
+        assertEquals("AnimeHeaven", buttons.first { it.server == null }.label)
+        assertEquals("Turbo", buttons.last().label)
+        assertTrue(AniVaultServer.BUTTON_TIMEOUT_MS < RESOLVE_TIMEOUT_MS)
+    }
+
+    @Test
+    fun dubSkipsAnimeHeavenAndAsksForEnglish() {
+        val buttons = anivaultButtons("dub")
+        assertTrue(buttons.none { it.endpoint == "animeheaven_stream.php" })
+        assertEquals("English", buttons.first { it.endpoint == "anizone_stream.php" }.server)
+        assertEquals("dub", buttons.first().audio)
+    }
+
+    @Test
+    fun streamUrlCarriesTheHoshikaIdAndServer() {
+        val url = anivaultStreamUrl(
+            origin = "https://www.anivault.co",
+            button = anivaultButtons("sub").first(),
+            shortId = "ab12",
+            episode = 3,
         )
         assertEquals(
-            listOf("anikoto", "anizone", "gogoanime", "extra"),
-            anivaultPeers(available).map { it.server.id },
+            "https://www.anivault.co/api/anikoto_stream.php?ep=3&audio=sub&hoshikaId=ab12&server=Hd-1",
+            url,
         )
     }
 
     @Test
-    fun selectingAniVaultRacesOnlyAniVault() {
-        val all = listOf(stub("anikoto"), stub("anivault"), stub("reanime"))
-        assertEquals(listOf("anivault"), playbackResolvers("anivault", all).map { it.server.id })
-        assertEquals(listOf("anikoto", "reanime"), playbackResolvers("anikoto", all).map { it.server.id })
+    fun titlesDropTheMalMarker() {
+        assertEquals(
+            listOf("Sousou no Frieren", "Frieren"),
+            anivaultTitles("Sousou no Frieren || Frieren || mal:52991"),
+        )
     }
 
     @Test
-    fun aWinningPeerIsLabeledAniVault() = runBlocking {
-        val peer = object : StreamResolver {
-            override val server = StreamServer(id = "anikoto", name = "Anikoto", description = "")
-            override suspend fun resolve(
-                anilistId: Int,
-                episode: Int,
-                audio: String,
-                titleHint: String?,
-            ) = listOf(PlayableSource(url = "https://cdn.example/a.m3u8", label = "Anikoto"))
-        }
-        val vault = AniVaultServer { listOf(peer) }
-        val sources = vault.resolve(21, 1, "sub", "One Piece")
-        assertEquals("AniVault", sources.single().serverName)
-        assertEquals("https://cdn.example/a.m3u8", sources.single().url)
+    fun aVerifiedMapWinsOverATitleGuess() {
+        val body = """{"ok":true,"mapped":true,"data":{"shortId":"fr13","title":"Frieren"}}"""
+        assertEquals("fr13", anivaultMappedShortId(body))
+        assertNull(anivaultMappedShortId("""{"ok":false,"mapped":false}"""))
     }
 
     @Test
-    fun everyPeerStartsInsideTheOuterCap() = runBlocking {
-        assertTrue(AniVaultServer.PEER_TIMEOUT_MS < RESOLVE_TIMEOUT_MS)
-        val peers = (0 until 6).map { index ->
-            object : StreamResolver {
-                override val server = StreamServer(id = "peer$index", name = "peer$index", description = "")
-                override suspend fun resolve(
-                    anilistId: Int,
-                    episode: Int,
-                    audio: String,
-                    titleHint: String?,
-                ): List<PlayableSource> {
-                    if (index < 5) delay(30_000)
-                    return listOf(PlayableSource(url = "https://cdn.example/late.m3u8", label = "late"))
-                }
-            }
-        }
-        val vault = AniVaultServer { peers }
-        val sources = withTimeout(2_000) { vault.resolve(21, 1, "sub", "One Piece") }
-        assertEquals("https://cdn.example/late.m3u8", sources.single().url)
+    fun searchKeepsOnlyAnExactTitle() {
+        val body = """
+            {"ok":true,"data":[
+              {"shortId":"other","title":"Frieren Beyond"},
+              {"shortId":"fr13","titleEnglish":"Frieren","titleRomaji":"Sousou no Frieren"}
+            ]}
+        """.trimIndent()
+        assertEquals("fr13", anivaultSearchShortId(body, listOf("Frieren")))
+        assertNull(anivaultSearchShortId(body, listOf("Beyond")))
     }
 
     @Test
-    fun avoidHostKeepsRacingForAnotherCdn() = runBlocking {
-        val vault = AniVaultServer {
-            listOf(
-                source("same", "https://dead.cdn/a.m3u8"),
-                source("other", "https://live.cdn/b.m3u8"),
-            )
-        }
-        val sources = withContext(AvoidPlaybackHost("dead.cdn")) {
-            vault.resolve(21, 1, "sub", "One Piece")
-        }
-        assertEquals("https://live.cdn/b.m3u8", sources.single().url)
-    }
-
-    @Test
-    fun aSameHostOnlyHitIsLeftForTheOuterFilter() = runBlocking {
-        val vault = AniVaultServer { listOf(source("same", "https://dead.cdn/a.m3u8")) }
-        val sources = withContext(AvoidPlaybackHost("dead.cdn")) {
-            vault.resolve(21, 1, "sub", "One Piece")
-        }
-        assertEquals("https://dead.cdn/a.m3u8", sources.single().url)
-    }
-
-    private fun source(id: String, url: String) = object : StreamResolver {
-        override val server = StreamServer(id = id, name = id, description = "")
-        override suspend fun resolve(
-            anilistId: Int,
-            episode: Int,
-            audio: String,
-            titleHint: String?,
-        ) = listOf(PlayableSource(url = url, label = id))
-    }
-
-    private fun stub(id: String) = object : StreamResolver {
-        override val server = StreamServer(id = id, name = id, description = "")
-        override suspend fun resolve(
-            anilistId: Int,
-            episode: Int,
-            audio: String,
-            titleHint: String?,
-        ): List<PlayableSource> = emptyList()
+    fun aPlaylistBecomesTheFileAndAnEmbedIsSkipped() {
+        val headers = mapOf("Referer" to "https://www.anivault.co/")
+        val playable = anivaultPlayable(
+            """{"m3u8":"https://cdn.example/a.m3u8","server":"Hd-1"}""",
+            "Hd-1",
+            headers,
+        )
+        assertEquals("https://cdn.example/a.m3u8", playable?.url)
+        assertEquals(true, playable?.hls)
+        assertEquals("https://www.anivault.co/", playable?.headers?.get("Referer"))
+        assertNull(anivaultPlayable("""{"iframeOnly":true,"embedUrl":"https://embed.example/x"}""", "Hd-1", headers))
+        assertNull(anivaultPlayable("""{"error":"Could not resolve anime"}""", "Hd-1", headers))
     }
 }

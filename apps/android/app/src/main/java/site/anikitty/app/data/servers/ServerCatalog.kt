@@ -71,7 +71,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         AniHostsServer(cache = resolveCache),
     )
     private val bundled: List<StreamResolver> =
-        siteResolvers + AniVaultServer(peers = { _resolvers.value })
+        siteResolvers + AniVaultServer(cache = resolveCache)
 
     /** Bundled site ids — live scrapers that ship with the APK. */
     val bundledSiteIds: Set<String> = bundled.map { it.server.id }.toSet()
@@ -189,7 +189,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         onAttempt: ((serverName: String, index: Int, total: Int) -> Unit)? = null,
         avoidHost: String? = null,
     ): ResolveFailoverResult {
-        val list = playbackResolvers(_selectedId.value, _resolvers.value)
+        val list = _resolvers.value
         if (list.isEmpty()) error("No stream extensions installed")
         val preferredId = _selectedId.value
         val down = downProviderNames()
