@@ -4,6 +4,7 @@
 package site.anikitty.app.data.servers
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -36,5 +37,10 @@ class OnekoPlaybackTest {
         assertTrue(playable.hls)
         assertEquals("kaa", OnekoServer.PROVIDERS.first())
         assertTrue(OnekoServer.MISSING.contains("0neko"))
+        assertTrue(OnekoServer.BLOCKED.contains("could not be reached"))
+        assertTrue(isHardProviderFailure(OnekoServer.BLOCKED))
+        assertFalse(isHardProviderFailure(OnekoServer.MISSING))
+        assertTrue(OnekoReply(null, reachable = false).let { !it.reachable })
+        assertTrue(OnekoReply("{}", reachable = true).reachable)
     }
 }

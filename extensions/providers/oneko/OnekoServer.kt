@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit
  * backends that site uses, then plays the HLS file here.
  */
 class OnekoServer(
+    private val cache: ResolveCache? = null,
     private val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(14, TimeUnit.SECONDS)
@@ -33,6 +34,8 @@ class OnekoServer(
         siteUrl = SITE,
     )
 
+    @Volatile private var cachedBackends: List<String> = emptyList()
+
     override suspend fun resolve(
         anilistId: Int,
         episode: Int,
@@ -42,28 +45,65 @@ class OnekoServer(
         require(anilistId > 0) { "anilistId required" }
         require(episode > 0) { "episode required" }
         val mode = if (audio.equals("dub", ignoreCase = true)) "dub" else "sub"
-        val backends = onekoBackends(read("$SITE/backend.json") ?: error(BLOCKED))
+        val backends = backends()
         if (backends.isEmpty()) error(BLOCKED)
-        for (provider in PROVIDERS) {
-            val listBody = get(backends, "/episodes/$provider/$anilistId?map=false") ?: continue
+        var reachable = false
+        val preferred = cache?.getShow(ID, anilistId)?.siteId?.takeIf { it in PROVIDERS }
+        val providers = if (preferred != null) {
+            listOf(preferred) + PROVIDERS.filterNot { it == preferred }
+        } else {
+            PROVIDERS
+        }
+        for (provider in providers) {
+            val list = get(backends, "/episodes/$provider/$anilistId?map=false")
+            if (list.reachable) reachable = true
+            val listBody = list.body ?: continue
             val ep = onekoPickEpisode(onekoEpisodes(listBody, provider, mode), episode) ?: continue
-            val watchBody = get(backends, "/${ep.path}") ?: continue
+            val watch = get(backends, "/${ep.path}")
+            if (watch.reachable) reachable = true
+            val watchBody = watch.body ?: continue
             val files = onekoStreams(watchBody).map { onekoPlayable(it, mode) }
-            if (files.isNotEmpty()) return@withContext namedByServer(files, server.name)
+            if (files.isNotEmpty()) {
+                cache?.putShow(ID, anilistId, provider, "$SITE/series/$anilistId")
+                return@withContext namedByServer(files, server.name)
+            }
         }
-        error(MISSING)
+        error(if (reachable) MISSING else BLOCKED)
     }
 
-    private fun get(backends: List<String>, path: String): String? {
+    private fun backends(): List<String> {
+        cachedBackends.takeIf { it.isNotEmpty() }?.let { return it }
+        val cached = cache?.getShow(ID, BACKEND_CACHE_ID)?.siteId
+            ?.split('\n')
+            ?.map { it.trim() }
+            ?.filter { it.startsWith("http") }
+            .orEmpty()
+        if (cached.isNotEmpty()) {
+            cachedBackends = cached
+            return cached
+        }
+        val body = read("$SITE/backend.json")
+        if (!body.reachable || body.body.isNullOrBlank()) error(BLOCKED)
+        val listed = onekoBackends(body.body!!)
+        if (listed.isEmpty()) error(BLOCKED)
+        cachedBackends = listed
+        cache?.putShow(ID, BACKEND_CACHE_ID, listed.joinToString("\n"), "$SITE/backend.json")
+        return listed
+    }
+
+    private fun get(backends: List<String>, path: String): OnekoReply {
         val suffix = if (path.startsWith("/")) path else "/$path"
+        var reachable = false
         for (root in backends) {
-            val body = read(root.trimEnd('/') + suffix) ?: continue
-            if (body.isNotBlank()) return body
+            val reply = read(root.trimEnd('/') + suffix)
+            if (reply.reachable) reachable = true
+            val body = reply.body
+            if (!body.isNullOrBlank()) return OnekoReply(body, reachable = true)
         }
-        return null
+        return OnekoReply(null, reachable = reachable)
     }
 
-    private fun read(url: String): String? {
+    private fun read(url: String): OnekoReply {
         val request = Request.Builder()
             .url(url)
             .get()
@@ -74,10 +114,14 @@ class OnekoServer(
             .build()
         val call = http.newCall(request)
         call.timeout().timeout(12, TimeUnit.SECONDS)
-        val response = runCatching { call.execute() }.getOrNull() ?: return null
+        val response = runCatching { call.execute() }.getOrNull()
+            ?: return OnekoReply(null, reachable = false)
         response.use {
-            if (it.code !in 200..299) return null
-            return it.body?.string()?.takeIf { body -> body.isNotBlank() }
+            val text = it.body?.string().orEmpty()
+            if (providerChallenged(it.code, text)) return OnekoReply(null, reachable = false)
+            if (it.code == 404) return OnekoReply(null, reachable = true)
+            if (it.code !in 200..299) return OnekoReply(null, reachable = it.code < 500)
+            return OnekoReply(text.takeIf { body -> body.isNotBlank() }, reachable = true)
         }
     }
 
@@ -91,8 +135,13 @@ class OnekoServer(
 
         /** Same order 0neko asks first. Stop at the first provider that answers. */
         val PROVIDERS = listOf("kaa", "anikoto", "anizone")
+
+        /** Sentinel AniList id used only to persist backend.json mirrors. */
+        internal const val BACKEND_CACHE_ID = -1
     }
 }
+
+internal data class OnekoReply(val body: String?, val reachable: Boolean)
 
 internal data class OnekoEpisode(val path: String, val number: Int)
 

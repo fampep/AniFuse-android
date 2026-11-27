@@ -4,6 +4,7 @@
 package site.anikitty.app.data.servers
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -28,12 +29,24 @@ class AniRexPlaybackTest {
         )
         assertTrue(anirexPlayerUrls("""{"servers":[]}""").isEmpty())
         assertTrue(anirexPlayerUrls("not-json").isEmpty())
+        assertEquals(
+            listOf("https://flixcloud.cc/e/dual"),
+            anirexPlayersForAudio(
+                listOf(
+                    AniRexPlayer("https://flixcloud.cc/e/dual", "dual"),
+                    AniRexPlayer("https://flixcloud.cc/e/sub", "sub"),
+                ),
+                "dub",
+            ).map { it.url },
+        )
         assertTrue(AniRexServer.MISSING.contains("AniRex"))
         assertTrue(AniRexServer.MISSING.contains("does not have"))
         assertTrue(AniRexServer.BLOCKED.contains("could not be reached"))
         assertEquals(AniRexServer.BLOCKED, anirexHttpFailure(403, "Just a moment..."))
         assertEquals(AniRexServer.MISSING, anirexHttpFailure(404, """{"message":"No stream available for this episode"}"""))
         assertEquals(AniRexServer.BLOCKED, anirexHttpFailure(0, ""))
-        assertTrue(anirexHttpFailure(500, "<html>Server Error</html>").contains("HTTP 500"))
+        assertEquals(AniRexServer.BLOCKED, anirexHttpFailure(500, "<html>Server Error</html>"))
+        assertTrue(isHardProviderFailure(anirexHttpFailure(502, "bad gateway")))
+        assertFalse(isHardProviderFailure(AniRexServer.MISSING))
     }
 }

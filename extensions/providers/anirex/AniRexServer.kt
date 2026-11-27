@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit
  * playlist here, the same way reanime does.
  */
 class AniRexServer(
+    private val cache: ResolveCache? = null,
     private val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(14, TimeUnit.SECONDS)
@@ -47,12 +48,12 @@ class AniRexServer(
         require(episode > 0) { "episode required" }
         val mode = if (audio.equals("dub", ignoreCase = true)) "dub" else "sub"
         val body = watchBody(anilistId, episode)
-        val embeds = anirexPlayerUrls(body)
+        val embeds = anirexPlayersForAudio(anirexPlayers(body), mode)
         if (embeds.isEmpty()) error(MISSING)
         var lastError: String = MISSING
         val out = ArrayList<PlayableSource>()
-        for (embed in embeds) {
-            val opened = runCatching { openEmbed(embed, mode) }.getOrElse { err ->
+        for (player in embeds) {
+            val opened = runCatching { openEmbed(player.url, mode) }.getOrElse { err ->
                 lastError = err.message?.takeIf { it.isNotBlank() } ?: lastError
                 null
             } ?: continue
@@ -60,6 +61,7 @@ class AniRexServer(
             if (out.size >= 2) break
         }
         if (out.isEmpty()) error(lastError)
+        cache?.putShow(ID, anilistId, anilistId.toString(), "$SITE/watch/-$anilistId/$episode")
         namedByServer(out, server.name)
     }
 
@@ -239,12 +241,28 @@ internal fun anirexPlayers(body: String): List<AniRexPlayer> {
     return out
 }
 
-internal fun anirexHttpFailure(code: Int, body: String): String {
-    if (challenged(code, body)) return AniRexServer.BLOCKED
-    if (code == 404) return AniRexServer.MISSING
-    if (code == 0) return "AniRex could not be reached."
-    return "AniRex could not load this episode (HTTP $code)."
+/** Prefer dual or matching audio embeds; drop hard-opposite-only rows. */
+internal fun anirexPlayersForAudio(players: List<AniRexPlayer>, mode: String): List<AniRexPlayer> {
+    val dub = mode.equals("dub", ignoreCase = true)
+    val matched = players.filter { player ->
+        val audio = player.audio.trim().lowercase()
+        when {
+            audio == "dual" || audio.isEmpty() -> true
+            dub -> audio == "dub" || audio == "en" || audio.contains("english")
+            else -> audio == "sub" || audio == "ja" || audio.contains("japan")
+        }
+    }
+    return matched.ifEmpty { players }
 }
+
+internal fun anirexHttpFailure(code: Int, body: String): String =
+    providerHttpFailure(
+        code = code,
+        body = body,
+        missing = AniRexServer.MISSING,
+        blocked = AniRexServer.BLOCKED,
+        challenged = challenged(code, body),
+    )
 
 private fun challenged(code: Int, body: String): Boolean {
     val trimmed = body.trimStart()
