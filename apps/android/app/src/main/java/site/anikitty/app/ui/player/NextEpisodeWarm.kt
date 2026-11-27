@@ -6,8 +6,9 @@ package site.anikitty.app.ui.player
 /**
  * When the playhead crosses this fraction of the runtime, the next episode's
  * resolver race should already be in flight so autoplay never waits on a cold CDN.
+ * 65% leaves ~8 minutes on a typical 24m episode for resolve + caption prefetch.
  */
-internal const val NEXT_EPISODE_WARM_FRACTION = 0.72f
+internal const val NEXT_EPISODE_WARM_FRACTION = 0.65f
 
 internal fun shouldWarmNextEpisode(
     positionMs: Long,

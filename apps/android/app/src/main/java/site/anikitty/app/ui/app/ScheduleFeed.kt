@@ -53,14 +53,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import site.anikitty.app.data.airingLabel
 import site.anikitty.app.data.friendlyFailure
 import site.anikitty.app.data.anilist.AiringSlot
 import site.anikitty.app.data.anilist.AniListClient
 import site.anikitty.app.data.anilist.AnimeSummary
 import site.anikitty.app.ui.components.KittyEmptyState
+import site.anikitty.app.ui.components.KittyImage
 import site.anikitty.app.ui.components.KittyShimmerBox
+import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.LocalKittyPalette
 import site.anikitty.app.ui.theme.prefersReducedMotion
 import java.text.SimpleDateFormat
@@ -328,25 +329,25 @@ private fun ScheduleRow(
     listLabel: String?,
     onOpen: (AnimeSummary, Int) -> Unit,
 ) {
+    val shape = RoundedCornerShape(16.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .spacePress { onOpen(slot.anime, slot.episode) }
-            .clip(RoundedCornerShape(12.dp))
-            .background(LocalKittyPalette.current.surface)
-            .border(0.5.dp, LocalKittyPalette.current.hairline, RoundedCornerShape(12.dp))
+            .stageGlassPlate(shape = shape, elevated = false)
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AsyncImage(
-            model = slot.anime.coverImageUrl,
+        KittyImage(
+            url = slot.anime.coverImageUrl,
             contentDescription = null,
+            widthPx = 144,
+            heightPx = 204,
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .width(48.dp)
                 .height(68.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(LocalKittyPalette.current.hairline),
+                .clip(RoundedCornerShape(10.dp)),
         )
         Spacer(modifier = Modifier.width(12.dp))
         val now = System.currentTimeMillis() / 1000L

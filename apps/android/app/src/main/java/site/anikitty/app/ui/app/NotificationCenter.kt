@@ -5,7 +5,6 @@ package site.anikitty.app.ui.app
 
 import android.content.Context
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,7 +38,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -58,6 +56,8 @@ import site.anikitty.app.data.anilist.AniListClient
 import site.anikitty.app.data.anilist.AnimeSummary
 import site.anikitty.app.data.download.DownloadPhase
 import site.anikitty.app.data.local.WatchHistoryEntity
+import site.anikitty.app.ui.components.KittyImage
+import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.data.updates.AppReleaseClient
 import site.anikitty.app.data.updates.BuildChannelStore
 import site.anikitty.app.data.updates.channelBuild
@@ -299,9 +299,7 @@ internal fun NotificationCenter(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(22.dp))
-                                .background(Color(0xFF101010))
-                                .border(1.dp, Color(0xFF292929), RoundedCornerShape(22.dp))
+                                .stageGlassPlate(shape = RoundedCornerShape(22.dp), elevated = unread)
                                 .spacePress {
                                     persist(read + note.id, cleared)
                                     note.anime?.let { onOpen(it, note.episode) }
@@ -319,9 +317,11 @@ internal fun NotificationCenter(
                             )
                             val cover = note.anime?.coverImageUrl
                             if (!cover.isNullOrBlank()) {
-                                AsyncImage(
-                                    model = cover,
+                                KittyImage(
+                                    url = cover,
                                     contentDescription = null,
+                                    widthPx = 126,
+                                    heightPx = 174,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
                                         .padding(end = 12.dp)

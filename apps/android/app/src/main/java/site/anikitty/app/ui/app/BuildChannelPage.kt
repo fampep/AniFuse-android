@@ -74,6 +74,7 @@ import site.anikitty.app.data.updates.installApk
 import site.anikitty.app.data.updates.openDownload
 import site.anikitty.app.data.updates.openInstallPermission
 import site.anikitty.app.data.updates.uninstallThisApp
+import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.KittyAccent
 import site.anikitty.app.ui.theme.KittyFaint
 import site.anikitty.app.ui.theme.KittyMuted
@@ -113,13 +114,12 @@ fun SideloadUpdateBanner(onOpen: () -> Unit) {
     }
     val build = offer ?: return
     val label = if (channel == BuildChannel.Dev) "dev" else "stable"
+    val bannerShape = RoundedCornerShape(18.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(palette.surface)
-            .border(1.dp, palette.hairline, RoundedCornerShape(16.dp))
+            .stageGlassPlate(shape = bannerShape, elevated = true)
             .clickable(onClick = onOpen)
             .padding(start = 14.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

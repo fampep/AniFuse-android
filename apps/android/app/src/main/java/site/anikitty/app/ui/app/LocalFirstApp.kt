@@ -831,12 +831,35 @@ fun LocalFirstApp(
                                 usedFallback = false,
                             )
                         } else {
-                            streamServers.resolveWithFailover(
+                            val warmed = site.anikitty.app.data.servers.PlayableWarmCache.take(
                                 anilistId = current.anime.id,
                                 episode = nextEpisode,
                                 audio = nextAudio,
-                                titleHint = current.anime.streamTitleHint(),
                             )
+                            if (warmed != null) {
+                                val warmServer = runCatching {
+                                    streamServers.selectedResolver().server
+                                }.getOrElse {
+                                    site.anikitty.app.data.servers.StreamServer(
+                                        id = "warm-cache",
+                                        name = warmed.firstOrNull()?.serverName ?: "Warm",
+                                        description = "Prefetched next episode",
+                                    )
+                                }
+                                site.anikitty.app.data.servers.ResolveFailoverResult(
+                                    sources = warmed,
+                                    server = warmServer,
+                                    usedFallback = false,
+                                    attempted = listOf("warm-cache: ok"),
+                                )
+                            } else {
+                                streamServers.resolveWithFailover(
+                                    anilistId = current.anime.id,
+                                    episode = nextEpisode,
+                                    audio = nextAudio,
+                                    titleHint = current.anime.streamTitleHint(),
+                                )
+                            }
                         }
                         ensureActive()
                         if (languageToSave(failed = false) == null) return@launch
@@ -1039,17 +1062,33 @@ fun LocalFirstApp(
                     } else {
                         suspend {
                             val next = current.episode + 1
-                            val resolved = streamServers.resolveWithFailover(
+                            val existing = site.anikitty.app.data.servers.PlayableWarmCache.peek(
+                                anilistId = current.anime.id,
+                                episode = next,
+                                audio = playerAudio,
+                            )
+                            val resolved = existing ?: streamServers.resolveWithFailover(
                                 anilistId = current.anime.id,
                                 episode = next,
                                 audio = playerAudio,
                                 titleHint = current.anime.streamTitleHint(),
-                            ).sources
+                            ).sources.also { sources ->
+                                site.anikitty.app.data.servers.PlayableWarmCache.put(
+                                    anilistId = current.anime.id,
+                                    episode = next,
+                                    audio = playerAudio,
+                                    sources = sources,
+                                )
+                            }
                             site.anikitty.app.data.servers.SourceBadgeCache.remember(
                                 context,
                                 current.anime.id,
                                 next,
                                 resolved,
+                            )
+                            site.anikitty.app.data.servers.SubtitleLibrary.prefetch(
+                                current.anime.id,
+                                next,
                             )
                         }
                     }
