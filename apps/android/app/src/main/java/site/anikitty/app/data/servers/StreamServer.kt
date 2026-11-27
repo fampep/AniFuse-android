@@ -90,6 +90,11 @@ data class PlayableSource(
     val audioLanguage: String? = null,
     /** Provider that returned this file. Null until failover names it. */
     val serverName: String? = null,
+    /**
+     * AniVault server that produced this file, such as `anikoto_stream.php|sub|hd-1`.
+     * Null for every other provider. The next episode of this show asks it first.
+     */
+    val leadKey: String? = null,
 )
 
 /**

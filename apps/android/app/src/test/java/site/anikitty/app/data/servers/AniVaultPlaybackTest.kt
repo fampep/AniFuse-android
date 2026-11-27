@@ -105,6 +105,32 @@ class AniVaultPlaybackTest {
     }
 
     @Test
+    fun theServerThatPlayedStartsTheNextEpisode() {
+        val dir = java.nio.file.Files.createTempDirectory("anivault-lead").toFile()
+        AniVaultLead.attach(dir)
+        AniVaultLead.reset()
+        val hd2 = anivaultButtons("sub").first { it.server == "Hd-2" }
+        val key = anivaultAskKey(hd2)
+        AniVaultLead.note(21, "Sub", key)
+        val next = anivaultLeadFirst(anivaultButtons("sub"), AniVaultLead.preferred(21, "sub"))
+        assertEquals("Hd-2", next.first().server)
+        assertEquals("Hd-1", next[1].server)
+        assertEquals(anivaultButtons("sub").size, next.size)
+        assertEquals(
+            "Hd-1",
+            anivaultLeadFirst(anivaultButtons("dub"), AniVaultLead.preferred(21, "sub")).first().server,
+        )
+        AniVaultLead.attach(dir)
+        assertEquals(key, AniVaultLead.preferred(21, "sub"))
+        val files = listOf(
+            PlayableSource(url = "https://cdn.example/a.m3u8", label = "Hd-1", leadKey = anivaultAskKey(anivaultButtons("sub").first())),
+            PlayableSource(url = "https://cdn.example/b.m3u8", label = "Hd-2", leadKey = key),
+        )
+        assertEquals("Hd-2", anivaultLeadSources(files, key).first().label)
+        AniVaultLead.reset()
+    }
+
+    @Test
     fun filesStayInButtonOrderWithoutRepeatingAUrl() {
         val first = PlayableSource(url = "https://cdn.example/a.m3u8", label = "Hd-1")
         val again = PlayableSource(url = "https://cdn.example/a.m3u8", label = "Hd-1 again")

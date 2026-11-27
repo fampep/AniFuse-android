@@ -248,6 +248,7 @@ import site.anikitty.app.data.servers.FlixUnwrapDataSource
 import site.anikitty.app.data.servers.PlaybackHttp
 import site.anikitty.app.data.servers.PlayableSource
 import site.anikitty.app.data.servers.PlayableWarmCache
+import site.anikitty.app.data.servers.AniVaultLead
 import site.anikitty.app.data.servers.PlaybackHostHealth
 import site.anikitty.app.data.servers.SegmentShadow
 import site.anikitty.app.data.servers.playableHost
@@ -1067,10 +1068,12 @@ fun PlayerScreen(
         }
     }
     val playbackOwner = remember { Any() }
-    LaunchedEffect(ready, source?.url, playbackOwner) {
+    LaunchedEffect(ready, source?.url, source?.leadKey, playbackOwner) {
         if (!ready) return@LaunchedEffect
         val host = playbackHost(source?.url.orEmpty())
         if (host.isNotEmpty()) PlaybackHostHealth.notePlaying(host, playbackOwner)
+        val key = source?.leadKey
+        if (!key.isNullOrBlank()) AniVaultLead.note(anilistId, audio, key)
     }
     DisposableEffect(playbackOwner) {
         onDispose {
@@ -4569,7 +4572,8 @@ fun PlayerScreen(
                 fallbackArt = fallbackArt,
                 minutesLeft = shelfMinutes.takeIf { it >= 0 },
                 onToggleWatched = onToggleWatched,
-                sourceLabel = source?.serverName?.takeIf { it.isNotBlank() }
+                sourceLabel = source?.label?.takeIf { !source.leadKey.isNullOrBlank() && it.isNotBlank() }
+                    ?: source?.serverName?.takeIf { it.isNotBlank() }
                     ?: source?.qualityRating?.takeIf { it.isNotBlank() }
                     ?: "Auto",
                 qualityLabel = shortQuality(qualityLabel),
