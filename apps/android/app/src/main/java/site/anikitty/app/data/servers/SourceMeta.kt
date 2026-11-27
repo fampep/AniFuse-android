@@ -32,6 +32,10 @@ object BuiltInSourceMeta {
     fun reanime(streamInf: String, audioMode: String, audioMedia: String? = null): SourceFields =
         fromHls(streamInf, audioMode, audioMedia)
 
+    /** anirex.to FlixCloud masters state resolution the same way reanime does. */
+    fun anirex(streamInf: String, audioMode: String, audioMedia: String? = null): SourceFields =
+        fromHls(streamInf, audioMode, audioMedia)
+
     /** mkissa states a video height on the episode, not a grade word. */
     fun mkissa(videoHeight: Int?, audioMode: String): SourceFields = SourceFields(
         quality = videoHeight?.let { heightLabel(it) },

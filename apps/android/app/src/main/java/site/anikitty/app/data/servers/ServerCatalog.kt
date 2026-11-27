@@ -15,8 +15,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.EmptyCoroutineContext
 import site.anikitty.app.data.anifuse.AnifuseApiStore
 import site.anikitty.app.data.anifuse.AnifuseFeedCache
 import site.anikitty.app.data.extensions.ExtensionInstaller
@@ -45,7 +43,6 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
     init {
         val hostDir = java.io.File(context.filesDir, "playback-hosts")
         PlaybackHostHealth.attach(hostDir)
-        AniVaultLead.attach(hostDir)
     }
     private val resolveCache = ResolveCache(context)
     private val episodeArtCatalog = EpisodeArtCatalog.shared(context)
@@ -73,9 +70,11 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         AnimeggServer(cache = resolveCache),
         AnigatoServer(cache = resolveCache),
         AniHostsServer(cache = resolveCache),
+        OnekoServer(),
+        AniRexServer(),
+        AnimeHeavenServer(cache = resolveCache),
     )
-    private val bundled: List<StreamResolver> =
-        siteResolvers + AniVaultServer(cache = resolveCache)
+    private val bundled: List<StreamResolver> = siteResolvers
 
     /** Bundled site ids — live scrapers that ship with the APK. */
     val bundledSiteIds: Set<String> = bundled.map { it.server.id }.toSet()
@@ -192,9 +191,9 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         titleHint: String? = null,
         onAttempt: ((serverName: String, index: Int, total: Int) -> Unit)? = null,
         avoidHost: String? = null,
-        warmLead: Boolean = false,
+        @Suppress("UNUSED_PARAMETER") warmLead: Boolean = false,
     ): ResolveFailoverResult {
-        val list = playbackResolvers(_selectedId.value, _resolvers.value)
+        val list = _resolvers.value
         if (list.isEmpty()) error("No stream extensions installed")
         val preferredId = _selectedId.value
         val down = downProviderNames()
@@ -217,31 +216,16 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
             anyDown = down.isNotEmpty(),
             preferredCold = preferredCold,
         )
-        val budgetMs = if (ordered.singleOrNull()?.server?.id == AniVaultServer.ID) {
-            AniVaultServer.RESOLVE_BUDGET_MS
-        } else {
-            RESOLVE_TIMEOUT_MS
-        }
         val raced = raceHeadStart(
             count = ordered.size,
             parallel = 4,
             headStartMs = headStartMs,
-            timeoutMs = budgetMs,
+            timeoutMs = RESOLVE_TIMEOUT_MS,
         ) { index ->
             val resolver = ordered[index]
             onAttempt?.invoke(resolver.server.name, index, ordered.size)
             val sources = try {
-                val blocked = avoidHost?.trim()?.takeIf { it.isNotEmpty() }
-                var extra: CoroutineContext = EmptyCoroutineContext
-                if (blocked != null) extra += AvoidPlaybackHost(blocked)
-                if (warmLead) extra += AniVaultWarm()
-                if (extra == EmptyCoroutineContext) {
-                    resolver.resolve(anilistId, episode, audio, titleHint)
-                } else {
-                    withContext(extra) {
-                        resolver.resolve(anilistId, episode, audio, titleHint)
-                    }
-                }
+                resolver.resolve(anilistId, episode, audio, titleHint)
             } catch (err: Exception) {
                 if (err is CancellationException) throw err
                 val msg = err.message?.takeIf { it.isNotBlank() } ?: err::class.java.simpleName

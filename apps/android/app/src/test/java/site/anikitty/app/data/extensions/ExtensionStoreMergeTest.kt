@@ -40,7 +40,7 @@ class ExtensionStoreMergeTest {
                 ),
             ),
         )
-        assertEquals(listOf("anipm", "reanime", "anivault"), merged.extensions.map { it.id })
+        assertEquals(listOf("anipm", "reanime", "anirex", "animeheaven"), merged.extensions.map { it.id })
         assertEquals("1.0.0", merged.extensions.first { it.id == "reanime" }.version)
         assertEquals("1.1", merged.extensions.first { it.id == "reanime" }.protocol)
         assertEquals("2026-11-15", merged.updatedAt)
@@ -55,7 +55,7 @@ class ExtensionStoreMergeTest {
             ),
         )
         assertEquals(
-            listOf("reanime", "anipm", "site.anikitty.example.hello", "anivault"),
+            listOf("reanime", "anipm", "site.anikitty.example.hello", "anirex", "animeheaven"),
             merged.extensions.map { it.id },
         )
         assertEquals("Ani.pm", merged.extensions.first { it.id == "anipm" }.name)
@@ -93,13 +93,13 @@ class ExtensionStoreMergeTest {
     }
 
     @Test
-    fun anivaultStaysOnTheListAndOpensTheSite() {
+    fun anirexStaysOnTheListAndPlaysOnDevice() {
         val merged = mergeStoreIndexes(listOf(index(MIRROR, "2026-11-15", reanime())))
-        val vault = merged.extensions.first { it.id == ANIVAULT_ID }
-        assertEquals(ANIVAULT_SITE, vault.siteUrl)
-        assertTrue(vault.playsOnDevice)
-        assertFalse(isCatalogSite(vault))
-        assertTrue(storeListingMatches(vault, "anivault.tv"))
+        val rex = merged.extensions.first { it.id == ANIREX_ID }
+        assertEquals(ANIREX_SITE, rex.siteUrl)
+        assertTrue(rex.playsOnDevice)
+        assertFalse(isCatalogSite(rex))
+        assertTrue(storeListingMatches(rex, "anirex.to"))
         assertEquals(
             StoreCardRole.OpenSite,
             storeCardRole(

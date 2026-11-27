@@ -146,7 +146,9 @@ android {
             java.srcDir("../../../extensions/providers/animegg")
             java.srcDir("../../../extensions/providers/anigato")
             java.srcDir("../../../extensions/providers/anihosts")
-            java.srcDir("../../../extensions/providers/anivault")
+            java.srcDir("../../../extensions/providers/oneko")
+            java.srcDir("../../../extensions/providers/anirex")
+            java.srcDir("../../../extensions/providers/animeheaven")
         }
     }
 }

@@ -248,7 +248,6 @@ import site.anikitty.app.data.servers.FlixUnwrapDataSource
 import site.anikitty.app.data.servers.PlaybackHttp
 import site.anikitty.app.data.servers.PlayableSource
 import site.anikitty.app.data.servers.PlayableWarmCache
-import site.anikitty.app.data.servers.AniVaultLead
 import site.anikitty.app.data.servers.PlaybackHostHealth
 import site.anikitty.app.data.servers.SegmentShadow
 import site.anikitty.app.data.servers.playableHost
@@ -1072,11 +1071,6 @@ fun PlayerScreen(
         if (!ready) return@LaunchedEffect
         val host = playbackHost(source?.url.orEmpty())
         if (host.isNotEmpty()) PlaybackHostHealth.notePlaying(host, playbackOwner)
-    }
-    LaunchedEffect(playing, source?.url, source?.leadKey, anilistId) {
-        if (!playing) return@LaunchedEffect
-        val key = source?.leadKey
-        if (!key.isNullOrBlank()) AniVaultLead.note(anilistId, key)
     }
     DisposableEffect(playbackOwner) {
         onDispose {
