@@ -72,6 +72,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         AniHostsServer(cache = resolveCache),
         OnekoServer(),
         AniRexServer(),
+        AnimeHeavenServer(cache = resolveCache),
     )
     private val bundled: List<StreamResolver> = siteResolvers
 

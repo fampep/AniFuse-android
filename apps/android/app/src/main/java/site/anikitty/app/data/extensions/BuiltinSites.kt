@@ -22,10 +22,25 @@ internal fun builtinStoreListings(): List<StoreListing> = listOf(
         protocol = "1.1",
         playsOnDevice = true,
     ),
+    StoreListing(
+        id = ANIMEHEAVEN_ID,
+        name = "AnimeHeaven",
+        description = "On-device animeheaven.me resolve. The gate file plays on this phone.",
+        github = ANIMEHEAVEN_SITE,
+        author = "animeheaven.me",
+        featured = true,
+        iconUrl = "https://www.google.com/s2/favicons?domain=animeheaven.me&sz=128",
+        siteUrl = ANIMEHEAVEN_SITE,
+        version = "site",
+        protocol = "1.1",
+        playsOnDevice = true,
+    ),
 )
 
 internal const val ANIREX_ID = "anirex"
 internal const val ANIREX_SITE = "https://anirex.to/"
+internal const val ANIMEHEAVEN_ID = "animeheaven"
+internal const val ANIMEHEAVEN_SITE = "https://animeheaven.me/"
 
 internal fun isCatalogSite(listing: StoreListing): Boolean = !listing.playsOnDevice
 

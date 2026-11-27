@@ -40,7 +40,7 @@ class ExtensionStoreMergeTest {
                 ),
             ),
         )
-        assertEquals(listOf("anipm", "reanime", "anirex"), merged.extensions.map { it.id })
+        assertEquals(listOf("anipm", "reanime", "anirex", "animeheaven"), merged.extensions.map { it.id })
         assertEquals("1.0.0", merged.extensions.first { it.id == "reanime" }.version)
         assertEquals("1.1", merged.extensions.first { it.id == "reanime" }.protocol)
         assertEquals("2026-11-15", merged.updatedAt)
@@ -55,7 +55,7 @@ class ExtensionStoreMergeTest {
             ),
         )
         assertEquals(
-            listOf("reanime", "anipm", "site.anikitty.example.hello", "anirex"),
+            listOf("reanime", "anipm", "site.anikitty.example.hello", "anirex", "animeheaven"),
             merged.extensions.map { it.id },
         )
         assertEquals("Ani.pm", merged.extensions.first { it.id == "anipm" }.name)
