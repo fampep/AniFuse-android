@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -61,8 +60,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import site.anikitty.app.ui.app.spacePress
 import site.anikitty.app.ui.components.EpisodeSlide
 import site.anikitty.app.ui.components.KittyImage
+import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.PlayerChrome
 
 /** Episodes per range chip, matching the reference app's 1–100 selector. */
@@ -364,24 +365,25 @@ internal fun EpisodeRowCell(
     fallbackArt: String? = null,
 ) {
     val shape = RoundedCornerShape(16.dp)
-    val colors = if (current) {
-        listOf(Color(0xFF24252C), Color(0xFF111216))
-    } else {
-        listOf(Color(0xFF1B1C22), Color(0xFF0B0B0E))
-    }
+    val view = androidx.compose.ui.platform.LocalView.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(Brush.verticalGradient(colors))
+            .stageGlassPlate(shape = shape, elevated = current)
             .then(
                 if (current) {
-                    Modifier.border(1.dp, PlayerChrome.Accent.copy(alpha = 0.8f), shape)
+                    Modifier.border(1.dp, Color.White.copy(alpha = 0.55f), shape)
                 } else {
                     Modifier
                 },
             )
-            .clickable(role = Role.Button, onClick = onPick)
+            .spacePress {
+                site.anikitty.app.ui.theme.KittyHaptics.perform(
+                    view,
+                    site.anikitty.app.ui.theme.KittyHaptics.Kind.Tick,
+                )
+                onPick()
+            }
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -402,20 +404,14 @@ internal fun EpisodeRowCell(
                 )
             }
             if (progress > 0f) {
-                Box(
+                site.anikitty.app.ui.components.StageProgressBar(
+                    fraction = progress.coerceIn(0.02f, 1f),
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .height(2.5.dp)
-                        .background(Color.Black.copy(alpha = 0.40f)),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .fillMaxWidth(progress.coerceIn(0.02f, 1f))
-                            .background(PlayerChrome.Accent),
-                    )
-                }
+                        .padding(horizontal = 4.dp, vertical = 3.dp),
+                    barHeight = 2.5.dp,
+                )
             }
         }
         Column(

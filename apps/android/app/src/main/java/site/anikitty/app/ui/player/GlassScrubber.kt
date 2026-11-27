@@ -5,8 +5,10 @@ package site.anikitty.app.ui.player
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import site.anikitty.app.ui.theme.prefersReducedMotion
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -62,12 +64,12 @@ fun GlassScrubber(
     modifier: Modifier = Modifier,
 ) {
     val clamped = progress.coerceIn(0f, 1f)
+    val reduced = prefersReducedMotion()
     val animatedProgress by animateFloatAsState(
         targetValue = clamped,
-        animationSpec = if (scrubbing) {
-            tween(0)
-        } else {
-            spring(
+        animationSpec = when {
+            scrubbing || reduced -> snap()
+            else -> spring(
                 dampingRatio = Spring.DampingRatioNoBouncy,
                 stiffness = Spring.StiffnessMediumLow,
             )
@@ -75,8 +77,12 @@ fun GlassScrubber(
         label = "scrubProgress",
     )
     val thumbScale by animateFloatAsState(
-        targetValue = if (scrubbing) 1.42f else 1f,
-        animationSpec = spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessMedium),
+        targetValue = if (scrubbing && !reduced) 1.42f else 1f,
+        animationSpec = if (reduced) {
+            snap()
+        } else {
+            spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessMedium)
+        },
         label = "thumbScale",
     )
     val latestOnScrub by rememberUpdatedState(onScrub)

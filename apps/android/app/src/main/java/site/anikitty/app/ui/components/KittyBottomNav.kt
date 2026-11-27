@@ -59,8 +59,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import site.anikitty.app.ui.app.spacePress
-import site.anikitty.app.ui.theme.KittyDockFill
-import site.anikitty.app.ui.theme.KittyDockStroke
+import site.anikitty.app.ui.components.StageGlassFill
+import site.anikitty.app.ui.components.StageGlassStroke
 import site.anikitty.app.ui.theme.KittyHaptics
 import site.anikitty.app.ui.theme.LocalKittyPalette
 import site.anikitty.app.ui.theme.prefersReducedMotion
@@ -86,8 +86,8 @@ private fun dockColors(): DockColors {
     val palette = LocalKittyPalette.current
     return if (palette.dark) {
         DockColors(
-            fill = KittyDockFill,
-            stroke = KittyDockStroke,
+            fill = StageGlassFill,
+            stroke = StageGlassStroke,
             selected = Color.White,
             idle = Color(0xFF8A8A8A),
             ink = Color(0xFF080808),

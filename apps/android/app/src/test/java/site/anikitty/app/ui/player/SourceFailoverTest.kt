@@ -56,6 +56,10 @@ class SourceFailoverTest {
         assertEquals("cdn-a.example", playbackHost(urls[1]))
         assertEquals(2, nextHealthySource(urls, 0, setOf("cdn-a.example")))
         assertEquals(null, nextHealthySource(urls, 2, setOf("cdn-b.example")))
+        assertEquals(
+            null,
+            nextHealthySource(urls, 0, setOf("cdn-a.example", "cdn-b.example")),
+        )
     }
 
     @Test

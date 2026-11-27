@@ -60,13 +60,18 @@ class AnikittyApp : Application(), ImageLoaderFactory {
                     .build()
             }
             .allowHardware(true)
-            .crossfade(false)
+            .crossfade(120)
             .build()
 
     override fun onCreate() {
         super.onCreate()
         // Cast talks to Play services and is not needed for the first frame.
         CastStartup.start(this)
+        // Disk hydrate off the first composition so Home never sync-reads JSON.
+        val shelfDir = filesDir
+        kotlin.concurrent.thread(name = "home-shelf-hydrate", isDaemon = true) {
+            site.anikitty.app.ui.app.HomeShelfMemory.hydrate(shelfDir)
+        }
         database = AppDatabase.create(this)
         aniList = AniListClient(this)
         aniListAuth = AniListAuthStore(this)

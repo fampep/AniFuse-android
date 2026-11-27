@@ -80,12 +80,14 @@ import site.anikitty.app.data.mediaFormatLabel
 import site.anikitty.app.data.watchedAgo
 import site.anikitty.app.ui.components.HeroBanner
 import site.anikitty.app.ui.components.StageGlassDisc
+import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.components.StageSlider
 import site.anikitty.app.ui.components.KittyImage
 import site.anikitty.app.ui.components.PrismMark
 import site.anikitty.app.ui.components.sharedPoster
 import site.anikitty.app.ui.components.KittyBadge
 import site.anikitty.app.ui.components.KittySectionHeading
+import site.anikitty.app.ui.theme.KittyHaptics
 import site.anikitty.app.ui.theme.KittyRadius
 import site.anikitty.app.ui.theme.KittySpace
 import site.anikitty.app.ui.theme.LocalDemoMode
@@ -270,15 +272,11 @@ internal fun HomeFeatured(
                         ),
                     ),
             )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp)
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(Color.White)
-                    .spacePress { onWatch(anime) },
-                contentAlignment = Alignment.Center,
+            StageGlassDisc(
+                onClick = { onWatch(anime) },
+                modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
+                size = 48.dp,
+                selected = true,
             ) {
                 Icon(
                     Icons.Rounded.PlayArrow,
@@ -287,21 +285,16 @@ internal fun HomeFeatured(
                     modifier = Modifier.size(28.dp),
                 )
             }
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(16.dp)
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xCC101010))
-                    .border(1.dp, Color(0xFF292929), CircleShape)
-                    .spacePress { onAdd(anime) },
-                contentAlignment = Alignment.Center,
+            StageGlassDisc(
+                onClick = { onAdd(anime) },
+                modifier = Modifier.align(Alignment.TopStart).padding(16.dp),
+                size = 44.dp,
+                selected = saved,
             ) {
                 Icon(
                     if (saved) Icons.Rounded.Check else Icons.Outlined.BookmarkBorder,
                     contentDescription = if (saved) "On Watchlist" else "Add to Watchlist",
-                    tint = Color.White,
+                    tint = if (saved) Color(0xFF080808) else Color.White,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -605,7 +598,13 @@ private fun HomePosterCell(
     caption: String? = null,
 ) {
     val palette = LocalKittyPalette.current
-    Column(modifier = modifier.spacePress { onOpen(anime) }) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    Column(
+        modifier = modifier.spacePress {
+            KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
+            onOpen(anime)
+        },
+    ) {
         KittyImage(
             url = anime.coverImageUrl,
             contentDescription = null,
@@ -707,8 +706,7 @@ private fun ContinueArt(card: HomeContinueCard) {
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
-            .clip(shape)
-            .background(Color(0xFF141416)),
+            .stageGlassPlate(shape = shape, elevated = true),
     ) {
         KittyImage(
             url = card.imageUrl,
@@ -728,18 +726,16 @@ private fun ContinueArt(card: HomeContinueCard) {
                     ),
                 ),
         )
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .size(52.dp)
-                .clip(CircleShape)
-                .background(Color.White)
-                .border(1.dp, Color.White.copy(alpha = 0.9f), CircleShape),
-            contentAlignment = Alignment.Center,
+        // Parent row owns the press; this disc is chrome only.
+        StageGlassDisc(
+            onClick = {},
+            modifier = Modifier.align(Alignment.Center),
+            size = 52.dp,
+            selected = true,
         ) {
             Icon(
                 Icons.Rounded.PlayArrow,
-                contentDescription = "Resume",
+                contentDescription = null,
                 tint = Color.Black,
                 modifier = Modifier.size(26.dp),
             )
