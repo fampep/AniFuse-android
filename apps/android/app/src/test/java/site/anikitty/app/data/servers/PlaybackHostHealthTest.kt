@@ -56,4 +56,20 @@ class PlaybackHostHealthTest {
         assertEquals(-1_000, PlaybackHostHealth.score("cdn-a.example", nowMs = now))
         dir.deleteRecursively()
     }
+
+    @Test
+    fun providerScoreUsesCdnNotSiteUrl() {
+        PlaybackHostHealth.detach()
+        PlaybackHostHealth.note("cdn.good", ok = true, latencyMs = 50L, nowMs = 1_000L)
+        PlaybackHostHealth.note("site.example", ok = false, nowMs = 1_000L)
+        PlaybackHostHealth.noteProviderCdn("anipm", "cdn.good")
+        assertTrue(
+            PlaybackHostHealth.scoreProvider("anipm", "https://site.example/", nowMs = 1_000L) > 0,
+        )
+        // Unknown provider falls back to site host mark.
+        assertEquals(
+            -1_000,
+            PlaybackHostHealth.scoreProvider("other", "https://site.example/", nowMs = 1_000L),
+        )
+    }
 }

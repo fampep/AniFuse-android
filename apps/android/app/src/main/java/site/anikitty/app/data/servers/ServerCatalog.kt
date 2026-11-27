@@ -232,10 +232,22 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         val affinity = episodeAffinity.recall(anilistId, episode, audio)
         val boosted = boostAffinityProvider(sunk, affinity?.providerId) { it.server.id }
         val ordered = preferHealthyHosts(boosted) { resolver ->
-            val siteScore = PlaybackHostHealth.score(playableHost(resolver.server.siteUrl.orEmpty()))
+            val hostScore = PlaybackHostHealth.scoreProvider(
+                providerId = resolver.server.id,
+                siteUrl = resolver.server.siteUrl,
+            )
+            val affinityHostBoost =
+                if (affinity != null &&
+                    resolver.server.id.equals(affinity.providerId, true) &&
+                    affinity.host.isNotBlank()
+                ) {
+                    PlaybackHostHealth.score(affinity.host).coerceAtLeast(0)
+                } else {
+                    0
+                }
             val affinityBoost =
                 if (affinity != null && resolver.server.id.equals(affinity.providerId, true)) 250 else 0
-            siteScore + affinityBoost
+            hostScore + affinityHostBoost + affinityBoost
         }
         val errors = java.util.Collections.synchronizedList(ArrayList<String>())
         val preferred = ordered.first()
@@ -289,24 +301,31 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
             rememberProviderUp(resolver)
             val leadHost = playableHost(sources.firstOrNull()?.url.orEmpty())
             if (leadHost.isNotEmpty()) {
-                episodeAffinity.remember(
+                PlaybackHostHealth.note(leadHost, ok = true)
+                PlaybackHostHealth.noteProviderCdn(resolver.server.id, leadHost)
+            }
+            // Shadow / credits races pass avoidHost — never overwrite the playing live lane.
+            val primaryRace = avoidHost.isNullOrBlank()
+            if (primaryRace) {
+                if (leadHost.isNotEmpty()) {
+                    episodeAffinity.remember(
+                        anilistId = anilistId,
+                        episode = episode,
+                        audio = audio,
+                        providerId = resolver.server.id,
+                        host = leadHost,
+                    )
+                }
+                // Survive process death: next Play probes this before any race.
+                PlayableWarmCache.put(
                     anilistId = anilistId,
                     episode = episode,
                     audio = audio,
-                    providerId = resolver.server.id,
-                    host = leadHost,
+                    sources = sources,
+                    lane = PlayableWarmCache.LANE_LIVE,
                 )
-                PlaybackHostHealth.note(leadHost, ok = true)
+                liveSources.remember(anilistId, episode, audio, sources)
             }
-            // Survive process death: next Play probes this before any race.
-            PlayableWarmCache.put(
-                anilistId = anilistId,
-                episode = episode,
-                audio = audio,
-                sources = sources,
-                lane = PlayableWarmCache.LANE_LIVE,
-            )
-            liveSources.remember(anilistId, episode, audio, sources)
             val usedFallback = resolver.server.id != preferredId
             return ResolveFailoverResult(
                 sources = sources,

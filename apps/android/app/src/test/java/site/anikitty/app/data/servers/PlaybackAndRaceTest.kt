@@ -59,6 +59,30 @@ class PlaybackAndRaceTest {
     }
 
     @Test
+    fun winnerReturnsWithoutWaitingOnLosingTimeouts() = runBlocking {
+        val started = System.currentTimeMillis()
+        val winner = raceHeadStart(
+            count = 2,
+            parallel = 2,
+            headStartMs = 0L,
+            timeoutMs = 800L,
+        ) { index ->
+            when (index) {
+                0 -> "fast"
+                else -> {
+                    delay(700)
+                    "slow"
+                }
+            }
+        }
+        val elapsed = System.currentTimeMillis() - started
+        assertEquals(0, winner?.first)
+        assertEquals("fast", winner?.second)
+        // Must not sit on the loser's 800ms timeout after the winner lands.
+        assertTrue("elapsed=${elapsed}ms", elapsed < 400L)
+    }
+
+    @Test
     fun everyMissReturnsNull() = runBlocking {
         val winner = raceHeadStart<String>(count = 2, headStartMs = 10L, timeoutMs = 40L) { null }
         assertNull(winner)

@@ -5,6 +5,7 @@ package site.anikitty.app.data.servers
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -20,7 +21,8 @@ internal const val RESOLVE_TIMEOUT_MS = 7_500L
  * join after [headStartMs] so a dead host does not hold the episode for its
  * full timeout. When a racer misses, the next unused index starts immediately —
  * a sliding window, not a serial tail — so provider #5+ still race in parallel.
- * A null result is a miss. The first non-null value wins and the rest stop.
+ * A null result is a miss. The first non-null value wins and losing racers are
+ * cancelled so playback is not held for their timeouts.
  */
 internal suspend fun <T> raceHeadStart(
     count: Int,
@@ -69,10 +71,15 @@ internal suspend fun <T> raceHeadStart(
     // Sliding window: at most a few timeout waves after the head-start stagger.
     val waves = ((count + window - 1) / window).coerceIn(1, 4)
     val absolute = headStartMs + timeoutMs * waves + 500L
-    withTimeoutOrNull(absolute) {
-        while (!winner.isCompleted && active.get() > 0) {
-            delay(20)
+    try {
+        withTimeoutOrNull(absolute) {
+            while (!winner.isCompleted && active.get() > 0) {
+                delay(20)
+            }
+            if (winner.isCompleted) winner.await() else null
         }
-        if (winner.isCompleted) winner.await() else null
+    } finally {
+        // Drop losing in-flight resolves so a fast winner is not gated on their timeouts.
+        coroutineContext.cancelChildren()
     }
 }

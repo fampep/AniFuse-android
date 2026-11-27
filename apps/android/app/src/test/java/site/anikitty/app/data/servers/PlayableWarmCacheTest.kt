@@ -103,4 +103,35 @@ class PlayableWarmCacheTest {
         assertEquals("9:1:sub", LiveSourceStore.key(9, 1, "SUB"))
         assertEquals("9:1:dub", LiveSourceStore.key(9, 1, " dub "))
     }
+
+    @Test
+    fun liveEncodeKeepsUnwrapAndHlsFields() {
+        val source = PlayableSource(
+            url = "https://cdn.example/master.txt",
+            headers = mapOf("Referer" to "https://gotaku.to/"),
+            label = "1080p",
+            stripBytes = 4096,
+            gotakuObf = GotakuObf("seed", "token", segmentBytes = 4096),
+            flix = FlixUnwrap("pk", "mask", englishAudio = true),
+            hls = true,
+            skip = site.anikitty.app.data.skip.SkipTimes(
+                intro = site.anikitty.app.data.skip.SkipInterval(10.0, 90.0),
+            ),
+            subtitles = listOf(
+                SubtitleTrack(url = "https://cdn.example/en.vtt", label = "English", language = "en"),
+            ),
+            serverName = "gotaku",
+        )
+        val round = LiveSourceStore.decode(LiveSourceStore.encode(listOf(source))).single()
+        assertEquals(source.url, round.url)
+        assertEquals(true, round.hls)
+        assertEquals(4096, round.stripBytes)
+        assertEquals("seed", round.gotakuObf?.keySeed)
+        assertEquals("token", round.gotakuObf?.playlistToken)
+        assertEquals("pk", round.flix?.playlistKey)
+        assertEquals(true, round.flix?.englishAudio)
+        assertEquals(10.0, round.skip.intro?.startSec ?: -1.0, 0.01)
+        assertEquals("https://cdn.example/en.vtt", round.subtitles.single().url)
+        assertEquals("gotaku", round.serverName)
+    }
 }

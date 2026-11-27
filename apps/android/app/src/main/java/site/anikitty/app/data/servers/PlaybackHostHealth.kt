@@ -22,6 +22,8 @@ internal object PlaybackHostHealth {
 
     private val lock = Any()
     private val marks = LinkedHashMap<String, Mark>(MAX, 0.75f, true)
+    /** Last playable CDN host per provider id — ranks the race window by CDN, not siteUrl. */
+    private val providerCdns = LinkedHashMap<String, String>(MAX, 0.75f, true)
     private var dir: File? = null
     private var lastBody: String? = null
 
@@ -76,6 +78,20 @@ internal object PlaybackHostHealth {
         }
     }
 
+    /** Bind a provider id to the CDN host that just played so the next race ranks by CDN. */
+    fun noteProviderCdn(providerId: String, host: String) {
+        val id = providerId.trim().lowercase()
+        val key = host.trim().lowercase()
+        if (id.isEmpty() || key.isEmpty()) return
+        synchronized(lock) {
+            providerCdns[id] = key
+            while (providerCdns.size > MAX) {
+                val oldest = providerCdns.keys.firstOrNull() ?: break
+                providerCdns.remove(oldest)
+            }
+        }
+    }
+
     fun score(host: String, nowMs: Long = System.currentTimeMillis()): Int {
         val key = host.trim().lowercase()
         if (key.isEmpty()) return 0
@@ -86,9 +102,26 @@ internal object PlaybackHostHealth {
         return (1_000 - (latency / 5L).toInt()).coerceAtLeast(1)
     }
 
+    /**
+     * Prefer the last CDN this provider delivered. Fall back to [siteUrl] only when
+     * no CDN has been recorded yet — site hosts and CDN hosts are different keys.
+     */
+    fun scoreProvider(
+        providerId: String,
+        siteUrl: String?,
+        nowMs: Long = System.currentTimeMillis(),
+    ): Int {
+        val id = providerId.trim().lowercase()
+        val cdn = synchronized(lock) { providerCdns[id] }
+        val cdnScore = if (cdn != null) score(cdn, nowMs) else 0
+        if (cdnScore != 0) return cdnScore
+        return score(playableHost(siteUrl.orEmpty()), nowMs)
+    }
+
     fun clear() {
         synchronized(lock) {
             marks.clear()
+            providerCdns.clear()
             lastBody = null
             val root = dir ?: return
             runCatching { File(root, FILE_NAME).delete() }
@@ -103,6 +136,7 @@ internal object PlaybackHostHealth {
             dir = null
             lastBody = null
             marks.clear()
+            providerCdns.clear()
         }
     }
 
