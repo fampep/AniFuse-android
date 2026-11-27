@@ -308,7 +308,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
             .filterNot {
                 it.id == ANIFUSE_EXTENSION_ID ||
                     it.id in bundledSiteIds ||
-                    isRetiredExtension(it.id, it.name)
+                    isRetiredExtension(it.id, it.name, it.siteUrl)
             }
             .map { HttpExtensionResolver(it) }
         return fromSites + fromExt

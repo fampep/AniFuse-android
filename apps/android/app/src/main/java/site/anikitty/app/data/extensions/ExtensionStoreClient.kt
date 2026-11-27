@@ -55,7 +55,8 @@ internal fun parseStoreIndex(raw: String, sourceUrl: String): StoreIndex {
             val e = arr.getJSONObject(i)
             val id = e.getString("id")
             val name = e.getString("name")
-            if (isRetiredExtension(id, name)) continue
+            val siteUrl = e.optString("siteUrl").takeIf { it.isNotBlank() }
+            if (isRetiredExtension(id, name, siteUrl)) continue
             add(
                 StoreListing(
                     id = id,
@@ -67,7 +68,7 @@ internal fun parseStoreIndex(raw: String, sourceUrl: String): StoreIndex {
                     manifestPath = e.optString("manifestPath")
                         .takeIf { it.isNotBlank() },
                     iconUrl = e.optString("iconUrl").takeIf { it.isNotBlank() },
-                    siteUrl = e.optString("siteUrl").takeIf { it.isNotBlank() },
+                    siteUrl = siteUrl,
                     version = e.optString("version").takeIf { it.isNotBlank() },
                     protocol = e.optString("protocol").takeIf { it.isNotBlank() }
                         ?: protocol,
@@ -94,7 +95,9 @@ internal fun parseStoreIndex(raw: String, sourceUrl: String): StoreIndex {
 internal fun mergeStoreIndexes(loaded: List<StoreIndex>): StoreIndex {
     val clean = loaded.map { index ->
         index.copy(
-            extensions = index.extensions.filterNot { isRetiredExtension(it.id, it.name) },
+            extensions = index.extensions.filterNot {
+                isRetiredExtension(it.id, it.name, it.siteUrl)
+            },
         )
     }
     val mirror = clean.firstOrNull { it.sourceUrl?.contains("anikitty-extensions") == true }
