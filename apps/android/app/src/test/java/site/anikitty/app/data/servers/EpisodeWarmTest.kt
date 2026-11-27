@@ -59,6 +59,8 @@ class EpisodeWarmTest {
         )
         val standby = creditsStandby(sources, "cdn-a.example")
         assertEquals(listOf("https://cdn-b.example:443/ep.m3u8"), standby.map { it.url })
+        assertEquals(sources, sourcesAvoidingHost(sources, null))
+        assertEquals(standby, sourcesAvoidingHost(sources, "cdn-a.example"))
     }
 
     @Test

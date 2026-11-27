@@ -100,4 +100,6 @@ object PlayableWarmCache {
 
     const val LANE_NEXT = "next"
     const val LANE_STANDBY = "standby"
+    /** Probed runner-up for the episode that is playing right now. */
+    const val LANE_SHADOW = "shadow"
 }

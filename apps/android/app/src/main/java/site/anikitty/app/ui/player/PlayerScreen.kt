@@ -246,6 +246,9 @@ import site.anikitty.app.data.servers.GotakuObfDataSource
 import site.anikitty.app.data.servers.FlixUnwrapDataSource
 import site.anikitty.app.data.servers.PlaybackHttp
 import site.anikitty.app.data.servers.PlayableSource
+import site.anikitty.app.data.servers.PlayableWarmCache
+import site.anikitty.app.data.servers.PlaybackHostHealth
+import site.anikitty.app.data.servers.playableHost
 import site.anikitty.app.data.servers.SegmentStripDataSource
 import site.anikitty.app.data.servers.audioSwitchLabel
 import site.anikitty.app.data.servers.requestedAudioLanguage
@@ -344,6 +347,11 @@ fun PlayerScreen(
     onWarmNextEpisode: (suspend () -> Unit)? = null,
     /** Credits window: revalidate the next file and arm a standby host for this one. */
     onArmCredits: (suspend (playingHost: String) -> Unit)? = null,
+    /**
+     * As soon as playback is ready, probe a runner-up on a different host.
+     * The returned list is already alive and prefetched, runner-up first.
+     */
+    onArmShadow: (suspend (playingHost: String, known: List<PlayableSource>) -> List<PlayableSource>)? = null,
     onProgress: ((positionMs: Long, durationMs: Long, skip: SkipTimes) -> Unit)? = null,
     totalEpisodes: Int = 1,
     watchedThrough: Int = 0,
@@ -381,6 +389,12 @@ fun PlayerScreen(
     var sourceIndex by remember(playlist, playAttempt) { mutableIntStateOf(0) }
     /** Hosts that already failed this episode. The next failover skips them. */
     var deadHosts by remember(anilistId, episode) { mutableStateOf(emptySet<String>()) }
+    /** Probed runner-up for this episode. Cleared when it takes over playback. */
+    var shadowList by remember(anilistId, episode) { mutableStateOf<List<PlayableSource>>(emptyList()) }
+    var shadowHost by remember(anilistId, episode) { mutableStateOf<String?>(null) }
+    var shadowAt by remember(anilistId, episode) { mutableLongStateOf(0L) }
+    var shadowArmedHost by remember(anilistId, episode) { mutableStateOf<String?>(null) }
+    var recoveryNote by remember(anilistId, episode) { mutableStateOf<String?>(null) }
     var retriedSource by remember(sourceIndex, playlist) { mutableStateOf(false) }
     var skipTimes by remember { mutableStateOf(SkipTimes()) }
     var didSeekStart by remember { mutableStateOf(false) }
@@ -780,10 +794,15 @@ fun PlayerScreen(
         }
     }
     // After a CDN failover, cap ABR briefly so the new host is not judged by
-    // the previous pipe's bitrate estimate.
-    LaunchedEffect(sourceIndex, trackSelector) {
+    // the previous pipe's bitrate estimate. A shadow swap lands at index 0,
+    // so the cap follows the URL, not the index.
+    var bitrateCappedFor by remember(anilistId, episode) { mutableStateOf<String?>(null) }
+    LaunchedEffect(playbackSource?.url, trackSelector) {
         val selector = trackSelector ?: return@LaunchedEffect
-        if (sourceIndex <= 0) return@LaunchedEffect
+        val url = playbackSource?.url ?: return@LaunchedEffect
+        val first = bitrateCappedFor == null
+        bitrateCappedFor = url
+        if (first) return@LaunchedEffect
         val previous = selector.parameters
         selector.parameters = previous.buildUpon().setMaxVideoBitrate(1_600_000).build()
         delay(3_500)
@@ -814,9 +833,17 @@ fun PlayerScreen(
         val resume = exo.playWhenReady
         val playing = source?.let { sourceForPlayback(it, playbackSaved) }
         if (playing != null) playerBundle?.pipeline?.apply(playing)
-        exo.setMediaItem(current.buildUpon().setSubtitleConfigurations(configs).build(), false)
-        exo.prepare()
-        exo.playWhenReady = resume
+        val updated = current.buildUpon().setSubtitleConfigurations(configs).build()
+        val itemIndex = exo.currentMediaItemIndex
+        // replaceMediaItem keeps the playhead. setMediaItem would drop the
+        // buffer and the captions would come back late, off the spoken line.
+        if (exo.playbackState != Player.STATE_IDLE && itemIndex >= 0 && exo.mediaItemCount > itemIndex) {
+            exo.replaceMediaItem(itemIndex, updated)
+        } else {
+            exo.setMediaItem(updated, false)
+            exo.prepare()
+            exo.playWhenReady = resume
+        }
     }
     // Kaa uses one master for Sub and Dub, so the player is not rebuilt.
     // The preference still has to move onto the English or Japanese rendition.
@@ -1027,6 +1054,47 @@ fun PlayerScreen(
             }
         }
     }
+    val latestArmShadow by rememberUpdatedState(onArmShadow)
+    LaunchedEffect(ready, source?.url, anilistId, episode, playbackLocal, sessionStartedOffline) {
+        if (!ready || playbackLocal || sessionStartedOffline == true) return@LaunchedEffect
+        val host = playbackHost(source?.url.orEmpty())
+        if (shadowArm(playbackReady = true, armedHost = shadowArmedHost, playingHost = host) != ShadowArm.Arm) {
+            return@LaunchedEffect
+        }
+        val arm = latestArmShadow ?: return@LaunchedEffect
+        delay(SHADOW_ARM_DELAY_MS)
+        if (playbackHost(source?.url.orEmpty()) != host) return@LaunchedEffect
+        PlaybackHostHealth.note(host, ok = true)
+        val armed = try {
+            arm(host, latestSources)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            emptyList()
+        }
+        if (playbackHost(source?.url.orEmpty()) != host || armed.isEmpty()) {
+            shadowArmedHost = host
+            return@LaunchedEffect
+        }
+        shadowList = armed
+        shadowHost = playableHost(armed.first().url).ifBlank { null }
+        shadowAt = System.currentTimeMillis()
+        shadowArmedHost = host
+        if (anilistId > 0 && shadowHost != null) {
+            PlayableWarmCache.put(
+                anilistId = anilistId,
+                episode = episode,
+                audio = audio,
+                lane = PlayableWarmCache.LANE_SHADOW,
+                sources = armed,
+            )
+        }
+    }
+    LaunchedEffect(recoveryNote) {
+        val note = recoveryNote ?: return@LaunchedEffect
+        delay(2_200)
+        if (recoveryNote == note) recoveryNote = null
+    }
     val showEndAutoplay = autoNext &&
         onNextEpisode != null &&
         playbackEnded &&
@@ -1147,7 +1215,43 @@ fun PlayerScreen(
     val freshResolve = remember(anilistId, episode, playAttempt) { java.util.concurrent.atomic.AtomicBoolean(false) }
     var refreshingSources by remember(anilistId, episode) { mutableStateOf(false) }
 
+    fun shadowReadyNow(): Boolean {
+        if (playbackLocal || sessionStartedOffline == true) return false
+        val age = if (shadowAt <= 0L) Long.MAX_VALUE else System.currentTimeMillis() - shadowAt
+        return shadowList.isNotEmpty() && shadowStandbyReady(
+            playingHost = playbackHost(source?.url.orEmpty()),
+            standbyHost = shadowHost,
+            standbyAgeMs = age,
+        )
+    }
+
+    /** Hand the playhead to the probed runner-up. No resolve, no second probe. */
+    fun swapToShadow(resumeMs: Long): Boolean {
+        if (!shadowReadyNow()) return false
+        val next = shadowList
+        if (next.isEmpty() || next.map { it.url } == playlist.map { it.url }) return false
+        val host = playbackHost(source?.url.orEmpty())
+        if (host.isNotEmpty()) {
+            deadHosts = if (host in deadHosts) deadHosts else deadHosts + host
+            PlaybackHostHealth.note(host, ok = false)
+        }
+        shadowList = emptyList()
+        shadowHost = null
+        shadowAt = 0L
+        shadowArmedHost = null
+        resumeAtMs = resumeMs
+        positionMs = resumeMs
+        playhead.ms = resumeMs
+        didSeekStart = false
+        allowHistoryFallback = false
+        recoveryNote = "Switching source"
+        KittyHaptics.perform(view, KittyHaptics.Kind.Confirm)
+        playlist = next
+        return true
+    }
+
     fun recoverExhausted(message: String, resumeMs: Long, fromCast: Boolean) {
+        if (swapToShadow(resumeMs)) return
         val refresh = onRefreshSources
         if (refresh != null && freshResolve.compareAndSet(false, true)) {
             refreshingSources = true
@@ -1158,30 +1262,55 @@ fun PlayerScreen(
             didSeekStart = false
             allowHistoryFallback = false
             downloadScope.launch {
-                val standby = if (anilistId > 0) {
-                    site.anikitty.app.data.servers.PlayableWarmCache.take(
+                if (swapToShadow(resumeMs)) {
+                    refreshingSources = false
+                    freshResolve.set(false)
+                    return@launch
+                }
+                val playing = playbackHost(source?.url.orEmpty())
+                val cached = if (anilistId > 0) {
+                    val shadowLane = PlayableWarmCache.take(
                         anilistId = anilistId,
                         episode = episode,
                         audio = audio,
-                        lane = site.anikitty.app.data.servers.PlayableWarmCache.LANE_STANDBY,
+                        lane = PlayableWarmCache.LANE_SHADOW,
                     ).orEmpty()
+                    if (shadowLane.isNotEmpty()) {
+                        shadowLane
+                    } else {
+                        PlayableWarmCache.take(
+                            anilistId = anilistId,
+                            episode = episode,
+                            audio = audio,
+                            lane = PlayableWarmCache.LANE_STANDBY,
+                        ).orEmpty()
+                    }
                 } else {
                     emptyList()
                 }
-                val standbyAlive = if (standby.isEmpty()) {
-                    emptyList()
-                } else {
-                    site.anikitty.app.data.servers.PlayableWarmProbe.filterAlive(standby)
+                val warmed = cached.filter { candidate ->
+                    val host = playableHost(candidate.url)
+                    host.isNotEmpty() && host != playing
                 }
-                val fresh = if (standbyAlive.isNotEmpty()) {
-                    standbyAlive
+                val fresh = if (warmed.isNotEmpty()) {
+                    warmed
                 } else {
                     kotlinx.coroutines.withTimeoutOrNull(45_000) {
                         runCatching { refresh() }.getOrNull().orEmpty()
                     }.orEmpty()
                 }
+                if (swapToShadow(resumeMs)) {
+                    refreshingSources = false
+                    freshResolve.set(false)
+                    return@launch
+                }
                 refreshingSources = false
                 if (hasNewPlayableUrls(playlist.map { it.url }, fresh.map { it.url })) {
+                    if (warmed.isNotEmpty()) {
+                        freshResolve.set(false)
+                        recoveryNote = "Switching source"
+                        KittyHaptics.perform(view, KittyHaptics.Kind.Confirm)
+                    }
                     playlist = fresh
                 } else {
                     error = message
@@ -1215,6 +1344,7 @@ fun PlayerScreen(
             historyMs = latestStartPositionMs,
             allowHistory = latestAllowHistory,
         )
+        if (swapToShadow(decision.resumeMs)) return
         val next = nextIndexSkippingDead(fromCast = true)
         if (next != null) {
             resumeAtMs = decision.resumeMs
@@ -1263,6 +1393,11 @@ fun PlayerScreen(
                 }
             }
             SourceRecovery.NextSource -> {
+                val failedHost = playbackHost(
+                    (if (fromCast) latestSources.getOrNull(latestSourceIndex) else source)?.url.orEmpty(),
+                )
+                if (failedHost.isNotEmpty()) PlaybackHostHealth.note(failedHost, ok = false)
+                if (swapToShadow(decision.resumeMs)) return
                 if (fromCast) {
                     failCastSource(message, liveMs)
                 } else {
@@ -1984,7 +2119,9 @@ fun PlayerScreen(
                         clock.state == Player.STATE_BUFFERING
                     if (stalled && buffered == stallBuffered) {
                         if (stallSince == 0L) stallSince = System.currentTimeMillis()
-                        if (System.currentTimeMillis() - stallSince >= 8_000L && latestSources.size > latestSourceIndex + 1) {
+                        val budget = shadowStallBudgetMs(shadowReadyNow())
+                        val canWalk = latestSources.size > latestSourceIndex + 1
+                        if (System.currentTimeMillis() - stallSince >= budget && (shadowReadyNow() || canWalk)) {
                             stallSince = 0L
                             val decision = sourceFailover(
                                 index = latestSourceIndex,
@@ -1994,7 +2131,9 @@ fun PlayerScreen(
                                 historyMs = startPositionMs,
                                 allowHistory = allowHistoryFallback,
                             )
-                            if (decision.nextIndex != null) {
+                            val failedHost = playbackHost(latestSources.getOrNull(latestSourceIndex)?.url.orEmpty())
+                            if (failedHost.isNotEmpty()) PlaybackHostHealth.note(failedHost, ok = false)
+                            if (!swapToShadow(decision.resumeMs) && decision.nextIndex != null) {
                                 val next = nextIndexSkippingDead(fromCast = false) ?: decision.nextIndex
                                 resumeAtMs = decision.resumeMs
                                 positionMs = decision.resumeMs
@@ -2270,6 +2409,7 @@ fun PlayerScreen(
         p.seekTo(target)
         positionMs = target
         playhead.ms = target
+        KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
         val sameDir = seekFlashMs == 0L ||
             (seekFlashMs > 0L && deltaMs > 0L) ||
             (seekFlashMs < 0L && deltaMs < 0L)
@@ -3471,7 +3611,15 @@ fun PlayerScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 CircularProgressIndicator(color = PlayerChrome.Accent)
-                if (sourceIndex > 0 && playlist.size > 1) {
+                if (recoveryNote != null) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        recoveryNote!!,
+                        color = PlayerChrome.Paper,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                } else if (sourceIndex > 0 && playlist.size > 1) {
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         "Source ${sourceIndex + 1} of ${playlist.size}",
@@ -3487,13 +3635,30 @@ fun PlayerScreen(
             !(theater && controlsVisible && !controlsLocked) &&
             !(!theater && castScreenUp)
         ) {
-            CircularProgressIndicator(
-                color = Color.White.copy(alpha = 0.9f),
-                strokeWidth = 2.5.dp,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(36.dp),
-            )
+            Column(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                CircularProgressIndicator(
+                    color = Color.White.copy(alpha = 0.9f),
+                    strokeWidth = 2.5.dp,
+                    modifier = Modifier.size(36.dp),
+                )
+                if (recoveryNote != null) {
+                    Text(
+                        recoveryNote!!,
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        modifier = Modifier
+                            .padding(top = 14.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(Color(0xCC101010))
+                            .border(0.5.dp, Color.White.copy(alpha = 0.28f), RoundedCornerShape(999.dp))
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
+            }
         }
 
         if (!inPip && sleepNote != null) {

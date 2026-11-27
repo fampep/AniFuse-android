@@ -102,8 +102,7 @@ fun Modifier.stageGlassPlate(
             listOf(StageGlassSheen, Color.Transparent),
         ),
     )
-    .border(1.dp, Color.White.copy(alpha = 0.12f), shape)
-    .border(1.dp, StageGlassStroke, shape)
+    .border(0.5.dp, Color.White.copy(alpha = 0.22f), shape)
 
 /** Progress fill that reads as a white light bar on charcoal. */
 @Composable

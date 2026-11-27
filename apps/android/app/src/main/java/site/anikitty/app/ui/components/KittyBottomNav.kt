@@ -263,8 +263,7 @@ fun KittySideNav(
             .fillMaxHeight()
             .clip(RoundedCornerShape(22.dp))
             .background(dock.fill)
-            .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(22.dp))
-            .border(1.dp, dock.stroke, RoundedCornerShape(22.dp))
+            .border(0.5.dp, dock.stroke, RoundedCornerShape(22.dp))
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {

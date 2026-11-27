@@ -778,10 +778,19 @@ fun LocalFirstApp(
                     if (reducedMotion) {
                         EnterTransition.None togetherWith ExitTransition.None
                     } else {
-                        val forward = screenDepth(targetState) >= screenDepth(initialState)
-                        val dir = if (forward) 1 else -1
-                        (slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it / 5 * dir } + fadeIn(tween(200))) togetherWith
-                            (slideOutHorizontally(tween(240, easing = FastOutSlowInEasing)) { -it / 6 * dir } + fadeOut(tween(160)))
+                        val sharingArt = targetState is Screen.Detail || initialState is Screen.Detail ||
+                            targetState is Screen.Player || initialState is Screen.Player
+                        if (sharingArt) {
+                            // The poster already springs into the hero. A second slide
+                            // fights that flight, so only the surrounding chrome fades.
+                            fadeIn(tween(220, easing = FastOutSlowInEasing)) togetherWith
+                                fadeOut(tween(160, easing = FastOutSlowInEasing))
+                        } else {
+                            val forward = screenDepth(targetState) >= screenDepth(initialState)
+                            val dir = if (forward) 1 else -1
+                            (slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it / 5 * dir } + fadeIn(tween(200))) togetherWith
+                                (slideOutHorizontally(tween(240, easing = FastOutSlowInEasing)) { -it / 6 * dir } + fadeOut(tween(160)))
+                        }
                     }
                 },
                 label = "watch",
@@ -1169,24 +1178,61 @@ fun LocalFirstApp(
                         val released = current.anime.releasedEpisodeCount()
                         val hasNext = released <= 0 || current.episode < released
                         if (hasNext) warmEpisode(current.episode + 1)
-                        val raced = streamServers.resolveWithFailover(
+                        val cached = site.anikitty.app.data.servers.PlayableWarmCache.peek(
                             anilistId = current.anime.id,
                             episode = current.episode,
                             audio = playerAudio,
-                            titleHint = current.anime.streamTitleHint(),
-                        ).sources
-                        val standby = site.anikitty.app.data.servers.creditsStandby(raced, playingHost)
-                        val alive = site.anikitty.app.data.servers.PlayableWarmProbe.filterAlive(standby)
-                        if (alive.isNotEmpty()) {
+                            lane = site.anikitty.app.data.servers.PlayableWarmCache.LANE_SHADOW,
+                        )
+                        val readyStandby = site.anikitty.app.data.servers.creditsStandby(cached.orEmpty(), playingHost)
+                        if (readyStandby.isNotEmpty()) {
                             site.anikitty.app.data.servers.PlayableWarmCache.put(
                                 anilistId = current.anime.id,
                                 episode = current.episode,
                                 audio = playerAudio,
                                 lane = site.anikitty.app.data.servers.PlayableWarmCache.LANE_STANDBY,
-                                sources = alive,
+                                sources = readyStandby,
                             )
-                            site.anikitty.app.data.servers.StreamWarmPrefetch.touch(alive.first())
+                        } else {
+                            val raced = streamServers.resolveWithFailover(
+                                anilistId = current.anime.id,
+                                episode = current.episode,
+                                audio = playerAudio,
+                                titleHint = current.anime.streamTitleHint(),
+                                avoidHost = playingHost,
+                            ).sources
+                            val standby = site.anikitty.app.data.servers.creditsStandby(raced, playingHost)
+                            val alive = site.anikitty.app.data.servers.PlayableWarmProbe.filterAlive(standby)
+                            if (alive.isNotEmpty()) {
+                                site.anikitty.app.data.servers.PlayableWarmCache.put(
+                                    anilistId = current.anime.id,
+                                    episode = current.episode,
+                                    audio = playerAudio,
+                                    lane = site.anikitty.app.data.servers.PlayableWarmCache.LANE_STANDBY,
+                                    sources = alive,
+                                )
+                                site.anikitty.app.data.servers.StreamWarmPrefetch.touch(alive.first())
+                            }
                         }
+                    }
+                },
+                onArmShadow = if (demo || site.anikitty.app.data.demo.DemoLibrary.find(current.anime.id) != null) {
+                    null
+                } else {
+                    { playingHost, known ->
+                        site.anikitty.app.data.servers.armLiveShadow(
+                            known = known,
+                            playingHost = playingHost,
+                            resolve = {
+                                streamServers.resolveWithFailover(
+                                    anilistId = current.anime.id,
+                                    episode = current.episode,
+                                    audio = playerAudio,
+                                    titleHint = current.anime.streamTitleHint(),
+                                    avoidHost = playingHost,
+                                ).sources
+                            },
+                        )
                     }
                 },
                 totalEpisodes = current.anime.releasedEpisodeCount().coerceAtLeast(current.episode),

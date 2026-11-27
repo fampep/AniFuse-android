@@ -45,8 +45,7 @@ fun Modifier.kittyGlass(
     )
     .clip(shape)
     .background(if (elevated) KittySurfaceElevated else KittySurface)
-    .border(1.dp, Color.White.copy(alpha = 0.10f), shape)
-    .border(1.dp, KittyOutlineSoft, shape)
+    .border(0.5.dp, Color.White.copy(alpha = 0.22f), shape)
 
 fun Modifier.kittyGlassSoft(shape: Shape = KittyGlassShape): Modifier = this
     .clip(shape)
@@ -71,8 +70,7 @@ fun Modifier.kittyGlassMirror(
     )
     .clip(shape)
     .background(KittyGlassStrong)
-    .border(1.dp, Color.White.copy(alpha = 0.12f), shape)
-    .border(1.dp, KittyOutline, shape)
+    .border(0.5.dp, Color.White.copy(alpha = 0.22f), shape)
 
 /** Floating chrome capsule used by the home bar and glass sheets. */
 fun Modifier.kittyFloatingChrome(
@@ -88,8 +86,7 @@ fun Modifier.kittyFloatingChrome(
     )
     .clip(shape)
     .background(KittyChromeFill)
-    .border(1.dp, KittyChromeStroke, shape)
-    .border(1.dp, KittyOutlineSoft, shape)
+    .border(0.5.dp, KittyChromeStroke, shape)
 
 /** Page atmosphere — dark glass gradient, or flat black in AMOLED mode. */
 @Composable

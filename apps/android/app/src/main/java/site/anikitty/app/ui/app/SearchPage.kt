@@ -860,7 +860,7 @@ private fun SearchPoster(anime: AnimeSummary, badge: String?, onClick: () -> Uni
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
                 .clip(RoundedCornerShape(16.dp))
-                .border(1.dp, Color(0xFF292929), RoundedCornerShape(16.dp)),
+                .border(0.5.dp, Color(0xFF3A3A3A), RoundedCornerShape(16.dp)),
         )
         Spacer(Modifier.height(6.dp))
         Text(

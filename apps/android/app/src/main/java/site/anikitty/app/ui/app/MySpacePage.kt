@@ -548,7 +548,7 @@ private fun LibraryStat(label: String, value: String, modifier: Modifier = Modif
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFF151515))
-            .border(1.dp, Color(0xFF292929), RoundedCornerShape(16.dp))
+            .border(0.5.dp, Color(0xFF3A3A3A), RoundedCornerShape(16.dp))
             .padding(horizontal = 10.dp, vertical = 10.dp),
     ) {
         Text(value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 1)

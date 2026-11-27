@@ -57,6 +57,7 @@ import site.anikitty.app.data.anilist.AnimeSummary
 import site.anikitty.app.data.download.DownloadPhase
 import site.anikitty.app.data.local.WatchHistoryEntity
 import site.anikitty.app.ui.components.KittyImage
+import site.anikitty.app.ui.components.stageArrive
 import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.data.updates.AppReleaseClient
 import site.anikitty.app.data.updates.BuildChannelStore
@@ -291,6 +292,7 @@ internal fun NotificationCenter(
             }
             else -> {
                 LazyColumn(
+                    modifier = Modifier.stageArrive(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {

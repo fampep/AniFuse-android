@@ -308,7 +308,7 @@ internal fun PlayerEpisodeShelf(
                     NoEpisodeMatches(query)
                 }
             }
-            items(rows, key = { "episode-${it.number}" }) { slide ->
+            items(rows, key = { "episode-${it.number}" }, contentType = { "episode" }) { slide ->
                 EpisodeRowCell(
                     slide = slide,
                     current = slide.number == episode,

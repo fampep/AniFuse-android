@@ -41,6 +41,12 @@ internal fun playableHost(url: String): String {
  * Backup URLs for a credits-time failure of the file that is already playing.
  * The host that just died is not a backup.
  */
+/** Primary playback keeps every URL. A shadow race drops the host already on screen. */
+internal fun sourcesAvoidingHost(sources: List<PlayableSource>, avoidHost: String?): List<PlayableSource> {
+    if (avoidHost.isNullOrBlank()) return sources
+    return creditsStandby(sources, avoidHost)
+}
+
 internal fun creditsStandby(sources: List<PlayableSource>, playingHost: String): List<PlayableSource> {
     if (sources.isEmpty()) return emptyList()
     val host = playingHost.trim().lowercase()

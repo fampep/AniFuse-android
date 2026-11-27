@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -56,6 +57,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
@@ -460,12 +462,13 @@ fun KittyTopTenRow(
     Column(modifier = Modifier.padding(top = 26.dp)) {
         KittySectionHeading(title = title, subtitle = subtitle)
         Spacer(modifier = Modifier.height(16.dp))
+        val open by rememberUpdatedState(onOpen)
         LazyRow(
             contentPadding = PaddingValues(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            items(ranked.size) { index ->
-                val anime = ranked[index]
+            itemsIndexed(ranked, key = { _, anime -> anime.id }, contentType = { _, _ -> "rank" }) { index, anime ->
+                val openAnime = remember(anime.id) { { open(anime) } }
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(
                         "${index + 1}",
@@ -477,7 +480,7 @@ fun KittyTopTenRow(
                     )
                     KittyPosterCard(
                         anime = anime,
-                        onClick = { onOpen(anime) },
+                        onClick = openAnime,
                         width = 108.dp,
                     )
                 }
@@ -634,8 +637,7 @@ fun KittyGenreTiles(
             contentPadding = PaddingValues(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            items(genres.size) { index ->
-                val (name, image) = genres[index]
+            items(genres, key = { it.first }, contentType = { "genre" }) { (name, image) ->
                 val shape = RoundedCornerShape(12.dp)
                 val picked = selected == name
                 val stroke by animateColorAsState(
@@ -697,16 +699,19 @@ fun KittyPosterRow(
     Column(modifier = Modifier.padding(top = 26.dp)) {
         KittySectionHeading(title = title, subtitle = subtitle, onMore = onMore)
         Spacer(modifier = Modifier.height(16.dp))
+        val open by rememberUpdatedState(onOpen)
+        val captionFor by rememberUpdatedState(subtitleFor)
         LazyRow(
             contentPadding = PaddingValues(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(items, key = { it.id }, contentType = { "poster" }) { anime ->
+                val openAnime = remember(anime.id) { { open(anime) } }
                 KittyPosterCard(
                     anime = anime,
-                    onClick = { onOpen(anime) },
+                    onClick = openAnime,
                     width = 118.dp,
-                    subtitle = subtitleFor?.invoke(anime),
+                    subtitle = captionFor?.invoke(anime),
                 )
             }
         }
