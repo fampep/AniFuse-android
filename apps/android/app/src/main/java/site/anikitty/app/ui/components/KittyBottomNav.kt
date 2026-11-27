@@ -4,7 +4,6 @@
 package site.anikitty.app.ui.components
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -16,7 +15,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -56,7 +54,6 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -133,15 +130,16 @@ fun KittyBottomNav(
             .padding(horizontal = 18.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
+        val tabWidth = 56.dp
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(64.dp)
+                .width(tabWidth * tabs.size.coerceAtLeast(1) + 12.dp)
+                .height(60.dp)
                 .shadow(
-                    elevation = if (nightDock) 26.dp else 14.dp,
+                    elevation = if (nightDock) 28.dp else 14.dp,
                     shape = shape,
-                    ambientColor = Color.Black.copy(alpha = if (nightDock) 0.68f else 0.16f),
-                    spotColor = Color.Black.copy(alpha = if (nightDock) 0.52f else 0.12f),
+                    ambientColor = Color.Black.copy(alpha = if (nightDock) 0.72f else 0.16f),
+                    spotColor = Color.Black.copy(alpha = if (nightDock) 0.55f else 0.12f),
                 )
                 .clip(shape)
                 .background(dock.fill)
@@ -152,7 +150,7 @@ fun KittyBottomNav(
                 )
                 .border(1.dp, Color.White.copy(alpha = if (nightDock) 0.20f else 0.44f), shape)
                 .border(1.dp, dock.stroke, shape)
-                .padding(horizontal = 5.dp, vertical = 5.dp),
+                .padding(horizontal = 6.dp, vertical = 6.dp),
         ) {
             if (tabs.isNotEmpty()) {
                 val selectedIndex = tabs.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
@@ -168,22 +166,14 @@ fun KittyBottomNav(
                     },
                     label = "dockSlide",
                 )
-                BoxWithConstraints(Modifier.fillMaxSize()) {
-                    val tabWidth = maxWidth / tabs.size
-                    Box(
-                        Modifier
-                            .offset(x = tabWidth * slide)
-                            .width(tabWidth)
-                            .fillMaxHeight()
-                            .padding(horizontal = 2.dp)
-                            .clip(RoundedCornerShape(22.dp))
-                            .background(dock.selected)
-                            .shadow(
-                                elevation = 0.dp,
-                                shape = RoundedCornerShape(22.dp),
-                            ),
-                    )
-                }
+                Box(
+                    Modifier
+                        .offset(x = tabWidth * slide)
+                        .width(tabWidth)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(dock.selected),
+                )
             }
             Row(
                 modifier = Modifier.fillMaxSize(),
@@ -197,13 +187,20 @@ fun KittyBottomNav(
                         label = "navTint",
                     )
                     val scale by animateFloatAsState(
-                        targetValue = if (selected) 1.06f else 1f,
-                        animationSpec = if (reduced) snap() else tween(180, easing = FastOutSlowInEasing),
+                        targetValue = if (selected) 1.08f else 1f,
+                        animationSpec = if (reduced) {
+                            snap()
+                        } else {
+                            spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessMedium,
+                            )
+                        },
                         label = "navScale",
                     )
-                    Column(
+                    Box(
                         modifier = Modifier
-                            .weight(1f)
+                            .width(tabWidth)
                             .fillMaxHeight()
                             .semantics {
                                 role = Role.Tab
@@ -221,10 +218,8 @@ fun KittyBottomNav(
                             .graphicsLayer {
                                 scaleX = scale
                                 scaleY = scale
-                            }
-                            .padding(horizontal = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
+                            },
+                        contentAlignment = Alignment.Center,
                     ) {
                         if (tab.id == profileTabId && !profileImageUrl.isNullOrBlank()) {
                             AsyncImage(
@@ -235,7 +230,7 @@ fun KittyBottomNav(
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
-                                    .size(22.dp)
+                                    .size(24.dp)
                                     .clip(CircleShape)
                                     .border(
                                         width = if (selected) 1.5.dp else 0.dp,
@@ -248,19 +243,9 @@ fun KittyBottomNav(
                                 imageVector = if (selected) tab.selectedIcon else tab.icon,
                                 contentDescription = null,
                                 tint = tint,
-                                modifier = Modifier.size(22.dp),
+                                modifier = Modifier.size(24.dp),
                             )
                         }
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            tab.label,
-                            color = tint,
-                            fontSize = 10.sp,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                            letterSpacing = (-0.15).sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
                     }
                 }
             }

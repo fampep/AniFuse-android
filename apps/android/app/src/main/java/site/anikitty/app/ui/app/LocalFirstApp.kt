@@ -1255,6 +1255,7 @@ private fun HomeFeed(
     onOpenBuilds: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    if (!demo) HomeShelfMemory.hydrate(context.filesDir)
     val warmShelves = !demo && HomeShelfMemory.trending.isNotEmpty()
     var loading by remember { mutableStateOf(!warmShelves) }
     var refreshing by remember { mutableStateOf(false) }
@@ -1435,6 +1436,7 @@ private fun HomeFeed(
                     seasonal = s.await()
                     topTen = seasonTop.await().ifEmpty { trending }.take(10)
                     popular = p.await()
+                    HomeShelfMemory.bind(context.filesDir)
                     HomeShelfMemory.save(trending, seasonal, popular, topTen)
                     prefetchCovers(context, trending + seasonal + topTen + popular)
                 }

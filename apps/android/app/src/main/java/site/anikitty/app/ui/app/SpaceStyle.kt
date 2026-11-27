@@ -91,7 +91,7 @@ fun ProfileMark(
         }
     }
 }
-private val SpaceShape = RoundedCornerShape(12.dp)
+private val SpaceShape = RoundedCornerShape(22.dp)
 private val ChipShape = RoundedCornerShape(16.dp)
 
 /**
@@ -165,48 +165,36 @@ fun SpacePageHeader(
             .padding(horizontal = 20.dp, vertical = 8.dp),
     ) {
         if (onBack != null) {
-            Row(
+            Box(
                 modifier = Modifier
-                    .defaultMinSize(minHeight = 48.dp)
-                    .padding(bottom = 4.dp)
+                    .padding(bottom = 12.dp)
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(palette.surface)
+                    .border(1.dp, palette.hairline, CircleShape)
                     .spacePress(onBack),
-                verticalAlignment = Alignment.CenterVertically,
+                contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     Icons.AutoMirrored.Rounded.ArrowBack,
                     contentDescription = "Back",
                     tint = palette.text,
-                    modifier = Modifier.size(22.dp),
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    "Back",
-                    color = palette.muted,
-                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            site.anikitty.app.ui.components.KittyFace(
-                modifier = Modifier
-                    .padding(end = 10.dp)
-                    .size(36.dp),
-                contentDescription = null,
-            )
-            Text(
+        Text(
             text = title,
-            style = MaterialTheme.typography.headlineMedium.copy(
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = (-0.5).sp,
-            ),
             color = palette.text,
-            )
-        }
+            fontWeight = FontWeight.Black,
+            fontSize = 34.sp,
+            letterSpacing = (-1.1).sp,
+        )
         Text(
             text = subtitle,
             style = MaterialTheme.typography.bodySmall,
             color = palette.muted,
-            modifier = Modifier.padding(top = 2.dp),
+            modifier = Modifier.padding(top = 4.dp),
         )
     }
 }

@@ -476,7 +476,22 @@ fun SearchFeed(
                 modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Search", color = palette.text, fontWeight = FontWeight.Bold, fontSize = 28.sp, modifier = Modifier.weight(1f))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "FIND",
+                        color = palette.muted,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 11.sp,
+                        letterSpacing = 1.8.sp,
+                    )
+                    Text(
+                        "Search",
+                        color = palette.text,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 32.sp,
+                        letterSpacing = (-0.8).sp,
+                    )
+                }
                 HeaderDisc(onClick = { asGrid = !asGrid }) {
                     Icon(
                         if (asGrid) Icons.AutoMirrored.Filled.ViewList else Icons.Filled.GridView,
@@ -509,15 +524,15 @@ fun SearchFeed(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
-                    .height(48.dp)
+                    .height(56.dp)
                     .semantics { contentDescription = "Search titles" },
                 decorationBox = { inner ->
                     Row(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xFF151515))
-                            .border(1.dp, Color(0xFF292929), RoundedCornerShape(16.dp))
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(Color(0xFF101010))
+                            .border(1.dp, Color(0xFF292929), RoundedCornerShape(22.dp))
                             .padding(horizontal = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {

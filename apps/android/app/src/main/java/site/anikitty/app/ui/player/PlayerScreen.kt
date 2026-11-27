@@ -365,6 +365,8 @@ fun PlayerScreen(
     var playAttempt by remember { mutableIntStateOf(0) }
     var playlist by remember(sources) { mutableStateOf(sources) }
     var sourceIndex by remember(playlist, playAttempt) { mutableIntStateOf(0) }
+    /** Hosts that already failed this episode. The next failover skips them. */
+    var deadHosts by remember(anilistId, episode) { mutableStateOf(emptySet<String>()) }
     var retriedSource by remember(sourceIndex, playlist) { mutableStateOf(false) }
     var skipTimes by remember { mutableStateOf(SkipTimes()) }
     var didSeekStart by remember { mutableStateOf(false) }
@@ -1041,6 +1043,15 @@ fun PlayerScreen(
         if (fromCast) handEpisodeBackToPhone(message, receiverStillPlaying = false)
     }
 
+    fun nextIndexSkippingDead(fromCast: Boolean): Int? {
+        val urls = if (fromCast) latestSources.map { it.url } else playlist.map { it.url }
+        val index = if (fromCast) latestSourceIndex else sourceIndex
+        val host = urls.getOrNull(index)?.let(::playbackHost).orEmpty()
+        val blocked = if (host.isEmpty()) deadHosts else deadHosts + host
+        if (host.isNotEmpty() && blocked != deadHosts) deadHosts = blocked
+        return nextHealthySource(urls, index, blocked)
+    }
+
     fun failCastSource(message: String, liveMs: Long) {
         val currentUrl = latestSources.getOrNull(latestSourceIndex)?.url
         if (currentUrl != null && castFailUrl[0] == currentUrl) return
@@ -1053,13 +1064,14 @@ fun PlayerScreen(
             historyMs = latestStartPositionMs,
             allowHistory = latestAllowHistory,
         )
-        if (decision.nextIndex != null) {
+        val next = nextIndexSkippingDead(fromCast = true)
+        if (next != null) {
             resumeAtMs = decision.resumeMs
             positionMs = decision.resumeMs
             playhead.ms = decision.resumeMs
             didSeekStart = false
             allowHistoryFallback = false
-            sourceIndex = decision.nextIndex
+            sourceIndex = next
             return
         }
         recoverExhausted(message, decision.resumeMs, fromCast = true)
@@ -1103,12 +1115,13 @@ fun PlayerScreen(
                 if (fromCast) {
                     failCastSource(message, liveMs)
                 } else if (decision.nextIndex != null) {
+                    val next = nextIndexSkippingDead(fromCast = false) ?: decision.nextIndex
                     resumeAtMs = decision.resumeMs
                     positionMs = decision.resumeMs
                     playhead.ms = decision.resumeMs
                     didSeekStart = false
                     allowHistoryFallback = false
-                    sourceIndex = decision.nextIndex
+                    sourceIndex = next
                 } else {
                     recoverExhausted(message, decision.resumeMs, fromCast = false)
                 }
@@ -1827,12 +1840,13 @@ fun PlayerScreen(
                                 allowHistory = allowHistoryFallback,
                             )
                             if (decision.nextIndex != null) {
+                                val next = nextIndexSkippingDead(fromCast = false) ?: decision.nextIndex
                                 resumeAtMs = decision.resumeMs
                                 positionMs = decision.resumeMs
                                 playhead.ms = decision.resumeMs
                                 didSeekStart = false
                                 allowHistoryFallback = false
-                                sourceIndex = decision.nextIndex
+                                sourceIndex = next
                             }
                         }
                     } else {

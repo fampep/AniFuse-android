@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -36,6 +38,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -286,23 +290,36 @@ internal fun NotificationCenter(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(palette.surface)
-                                .border(1.dp, palette.hairline, RoundedCornerShape(16.dp))
+                                .clip(RoundedCornerShape(22.dp))
+                                .background(Color(0xFF101010))
+                                .border(1.dp, Color(0xFF292929), RoundedCornerShape(22.dp))
                                 .spacePress {
                                     persist(read + note.id, cleared)
                                     note.anime?.let { onOpen(it, note.episode) }
                                 }
-                                .padding(14.dp),
+                                .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Box(
                                 modifier = Modifier
                                     .padding(end = 12.dp)
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(if (unread) palette.text else palette.faint),
+                                    .width(3.dp)
+                                    .height(46.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(if (unread) Color.White else Color.Transparent),
                             )
+                            val cover = note.anime?.coverImageUrl
+                            if (!cover.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = cover,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .padding(end = 12.dp)
+                                        .size(width = 42.dp, height = 58.dp)
+                                        .clip(RoundedCornerShape(10.dp)),
+                                )
+                            }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     note.title,

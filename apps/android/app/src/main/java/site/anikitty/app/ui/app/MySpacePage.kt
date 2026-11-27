@@ -322,38 +322,41 @@ fun MySpaceFeed(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .windowInsetsPadding(WindowInsets.statusBars)
-                        .padding(horizontal = 20.dp, vertical = 20.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Bottom,
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .clip(RoundedCornerShape(28.dp))
+                        .background(Color(0xFF101010))
+                        .border(1.dp, Color(0xFF292929), RoundedCornerShape(28.dp))
+                        .padding(18.dp),
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Library",
-                            style = MaterialTheme.typography.headlineMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = (-0.5).sp,
-                            ),
-                            color = palette.text,
-                        )
-                        Text(
-                            text = "Your favorites & history.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = palette.text.copy(alpha = 0.45f),
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                    }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "YOUR STAGE",
+                                color = palette.faint,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 11.sp,
+                                letterSpacing = 1.6.sp,
+                            )
+                            Text(
+                                "Library",
+                                color = palette.text,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 34.sp,
+                                letterSpacing = (-1.1).sp,
+                            )
+                        }
                         Text(
                             text = if (selecting) "Cancel" else "Select",
-                            color = palette.text.copy(alpha = 0.7f),
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                            color = palette.text,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
                             modifier = Modifier
                                 .defaultMinSize(minHeight = 48.dp)
                                 .spacePress {
@@ -362,9 +365,19 @@ fun MySpaceFeed(
                         )
                         ProfileMark(
                             imageUrl = viewer?.avatarUrl ?: avatarUrl,
-                            size = 48.dp,
+                            size = 52.dp,
                             modifier = Modifier.spacePress(onOpenAccount),
                         )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        LibraryStat("Continue", continueWatching.size.toString(), Modifier.weight(1f))
+                        LibraryStat("Week", "${weekMinutes}m", Modifier.weight(1f))
+                        LibraryStat("Saved", history.size.toString(), Modifier.weight(1f))
                     }
                 }
             }
@@ -518,6 +531,20 @@ fun MySpaceFeed(
                     .padding(start = 16.dp, end = 16.dp, bottom = 88.dp),
             )
         }
+    }
+}
+
+@Composable
+private fun LibraryStat(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFF151515))
+            .border(1.dp, Color(0xFF292929), RoundedCornerShape(16.dp))
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+    ) {
+        Text(value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 1)
+        Text(label, color = Color(0xFF707070), fontSize = 11.sp, maxLines = 1)
     }
 }
 
