@@ -32,9 +32,10 @@ class LatestResolveTest {
     fun aStoredTitleIsNotExpiredInsideFourteenDays() {
         val file = File.createTempFile("titles", ".json")
         file.deleteOnExit()
-        val store = TitleResolveStore(file, now = { 1_000L })
+        val store = TitleResolveStore(file, now = { 1_000L }, flushDelayMs = 60_000L)
         store.put(ProviderLatestMapper.normalize("Frieren"), summary(154587, "Frieren"))
-        val again = TitleResolveStore(file, now = { 1_000L + 1_000L })
+        store.flushNow()
+        val again = TitleResolveStore(file, now = { 1_000L + 1_000L }, flushDelayMs = 60_000L)
         assertEquals(154587, again.get(ProviderLatestMapper.normalize("Frieren"))?.id)
         val later = TitleResolveStore(file, now = { 1_000L + 15L * 24 * 60 * 60 * 1000 })
         assertNull(later.get(ProviderLatestMapper.normalize("Frieren")))
