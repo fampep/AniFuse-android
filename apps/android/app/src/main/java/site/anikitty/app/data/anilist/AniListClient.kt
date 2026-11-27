@@ -255,7 +255,7 @@ class AniListClient(
      * One paced HTTP call for up to [ANILIST_PUSH_CHUNK] pending progress rows.
      * Returns the mediaIds AniList accepted.
      */
-    suspend fun saveProgressBatch(
+    internal suspend fun saveProgressBatch(
         accessToken: String,
         items: List<AniListBatchPushItem>,
     ): Set<Int> = withContext(Dispatchers.IO) {
