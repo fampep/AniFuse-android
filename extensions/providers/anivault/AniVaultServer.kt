@@ -31,9 +31,9 @@ import site.anikitty.app.data.skip.malIdFromTitleHint
 class AniVaultServer(
     private val cache: ResolveCache? = null,
     private val http: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(6, TimeUnit.SECONDS)
-        .readTimeout(6, TimeUnit.SECONDS)
-        .callTimeout(7, TimeUnit.SECONDS)
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(14, TimeUnit.SECONDS)
+        .callTimeout(16, TimeUnit.SECONDS)
         .followRedirects(true)
         .retryOnConnectionFailure(true)
         .build(),
@@ -54,35 +54,72 @@ class AniVaultServer(
     ): List<PlayableSource> = withContext(Dispatchers.IO) {
         require(anilistId > 0) { "anilistId required" }
         require(episode > 0) { "episode required" }
-        val shortId = findShortId(anilistId, titleHint)
+        val warm = coroutineContext[AniVaultWarm] != null
         val lead = AniVaultLead.preferred(anilistId, audio)
-        val buttons = anivaultLeadFirst(anivaultButtons(audio), lead)
         val avoid = coroutineContext[AvoidPlaybackHost]?.host
+        val heavenLead = lead.isNullOrBlank() || lead.startsWith("animeheaven_stream.php")
+        val (heaven, remote) = coroutineScope {
+            val heavenJob = async {
+                if (audio.equals("dub", true) || audio.equals("hindi", true)) return@async emptyList()
+                if (warm && !heavenLead) return@async emptyList()
+                try {
+                    anivaultHeavenFiles(http, anivaultTitles(titleHint), episode)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            }
+            val remoteJob = async {
+                if (warm && heavenLead) return@async emptyList()
+                try {
+                    remoteFiles(anilistId, episode, audio, titleHint, lead, warm)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            }
+            heavenJob.await() to remoteJob.await()
+        }
+        val ordered = anivaultLeadSources(anivaultOrdered(heaven.map { 0 to it } + remote), lead)
+        val accepted = sourcesAvoidingHost(ordered, avoid).ifEmpty { ordered }
+        if (accepted.isEmpty()) error("AniVault could not find this episode")
+        return@withContext namedByServer(accepted, server.name)
+    }
+
+    private suspend fun remoteFiles(
+        anilistId: Int,
+        episode: Int,
+        audio: String,
+        titleHint: String?,
+        lead: String?,
+        warm: Boolean,
+    ): List<Pair<Int, PlayableSource>> {
+        val shortId = findShortId(anilistId, titleHint) ?: return emptyList()
+        val known = anivaultLeadFirst(anivaultButtons(audio), lead)
+        val buttons = if (warm) known.filter { anivaultAskKey(it) == lead }.ifEmpty { return emptyList() } else known
         val hits = CopyOnWriteArrayList<Pair<Int, PlayableSource>>()
         val asked = ConcurrentHashMap.newKeySet<String>()
         buttons.forEach { asked += anivaultAskKey(it) }
         coroutineScope {
             val pending = CopyOnWriteArrayList(buttons.mapIndexed { index, button -> index to button })
             var wave = 0
-            while (pending.isNotEmpty() && wave < 3) {
+            val waveCap = if (warm) 1 else 2
+            while (pending.isNotEmpty() && wave < waveCap) {
                 wave += 1
                 val batch = pending.toList()
                 pending.clear()
                 batch.map { (order, button) ->
                     async {
-                        val body = try {
-                            read(anivaultStreamUrl(API, button, shortId, episode))
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (_: Exception) {
-                            null
-                        } ?: return@async
+                        val body = read(anivaultStreamUrl(API, button, shortId, episode), STREAM_TIMEOUT_MS) ?: return@async
                         anivaultPlayable(
                             body,
                             button.label,
                             playbackHeaders(),
                             leadKey = anivaultAskKey(button),
-                        )?.let { hits += order to it }
+                        )?.let { hits += (order + 1) to it }
+                        if (warm) return@async
                         anivaultListedServers(body).forEach { name ->
                             val extra = button.copy(server = name, label = name)
                             if (asked.add(anivaultAskKey(extra))) pending += (order + 1_000) to extra
@@ -91,39 +128,38 @@ class AniVaultServer(
                 }.awaitAll()
             }
         }
-        val ordered = anivaultLeadSources(anivaultOrdered(hits), lead)
-        val accepted = sourcesAvoidingHost(ordered, avoid).ifEmpty { ordered }
-        if (accepted.isEmpty()) error("AniVault could not find this episode")
-        return@withContext namedByServer(accepted, server.name)
+        return hits.toList()
     }
 
-    private fun findShortId(anilistId: Int, titleHint: String?): String {
+    private fun findShortId(anilistId: Int, titleHint: String?): String? {
         cache?.getShow(ID, anilistId)?.siteId?.takeIf { anivaultShortId(it) }?.let { return it }
         val mal = malIdFromTitleHint(titleHint)
         if (mal > 0) {
-            val mapped = read("$API/api/hoshika/identity-by-legacy/$mal")?.let(::anivaultMappedShortId)
+            val mapped = read("$API/api/hoshika/identity-by-legacy/$mal", LOOKUP_TIMEOUT_MS)?.let(::anivaultMappedShortId)
             if (mapped != null) {
                 cache?.putShow(ID, anilistId, mapped, "$SITE/watch?anime=$mapped")
                 return mapped
             }
         }
         val titles = anivaultTitles(titleHint)
-        if (titles.isEmpty()) error("AniVault needs a title to find this show.")
+        if (titles.isEmpty()) return null
         for (title in titles) {
             val encoded = java.net.URLEncoder.encode(title, Charsets.UTF_8.name())
-            val body = read("$API/api/hoshika/search?q=$encoded&limit=8") ?: continue
+            val body = read("$API/api/hoshika/search?q=$encoded&limit=8", LOOKUP_TIMEOUT_MS) ?: continue
             val shortId = anivaultSearchShortId(body, titles) ?: continue
             cache?.putShow(ID, anilistId, shortId, "$SITE/watch?anime=$shortId")
             return shortId
         }
-        error("AniVault could not find this show.")
+        return null
     }
 
-    private fun read(url: String): String? {
+    private fun read(url: String, timeoutMs: Long = STREAM_TIMEOUT_MS): String? {
         val request = Request.Builder().url(url).get()
         siteHeaders().forEach { (name, value) -> request.header(name, value) }
+        val call = http.newCall(request.build())
+        call.timeout().timeout(timeoutMs, TimeUnit.MILLISECONDS)
         val response = try {
-            http.newCall(request.build()).execute()
+            call.execute()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -152,11 +188,20 @@ class AniVaultServer(
         const val SITE = "https://anivault.tv/"
         const val API = "https://www.anivault.co"
 
-        /** Inside the outer per-resolver cap, so the last button is not cancelled first. */
+        /** One AniVault resolve. Their stream call takes longer than a normal site. */
+        const val RESOLVE_BUDGET_MS = 16_000L
+        const val STREAM_TIMEOUT_MS = 12_000L
+        const val LOOKUP_TIMEOUT_MS = 2_500L
+        /** Kept so older checks still see a budget inside the playback cap. */
         const val BUTTON_TIMEOUT_MS = RESOLVE_TIMEOUT_MS - 500L
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
     }
+}
+
+/** Next-episode warm. AniVault asks only the server that just played. */
+internal class AniVaultWarm : AbstractCoroutineContextElement(AniVaultWarm) {
+    companion object Key : CoroutineContext.Key<AniVaultWarm>
 }
 
 /** Host the player is already using. AniVault keeps asking until another CDN answers. */
