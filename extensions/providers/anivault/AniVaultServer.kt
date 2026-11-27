@@ -3,6 +3,10 @@
 
 package site.anikitty.app.data.servers
 
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -34,28 +38,48 @@ class AniVaultServer(
         require(episode > 0) { "episode required" }
         val order = anivaultPeers(peers())
         if (order.isEmpty()) error("AniVault has no sources on this phone")
+        val avoid = coroutineContext[AvoidPlaybackHost]?.host
+        val sameHost = AtomicReference<List<PlayableSource>?>(null)
+        // Every live peer starts now. A second wave would begin only after this
+        // window, and the outer race cancels AniVault at RESOLVE_TIMEOUT_MS.
         val raced = raceHeadStart(
             count = order.size,
-            parallel = 4,
-            headStartMs = 400L,
-            timeoutMs = 12_000L,
+            parallel = order.size,
+            headStartMs = 0L,
+            timeoutMs = PEER_TIMEOUT_MS,
         ) { index ->
             val peer = order[index]
-            try {
+            val raw = try {
                 peer.resolve(anilistId, episode, audio, titleHint).takeIf { it.isNotEmpty() }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 null
+            } ?: return@raceHeadStart null
+            val accepted = sourcesAvoidingHost(raw, avoid)
+            if (accepted.isNotEmpty()) {
+                accepted
+            } else {
+                sameHost.compareAndSet(null, raw)
+                null
             }
-        } ?: error("AniVault could not find this episode")
-        return namedByServer(raced.second, server.name)
+        }
+        val chosen = raced?.second ?: sameHost.get() ?: error("AniVault could not find this episode")
+        return namedByServer(chosen, server.name)
     }
 
     companion object {
         const val ID = "anivault"
         const val ORIGIN = "https://anivault.tv/"
+
+        /** Inside the outer per-resolver cap, so the last peer is not cancelled first. */
+        const val PEER_TIMEOUT_MS = RESOLVE_TIMEOUT_MS - 500L
     }
+}
+
+/** Host the player is already using. AniVault keeps racing until another CDN answers. */
+internal class AvoidPlaybackHost(val host: String) : AbstractCoroutineContextElement(AvoidPlaybackHost) {
+    companion object Key : CoroutineContext.Key<AvoidPlaybackHost>
 }
 
 /** Sites anivault.tv asks first, then any other resolver on the phone. */

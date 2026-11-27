@@ -11,10 +11,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 
+/** One resolver in the playback race. An inner race must finish inside this. */
+internal const val RESOLVE_TIMEOUT_MS = 7_500L
+
 /**
  * The preferred resolver starts immediately. The next ones join after
  * [headStartMs] so a dead host does not hold the episode for its full timeout.
  * A null result is a miss. The first non-null value wins and the rest stop.
+ * Indexes past [parallel] run only after that first window, so a caller inside
+ * [RESOLVE_TIMEOUT_MS] must set [parallel] to [count] or the rest never start.
  */
 internal suspend fun <T> raceHeadStart(
     count: Int,
