@@ -329,7 +329,7 @@ fun ExtensionStoreFeed(
                     fontSize = 15.sp,
                 )
                 Text(
-                    "AniList is the catalog. Live sites on this phone race for the file. A site on the list, such as AniVault, is known here and opens in the browser until an extension that can resolve it is installed.",
+                    "AniList is the catalog. Live sites on this phone race for the file. AniVault is one of those sites: it races the same origins as anivault.tv and plays the winner here.",
                     color = palette.muted,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
@@ -881,6 +881,7 @@ private fun bundledStoreVersion(id: String): String = when (id) {
     "aniwaves" -> "1.0.0"
     "animegg" -> "1.0.0"
     "anigato" -> "1.0.0"
+    "anivault" -> "1.0.0"
     else -> "1.1.1"
 }
 
@@ -903,5 +904,6 @@ private fun providerSource(id: String): String = when (id) {
     "aniwaves" -> "https://github.com/fampep/anikitty-extensions/tree/main/providers/aniwaves"
     "animegg" -> "https://github.com/fampep/anikitty-extensions/tree/main/providers/animegg"
     "anigato" -> "https://github.com/fampep/anikitty-extensions/tree/main/providers/anigato"
+    "anivault" -> "https://anivault.tv/"
     else -> "https://github.com/fampep/anikitty-extensions"
 }

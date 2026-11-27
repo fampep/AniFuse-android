@@ -53,7 +53,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
     val installer = ExtensionInstaller(extensions)
     val storeClient = ExtensionStoreClient()
 
-    private val bundled: List<StreamResolver> = listOf(
+    private val siteResolvers: List<StreamResolver> = listOf(
         AnikotoServer(cache = resolveCache, crypto = megaPlayCrypto),
         GotakuServer(cache = resolveCache),
         ReanimeServer(cache = resolveCache),
@@ -70,6 +70,8 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         AnigatoServer(cache = resolveCache),
         AniHostsServer(cache = resolveCache),
     )
+    private val bundled: List<StreamResolver> =
+        siteResolvers + AniVaultServer(peers = { siteResolvers })
 
     /** Bundled site ids — live scrapers that ship with the APK. */
     val bundledSiteIds: Set<String> = bundled.map { it.server.id }.toSet()
@@ -187,7 +189,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         onAttempt: ((serverName: String, index: Int, total: Int) -> Unit)? = null,
         avoidHost: String? = null,
     ): ResolveFailoverResult {
-        val list = _resolvers.value
+        val list = playbackResolvers(_selectedId.value, _resolvers.value)
         if (list.isEmpty()) error("No stream extensions installed")
         val preferredId = _selectedId.value
         val down = downProviderNames()

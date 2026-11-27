@@ -12,7 +12,7 @@ internal fun builtinStoreListings(): List<StoreListing> = listOf(
     StoreListing(
         id = ANIVAULT_ID,
         name = "AniVault",
-        description = "anivault.tv is on the site list. Playback still races the resolvers on this phone until an AniVault extension is installed.",
+        description = "On-device AniVault. Races the same live sites as anivault.tv. The file plays on this phone.",
         github = ANIVAULT_SITE,
         author = "anivault.tv",
         featured = true,
@@ -20,7 +20,7 @@ internal fun builtinStoreListings(): List<StoreListing> = listOf(
         siteUrl = ANIVAULT_SITE,
         version = "site",
         protocol = "1.1",
-        playsOnDevice = false,
+        playsOnDevice = true,
     ),
 )
 

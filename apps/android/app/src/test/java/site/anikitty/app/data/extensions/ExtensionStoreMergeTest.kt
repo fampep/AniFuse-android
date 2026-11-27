@@ -97,8 +97,8 @@ class ExtensionStoreMergeTest {
         val merged = mergeStoreIndexes(listOf(index(MIRROR, "2026-11-15", reanime())))
         val vault = merged.extensions.first { it.id == ANIVAULT_ID }
         assertEquals(ANIVAULT_SITE, vault.siteUrl)
-        assertFalse(vault.playsOnDevice)
-        assertTrue(isCatalogSite(vault))
+        assertTrue(vault.playsOnDevice)
+        assertFalse(isCatalogSite(vault))
         assertTrue(storeListingMatches(vault, "anivault.tv"))
         assertEquals(
             StoreCardRole.OpenSite,

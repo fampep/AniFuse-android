@@ -18,8 +18,7 @@ Playback stays on the phone. This repository is where the extension version of e
 | [aniwaves](./aniwaves) | aniwaves.tv playlist |
 | [animegg](./animegg) | animegg.org episode file |
 | [anigato](./anigato) | anigato.lol playlist for the AniList id |
-
-[AniVault](https://anivault.tv/) is on the store site list. It is not a resolver in this folder. It joins the race when an extension for it is installed.
+| [anivault](./anivault) | anivault.tv. Races the live sites already on the phone and plays the winner here |
 
 Each resolver sets optional `quality`, `audio`, and `qualityRating` on `PlayableSource` only from data it parsed (HLS `RESOLUTION` / `CODECS` / `CHANNELS`, or the site’s own label). A missing fact stays null.
 
