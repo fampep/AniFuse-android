@@ -92,7 +92,7 @@ internal fun playerMenuTitle(page: PlayerMenuPage): String = when (page) {
     PlayerMenuPage.Quality -> "Quality"
     PlayerMenuPage.Subs -> "Subtitles"
     PlayerMenuPage.Size -> "Subtitle Size"
-    PlayerMenuPage.Timing -> "Subtitle Timing"
+    PlayerMenuPage.Timing -> "Subtitle Position"
     PlayerMenuPage.Volume -> "Volume Boost"
     PlayerMenuPage.Audio -> "Audio Tracks"
     PlayerMenuPage.Color -> "Subtitle Color"

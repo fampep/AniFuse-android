@@ -3,6 +3,7 @@
 
 package site.anikitty.app.data.servers
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -26,37 +27,28 @@ class AniwavesPlaybackTest {
               <a class="name d-title">One Piece</a>
             </div>
             <div class="item">
-              <a href="/watch/tsuihou-sareta-tensei-juukishi-wa-game-chishiki-de-musou-suru-82737">
+              <a href="/watch/kusuriya-no-hitorigoto-3rd-season-82762">
                 <img src="/c.jpg">
               </a>
-              <a class="name d-title">The Exiled Heavy Knight Knows How to Game the System</a>
+              <a class="name d-title">The Apothecary Diaries Season 3</a>
             </div>
         """.trimIndent()
         val hits = aniwavesSearchHits(html)
         assertEquals("21", aniwavesPickShow(hits, "One Piece")?.id)
         assertEquals("999", aniwavesPickShow(hits, "One Piece Film Red")?.id)
         assertEquals(
-            "82737",
-            aniwavesPickShow(hits, "The Exiled Heavy Knight Knows How to Game the System")?.id,
+            "82762",
+            aniwavesPickShow(hits, "The Apothecary Diaries Season 3")?.id,
         )
         assertEquals(
-            "tsuihou-sareta-tensei-juukishi-wa-game-chishiki-de-musou-suru-82737",
-            aniwavesPickShow(hits, "The Exiled Heavy Knight Knows How to Game the System")?.slug,
+            "kusuriya-no-hitorigoto-3rd-season-82762",
+            aniwavesPickShow(hits, "The Apothecary Diaries Season 3")?.slug,
         )
         assertNull(aniwavesPickShow(hits, "Naruto"))
-        assertEquals("82737", aniwavesShowId("/watch/tsuihou-sareta-tensei-juukishi-wa-game-chishiki-de-musou-suru-82737/ep-1"))
-    }
-
-    @Test
-    fun serverListKeepsSubAndDubApart() {
-        val html = """
-            <div class="type" data-type="sub"><a data-link-id="sub-1"></a><a data-link-id="sub-2"></a></div>
-            <div class="type" data-type="dub"><a data-link-id="dub-9"></a></div>
-        """.trimIndent()
-        assertEquals("sub-1", aniwavesPickLink(html, dub = false))
-        assertEquals("dub-9", aniwavesPickLink(html, dub = true))
-        assertNull(aniwavesPickLink("""<div class="type" data-type="sub"><a data-link-id="only-sub"></a></div>""", dub = true))
-        assertNull(aniwavesPickLink("""<div class="type" data-type="dub"><a data-link-id="only-dub"></a></div>""", dub = false))
+        assertEquals(
+            "82762",
+            aniwavesShowId("/watch/kusuriya-no-hitorigoto-3rd-season-82762/ep-1"),
+        )
     }
 
     @Test
@@ -68,35 +60,61 @@ class AniwavesPlaybackTest {
         val show = aniwavesSearchHits(html).single()
         assertEquals("one-piece-21", show.slug)
         assertEquals("21", show.id)
-        val cached = aniwavesCachedShow(show.slug, "https://aniwaves.tv/watch/${show.slug}")
+        val cached = aniwavesCachedShow(show.slug, "https://aniwaves.tv/watch/${show.slug}/ep-1")
         assertEquals("21", cached?.id)
         assertEquals("one-piece-21", cached?.slug)
-        val numeric = aniwavesCachedShow("82737", "https://aniwaves.tv/watch/tsuihou-sareta-tensei-juukishi-wa-game-chishiki-de-musou-suru-82737")
-        assertEquals("82737", numeric?.id)
-        assertEquals("tsuihou-sareta-tensei-juukishi-wa-game-chishiki-de-musou-suru-82737", numeric?.slug)
+        val numeric = aniwavesCachedShow(
+            "82762",
+            "https://aniwaves.tv/watch/kusuriya-no-hitorigoto-3rd-season-82762/ep-1",
+        )
+        assertEquals("82762", numeric?.id)
+        assertEquals("kusuriya-no-hitorigoto-3rd-season-82762", numeric?.slug)
     }
 
     @Test
-    fun embedResolvesToThePlaylistOnThatHost() {
-        val sourced = """{"result":{"url":"https://play.example/embed-1/abc?v=1","skip_data":{"intro":[12,90],"outro":[1300,1400]}}}"""
-        assertEquals("https://play.example/embed-1/abc?v=1", aniwavesEmbedUrl(sourced))
-        assertEquals("https://play.example", aniwavesOrigin(aniwavesEmbedUrl(sourced)!!))
-        assertEquals(
-            "https://play.example/embed-1/getSources?id=src-1",
-            aniwavesSourcesUrl("https://play.example/embed-1/abc?v=1", "src-1"),
-        )
-        val page = """<div id="player" data-id="src-1"></div>"""
-        assertEquals("src-1", aniwavesDataId(page))
-        val sources = """
-            {"sources":[{"file":"https://cdn.example/master.m3u8","type":"hls"}],
-             "tracks":[{"file":"https://cdn.example/en.vtt","label":"English","kind":"captions","lang":"en"}]}
+    fun serverListKeepsEveryMirrorNameInTheAudioBlock() {
+        val html = """
+            <div class="type" data-type="sub">
+              <ul>
+                <li data-link-id="sub-a" data-sv-id="1">Vidplay</li>
+                <li data-link-id="sub-b" data-sv-id="2">MegaPlay</li>
+              </ul>
+            </div>
+            <div class="type" data-type="dub">
+              <ul>
+                <li data-link-id="dub-a" data-sv-id="1">Vidplay</li>
+              </ul>
+            </div>
         """.trimIndent()
-        assertEquals("https://cdn.example/master.m3u8", aniwavesMediaUrl(sources))
-        assertEquals("English", aniwavesTracks(sources).single().label)
-        assertEquals(12.0, aniwavesSkip(sourced).intro?.startSec)
-        assertEquals(1400.0, aniwavesSkip(sourced).outro?.endSec)
-        assertNull(aniwavesMediaUrl("""{"sources":"not-a-url"}"""))
-        assertFalse(aniwavesPlayableHost("https://aniwaves.tv/watch/show-1/ep-1"))
+        val sub = aniwavesServers(html, dub = false)
+        assertEquals(listOf("sub-a", "sub-b"), sub.map { it.id })
+        assertEquals(listOf("Vidplay", "MegaPlay"), sub.map { it.name })
+        val dub = aniwavesServers(html, dub = true)
+        assertEquals(listOf("dub-a"), dub.map { it.id })
+        // Opposite audio is only a fallback when the preferred block is empty.
+        val subOnly = """
+            <div class="type" data-type="sub">
+              <li data-link-id="only-sub">Moonlight</li>
+            </div>
+        """.trimIndent()
+        assertEquals(listOf("only-sub"), aniwavesLinkIds(subOnly, dub = true))
+        assertEquals("sub-a", aniwavesPickLink(html, dub = false))
+        assertEquals(
+            "https://play.vhscdn.to/embed-1/e/1",
+            aniwavesEmbedUrl("""{"result":{"url":"https://play.vhscdn.to/embed-1/e/1"}}"""),
+        )
+        assertEquals("180398", aniwavesDataId("""<div id="player" data-id="180398"></div>"""))
+        assertEquals(
+            listOf(
+                "https://megaplay.buzz/stream/getSourcesNew?id=180398",
+                "https://megaplay.buzz/embed-1/getSources?id=180398",
+            ),
+            aniwavesSourcesCandidates("https://megaplay.buzz/stream/s-2/1/sub", "180398"),
+        )
+        assertEquals(
+            "https://play.vhscdn.to/embed-1/getSources?id=180398",
+            aniwavesSourcesUrl("https://play.vhscdn.to/embed-1/e/1", "180398"),
+        )
     }
 
     @Test
@@ -113,15 +131,15 @@ class AniwavesPlaybackTest {
             playlist = playlist,
             dub = false,
             tracks = emptyList(),
-            skip = aniwavesSkip("""{"skip_data":{"intro":[1,2]}}"""),
-            referer = "https://play.example/",
-            origin = "https://play.example",
+            skip = aniwavesSkip("""{"intro":{"start":1,"end":2}}"""),
+            referer = "https://megaplay.buzz/",
+            origin = "https://megaplay.buzz",
             userAgent = AniwavesServer.USER_AGENT,
         )
         assertEquals("1080p", source?.quality)
         assertEquals("ja", source?.audioLanguage)
-        assertEquals("https://play.example/", source?.headers?.get("Referer"))
-        assertEquals("https://play.example", source?.headers?.get("Origin"))
+        assertEquals("https://megaplay.buzz/", source?.headers?.get("Referer"))
+        assertEquals("https://megaplay.buzz", source?.headers?.get("Origin"))
         assertTrue(source?.hls == true)
         assertEquals(1.0, source?.skip?.intro?.startSec)
         assertNull(
@@ -139,11 +157,33 @@ class AniwavesPlaybackTest {
     }
 
     @Test
+    fun mediaUrlReadsPlainAndEncryptedSources() {
+        assertEquals(
+            "https://cdn.example/master.m3u8",
+            aniwavesMediaUrl("""{"sources":[{"file":"https://cdn.example/master.m3u8","type":"hls"}]}"""),
+        )
+        assertEquals(
+            "https://cdn.example/master.m3u8",
+            aniwavesMediaUrl(
+                """{"file":"https://cdn.example/master.m3u8"}""",
+                MegaPlayCrypto(),
+                "https://megaplay.buzz",
+            ),
+        )
+        assertNull(aniwavesMediaUrl("""{"sources":"not-a-url"}"""))
+        assertFalse(aniwavesPlayableHost("https://aniwaves.tv/watch/show-1/"))
+        assertTrue(aniwavesPlayableHost("https://cdn.example/master.m3u8"))
+    }
+
+    @Test
     fun messagesStayFreeOfStatusCodes() {
         assertTrue(aniwavesBlocked(403, ""))
         assertTrue(aniwavesBlocked(200, "<title>Just a moment...</title>"))
-        assertFalse(aniwavesBlocked(200, """{"result":{"url":"https://play.example/a"}}"""))
+        assertTrue(aniwavesBlocked(200, "Performing security verification"))
+        assertFalse(aniwavesBlocked(200, """{"result":{"url":"https://x"}}"""))
         assertFalse(AniwavesServer.MISSING.contains("404"))
         assertFalse(AniwavesServer.BLOCKED.contains("403"))
+        assertTrue(AniwavesServer.ORIGIN.contains("aniwaves.tv"))
+        assertFalse(AniwavesServer.ORIGIN.contains("aniwaves.org"))
     }
 }

@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -40,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -191,16 +194,25 @@ internal fun AniFusePlayerChrome(
                 onScrubFinished = onScrubFinished,
             )
             Spacer(Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .stageGlassPlate(shape = RoundedCornerShape(22.dp), elevated = true)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
             ) {
-                if (showEpisodes) ActionPill(Icons.Outlined.VideoLibrary, "Episodes", onEpisodes)
-                ActionPill(Icons.Outlined.Layers, "Sources", onSources)
-                ActionPill(Icons.Outlined.ClosedCaption, "Subtitles", onSubtitles)
-                ActionPill(Icons.Outlined.Speed, speedLabel, onSpeed)
-                if (showNext) ActionPill(Icons.Outlined.SkipNext, "Next Ep", onNext)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (showEpisodes) ActionPill(Icons.Outlined.VideoLibrary, "Episodes", onEpisodes)
+                    ActionPill(Icons.Outlined.Layers, "Sources", onSources)
+                    ActionPill(Icons.Outlined.ClosedCaption, "Subs", onSubtitles)
+                    ActionPill(Icons.Outlined.Speed, speedLabel, onSpeed)
+                    if (showNext) ActionPill(Icons.Outlined.SkipNext, "Next", onNext)
+                }
             }
         }
     }
@@ -253,9 +265,11 @@ private fun RoundTransport(
 private fun ActionPill(icon: ImageVector, label: String, onClick: () -> Unit) {
     val view = LocalView.current
     val shape = RoundedCornerShape(999.dp)
+    // Parent dock already carries the glass plate — pills stay flat inside it.
     Row(
         modifier = Modifier
-            .stageGlassPlate(shape = shape)
+            .clip(shape)
+            .background(Color.White.copy(alpha = 0.08f))
             .spacePress {
                 KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
                 onClick()
@@ -264,7 +278,7 @@ private fun ActionPill(icon: ImageVector, label: String, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-        Spacer(modifier = Modifier.width(6.dp))
+        Spacer(Modifier.width(6.dp))
         Text(
             label,
             color = Color.White,

@@ -39,9 +39,19 @@ class AniRexPlaybackTest {
                 "dub",
             ).map { it.url },
         )
+        // Opposite-audio-only lists stay empty — do not burn the race on wrong audio.
+        assertTrue(
+            anirexPlayersForAudio(
+                listOf(AniRexPlayer("https://flixcloud.cc/e/sub", "sub")),
+                "dub",
+            ).isEmpty(),
+        )
         assertTrue(AniRexServer.MISSING.contains("AniRex"))
         assertTrue(AniRexServer.MISSING.contains("does not have"))
         assertTrue(AniRexServer.BLOCKED.contains("could not be reached"))
+        assertTrue(AniRexServer.TIMEOUT.contains("timed out"))
+        assertFalse(isHardProviderFailure(AniRexServer.PLAYLIST_MISS))
+        assertTrue(isHardProviderFailure(AniRexServer.TIMEOUT))
         assertEquals(AniRexServer.BLOCKED, anirexHttpFailure(403, "Just a moment..."))
         assertEquals(AniRexServer.MISSING, anirexHttpFailure(404, """{"message":"No stream available for this episode"}"""))
         assertEquals(AniRexServer.BLOCKED, anirexHttpFailure(0, ""))

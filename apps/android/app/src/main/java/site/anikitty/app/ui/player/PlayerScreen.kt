@@ -28,9 +28,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -109,7 +115,7 @@ import site.anikitty.app.cast.CastPlaybackService
 import site.anikitty.app.cast.CastProgressTarget
 import site.anikitty.app.cast.CastSessionHelper
 import site.anikitty.app.cast.CastStartup
-import site.anikitty.app.cast.CAST_UNAVAILABLE
+import site.anikitty.app.cast.CAST_STILL_STARTING
 import site.anikitty.app.cast.castAudioKey
 import site.anikitty.app.cast.castCaptionKey
 import site.anikitty.app.cast.castShouldPushCaptions
@@ -276,8 +282,11 @@ internal const val NEAR_END_THRESHOLD_MS = 90_000L
 private const val NEAR_END_MIN_DURATION_MS = 120_000L
 internal const val AUTOPLAY_COUNTDOWN_SEC = 10
 
-/** Caption backdrop: none, soft tint, solid box, or frosted/blurred glass look. */
+/** Caption backdrop: none, soft tint, solid box, or dense plate (Media3 has no real blur). */
 private enum class SubBgMode { None, Soft, Solid, Blur }
+
+/** Typeface family for Media3 CaptionStyleCompat. */
+private enum class SubTypeface { Sans, Serif, Mono }
 
 /**
  * Fully user-controlled caption look.
@@ -293,6 +302,7 @@ private data class SubStyle(
     val bold: Boolean = false,
     val italic: Boolean = true,
     val bgAlpha: Float = 0.55f,
+    val typeface: SubTypeface = SubTypeface.Sans,
 )
 
 private data class TextOption(
@@ -566,7 +576,12 @@ fun PlayerScreen(
     }
     var castUnavailable by remember { mutableStateOf(CastStartup.reason) }
     var castHelper by remember { mutableStateOf<CastSessionHelper?>(null) }
-    val castRouteReason = castUnavailable ?: if (castHelper == null) CAST_UNAVAILABLE else null
+    // Helper null while CastContext is still booting is "starting", not unavailable.
+    val castRouteReason = when {
+        castUnavailable != null -> castUnavailable
+        castHelper == null -> CAST_STILL_STARTING
+        else -> null
+    }
     DisposableEffect(Unit) {
         val stop = CastStartup.listen { next ->
             castUnavailable = next
@@ -586,9 +601,8 @@ fun PlayerScreen(
             castHint = "Notifications are off, so the Cast notice may stay hidden"
         }
     }
-    // The permission prompt fires on the first Cast press, not when the
-    // player opens: a dialog over playback right at open used to interrupt
-    // the first cast attempt.
+    // Ask once CastContext is ready — never on the first Cast tap. A permission
+    // dialog over that tap used to kill the first handoff.
     fun ensureCastNotifications() {
         if (Build.VERSION.SDK_INT < 33 || askedCastNotificationPermission) return
         val granted = ContextCompat.checkSelfPermission(
@@ -598,6 +612,9 @@ fun PlayerScreen(
         if (granted) return
         askedCastNotificationPermission = true
         requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+    LaunchedEffect(castHelper) {
+        if (castHelper != null) ensureCastNotifications()
     }
 
     val television = isTelevision()
@@ -1484,10 +1501,10 @@ fun PlayerScreen(
 
     fun loadOntoCast(helper: CastSessionHelper, src: PlayableSource) {
         if (!castAlive.get()) return
-        ensureCastNotifications()
         if (!helper.isSessionAvailable()) {
             // No receiver client: do not prepare the relay. That missing client
             // is what made the previous retry call straight back into load.
+            // CastSessionHelper.start also waits — this path is for attach before load.
             scheduleCastClientRetry(latestPlayer)
             return
         }
@@ -1722,8 +1739,9 @@ fun PlayerScreen(
             val connecting = helper.isSessionConnecting()
             if (!castPending && !connecting) return@LaunchedEffect
             castPending = true
-            repeat(10) {
-                delay(500)
+            // ~3s of 120ms polls — remoteMediaClient usually appears in under 1s.
+            repeat(25) {
+                delay(120)
                 if (castClientGaveUp) return@LaunchedEffect
                 if (helper.isSessionAvailable()) {
                     applyCastAttach(sessionUp = true)
@@ -2100,6 +2118,7 @@ fun PlayerScreen(
             .putBoolean("sub_bold", subStyle.bold)
             .putBoolean("sub_italic", subStyle.italic)
             .putFloat("sub_bg_alpha", subStyle.bgAlpha)
+            .putString("sub_typeface", subStyle.typeface.name)
             .apply()
     }
 
@@ -2860,27 +2879,13 @@ fun PlayerScreen(
                     )
                 }
                 PlayerMenuSectionLabel("Style")
-                SubtitleSizePanel(style = subStyle, onChange = { subStyle = it })
-                SubtitleTimingPanel(style = subStyle, onChange = { subStyle = it })
-                captionColors().forEach { (color, label) ->
-                    PlayerMenuRow(
-                        label = label,
-                        selected = subStyle.color == color,
-                        onClick = { subStyle = subStyle.copy(color = color) },
-                    )
-                }
-                listOf(
-                    CaptionStyleCompat.EDGE_TYPE_OUTLINE to "Outline",
-                    CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW to "Shadow",
-                    CaptionStyleCompat.EDGE_TYPE_NONE to "None",
-                ).forEach { (edge, label) ->
-                    PlayerMenuRow(
-                        label = label,
-                        selected = subStyle.edgeType == edge,
-                        onClick = { subStyle = subStyle.copy(edgeType = edge) },
-                    )
-                }
-                SubtitleBackgroundPanel(style = subStyle, onChange = { subStyle = it })
+                CaptionPreview(subStyle)
+                Spacer(modifier = Modifier.height(10.dp))
+                SubtitleSizePanel(style = subStyle, onChange = { subStyle = it }, compact = true)
+                SubtitleTimingPanel(style = subStyle, onChange = { subStyle = it }, compact = true)
+                CaptionColorSwatches(style = subStyle, onChange = { subStyle = it })
+                CaptionEdgeChips(style = subStyle, onChange = { subStyle = it })
+                SubtitleBackgroundPanel(style = subStyle, onChange = { subStyle = it }, compact = true)
             }
             PlayerMenuPage.Size -> {
                 SubtitleSizePanel(
@@ -2941,26 +2946,12 @@ fun PlayerScreen(
                 }
             }
             PlayerMenuPage.Color -> {
-                captionColors().forEach { (color, label) ->
-                    PlayerMenuRow(
-                        label = label,
-                        selected = subStyle.color == color,
-                        onClick = { subStyle = subStyle.copy(color = color) },
-                    )
-                }
+                CaptionColorSwatches(style = subStyle, onChange = { subStyle = it })
             }
             PlayerMenuPage.Edge -> {
-                listOf(
-                    CaptionStyleCompat.EDGE_TYPE_OUTLINE to "Outline",
-                    CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW to "Shadow",
-                    CaptionStyleCompat.EDGE_TYPE_NONE to "None",
-                ).forEach { (edge, label) ->
-                    PlayerMenuRow(
-                        label = label,
-                        selected = subStyle.edgeType == edge,
-                        onClick = { subStyle = subStyle.copy(edgeType = edge) },
-                    )
-                }
+                CaptionPreview(subStyle)
+                Spacer(modifier = Modifier.height(12.dp))
+                CaptionEdgeChips(style = subStyle, onChange = { subStyle = it })
             }
             PlayerMenuPage.Background -> {
                 SubtitleBackgroundPanel(
@@ -3296,7 +3287,7 @@ fun PlayerScreen(
                     tint = Color.White,
                     modifier = Modifier.size(16.dp),
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(Modifier.width(6.dp))
                 Text(
                     "2× speed",
                     color = Color.White,
@@ -3333,7 +3324,7 @@ fun PlayerScreen(
                     tint = Color.White,
                     modifier = Modifier.size(30.dp),
                 )
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(Modifier.height(6.dp))
                 Text(
                     label,
                     color = Color.White,
@@ -3528,7 +3519,7 @@ fun PlayerScreen(
                         tint = Color.White,
                         modifier = Modifier.size(20.dp),
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(Modifier.width(10.dp))
                     Column {
                         Text(
                             shown.caption ?: "$pct%",
@@ -3536,7 +3527,7 @@ fun PlayerScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(Modifier.height(6.dp))
                         Box(
                             modifier = Modifier
                                 .width(120.dp)
@@ -3621,7 +3612,7 @@ fun PlayerScreen(
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
+                        Spacer(Modifier.height(2.dp))
                     }
                     Text(
                         "$pct%",
@@ -3638,7 +3629,7 @@ fun PlayerScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.45f)),
-            )
+            ) {}
             Column(
                 modifier = Modifier.align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -3811,20 +3802,20 @@ fun PlayerScreen(
                     modifier = Modifier.size(72.dp),
                     contentDescription = null,
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(Modifier.height(12.dp))
                 Text(
                     "Couldn't play this source",
                     color = PlayerChrome.Paper,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     error!!.take(160),
                     color = PlayerChrome.Graphite,
                     fontSize = 13.sp,
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(Modifier.height(12.dp))
                 val retryFocus = remember { FocusRequester() }
                 val retryShape = RoundedCornerShape(12.dp)
                 LaunchedEffect(television, error) {
@@ -3879,7 +3870,7 @@ fun PlayerScreen(
                     tint = Color.White,
                     modifier = Modifier.size(18.dp),
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
                     if (television) "Controls locked · select to unlock" else "Controls locked · tap to unlock",
                     color = Color.White,
@@ -3889,10 +3880,23 @@ fun PlayerScreen(
             }
         }
 
+        val reducedChrome = prefersReducedMotion()
         AnimatedVisibility(
             visible = !inPip && theater && !controlsLocked && (controlsVisible || error != null || panel != PlayerMenuPage.None),
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = if (reducedChrome) {
+                fadeIn(snap())
+            } else {
+                fadeIn(tween(110, easing = FastOutSlowInEasing)) +
+                    slideInVertically(tween(130, easing = FastOutSlowInEasing)) { it / 14 } +
+                    scaleIn(tween(130, easing = FastOutSlowInEasing), initialScale = 0.985f)
+            },
+            exit = if (reducedChrome) {
+                fadeOut(snap())
+            } else {
+                fadeOut(tween(80)) +
+                    slideOutVertically(tween(90)) { it / 18 } +
+                    scaleOut(tween(90), targetScale = 0.99f)
+            },
             modifier = Modifier.fillMaxSize(),
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
@@ -3995,7 +3999,7 @@ fun PlayerScreen(
                                 tint = Color.White,
                             )
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 title,
@@ -4028,7 +4032,7 @@ fun PlayerScreen(
                                     tint = Color.White,
                                 )
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(Modifier.width(8.dp))
                         }
                         if (onNextEpisode != null && episode < totalEpisodes) {
                             ChromeDisc(onClick = { goNextEpisode() }, size = 44.dp) {
@@ -4116,7 +4120,7 @@ fun PlayerScreen(
                         },
                     )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(Modifier.height(16.dp))
 
                     if (castScreenUp) {
                         CastTransportRow(
@@ -4706,7 +4710,7 @@ private fun ShelfAction(
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (icon != null) {
                 Icon(icon, contentDescription = null, modifier = Modifier.size(14.dp), tint = tint)
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(Modifier.width(4.dp))
             }
             Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = tint)
         }
@@ -5065,12 +5069,18 @@ private fun applyCaptionStyle(playerView: PlayerView?, style: SubStyle, scale: F
     view.setApplyEmbeddedFontSizes(false)
     val alpha = (style.bgAlpha.coerceIn(0f, 1f) * 255).toInt().coerceIn(0, 255)
     // Backdrop modes approximate caption plates on Media3 SubtitleView.
+    // "Blur" is a dense plate — Media3 cannot frosted-blur cue backgrounds.
     val (bg, window) = when (style.bgMode) {
         SubBgMode.None -> AndroidColor.TRANSPARENT to AndroidColor.TRANSPARENT
         SubBgMode.Soft -> AndroidColor.TRANSPARENT to AndroidColor.argb((alpha * 0.7f).toInt(), 0, 0, 0)
-        SubBgMode.Blur -> AndroidColor.argb((alpha * 0.45f).toInt(), 16, 16, 18) to
+        SubBgMode.Blur -> AndroidColor.argb((alpha * 0.62f).toInt(), 0, 0, 0) to
             AndroidColor.argb(alpha, 0, 0, 0)
         SubBgMode.Solid -> AndroidColor.argb(alpha, 0, 0, 0) to AndroidColor.TRANSPARENT
+    }
+    val family = when (style.typeface) {
+        SubTypeface.Sans -> Typeface.SANS_SERIF
+        SubTypeface.Serif -> Typeface.SERIF
+        SubTypeface.Mono -> Typeface.MONOSPACE
     }
     view.setStyle(
         CaptionStyleCompat(
@@ -5080,7 +5090,7 @@ private fun applyCaptionStyle(playerView: PlayerView?, style: SubStyle, scale: F
             style.edgeType,
             AndroidColor.BLACK,
             Typeface.create(
-                Typeface.SANS_SERIF,
+                family,
                 when {
                     style.bold && style.italic -> Typeface.BOLD_ITALIC
                     style.bold -> Typeface.BOLD
@@ -5132,6 +5142,11 @@ private fun loadSubStyle(prefs: android.content.SharedPreferences): SubStyle {
     } else {
         DEFAULT_SUB_BOTTOM_PAD
     }
+    val typeface = when (prefs.getString("sub_typeface", null)) {
+        SubTypeface.Serif.name -> SubTypeface.Serif
+        SubTypeface.Mono.name -> SubTypeface.Mono
+        else -> SubTypeface.Sans
+    }
     return SubStyle(
         sizeSp = sizeSp.coerceIn(SUB_SIZE_SP_MIN, SUB_SIZE_SP_MAX),
         bottomPad = bottom,
@@ -5141,6 +5156,7 @@ private fun loadSubStyle(prefs: android.content.SharedPreferences): SubStyle {
         bold = prefs.getBoolean("sub_bold", false),
         italic = prefs.getBoolean("sub_italic", false),
         bgAlpha = prefs.getFloat("sub_bg_alpha", 0.55f).let { if (it.isFinite()) it.coerceIn(0.15f, 1f) else 0.55f },
+        typeface = typeface,
     )
 }
 
@@ -5307,8 +5323,13 @@ private fun CaptionPreview(style: SubStyle) {
     val previewBg = when (style.bgMode) {
         SubBgMode.None -> Color.Transparent
         SubBgMode.Soft -> Color.Black.copy(alpha = style.bgAlpha * 0.55f)
-        SubBgMode.Blur -> Color.Black.copy(alpha = style.bgAlpha * 0.7f)
+        SubBgMode.Blur -> Color.Black.copy(alpha = style.bgAlpha * 0.78f)
         SubBgMode.Solid -> Color.Black.copy(alpha = style.bgAlpha.coerceAtLeast(0.75f))
+    }
+    val family = when (style.typeface) {
+        SubTypeface.Sans -> androidx.compose.ui.text.font.FontFamily.SansSerif
+        SubTypeface.Serif -> androidx.compose.ui.text.font.FontFamily.Serif
+        SubTypeface.Mono -> androidx.compose.ui.text.font.FontFamily.Monospace
     }
     Box(
         modifier = Modifier
@@ -5323,6 +5344,7 @@ private fun CaptionPreview(style: SubStyle) {
             "Sample subtitle · 字幕サンプル",
             color = previewColor,
             fontSize = style.sizeSp.coerceIn(12f, 40f).sp,
+            fontFamily = family,
             fontWeight = if (style.bold) FontWeight.Bold else FontWeight.Medium,
             fontStyle = if (style.italic) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal,
             maxLines = 2,
@@ -5335,15 +5357,96 @@ private fun CaptionPreview(style: SubStyle) {
 }
 
 @Composable
+private fun CaptionColorSwatches(
+    style: SubStyle,
+    onChange: (SubStyle) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+        Text(
+            "COLOR",
+            color = Color.White.copy(alpha = 0.45f),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.8.sp,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
+            captionColors().forEach { (color, label) ->
+                val selected = style.color == color
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .playerFocusCue(CircleShape)
+                        .clip(CircleShape)
+                        .background(Color(color))
+                        .border(
+                            width = if (selected) 2.dp else 1.dp,
+                            color = if (selected) Color.White else Color.White.copy(alpha = 0.28f),
+                            shape = CircleShape,
+                        )
+                        .clickable(
+                            onClickLabel = label,
+                        ) { onChange(style.copy(color = color)) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (selected) {
+                        Text("✓", color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CaptionEdgeChips(
+    style: SubStyle,
+    onChange: (SubStyle) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+        Text(
+            "EDGE",
+            color = Color.White.copy(alpha = 0.45f),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.8.sp,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
+            listOf(
+                CaptionStyleCompat.EDGE_TYPE_OUTLINE to "Outline",
+                CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW to "Shadow",
+                CaptionStyleCompat.EDGE_TYPE_RAISED to "Raised",
+                CaptionStyleCompat.EDGE_TYPE_DEPRESSED to "Depressed",
+                CaptionStyleCompat.EDGE_TYPE_NONE to "None",
+            ).forEach { (edge, label) ->
+                captionToggleChip(label, style.edgeType == edge) {
+                    onChange(style.copy(edgeType = edge))
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SubtitleSizePanel(
     style: SubStyle,
     onChange: (SubStyle) -> Unit,
+    compact: Boolean = false,
 ) {
     val sizeSp = style.sizeSp
     val percent = subtitlePercent(sizeSp)
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        CaptionPreview(style)
-        Spacer(modifier = Modifier.height(16.dp))
+        if (!compact) {
+            CaptionPreview(style)
+            Spacer(Modifier.height(16.dp))
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "A",
@@ -5410,14 +5513,22 @@ private fun SubtitleSizePanel(
                 )
             }
         }
-        Spacer(modifier = Modifier.height(14.dp))
-        // Bold and italic are stored but had no UI until now.
+        Spacer(Modifier.height(14.dp))
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.horizontalScroll(rememberScrollState()),
         ) {
             captionToggleChip("Bold", style.bold) { onChange(style.copy(bold = !style.bold)) }
             captionToggleChip("Italic", style.italic) { onChange(style.copy(italic = !style.italic)) }
+            captionToggleChip("Sans", style.typeface == SubTypeface.Sans) {
+                onChange(style.copy(typeface = SubTypeface.Sans))
+            }
+            captionToggleChip("Serif", style.typeface == SubTypeface.Serif) {
+                onChange(style.copy(typeface = SubTypeface.Serif))
+            }
+            captionToggleChip("Mono", style.typeface == SubTypeface.Mono) {
+                onChange(style.copy(typeface = SubTypeface.Mono))
+            }
         }
         Spacer(modifier = Modifier.height(10.dp))
         Text(
@@ -5431,7 +5542,7 @@ private fun SubtitleSizePanel(
                 .clickable { onChange(SubStyle()) }
                 .padding(horizontal = 14.dp, vertical = 10.dp),
         )
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -5455,13 +5566,24 @@ private fun captionToggleChip(label: String, selected: Boolean, onClick: () -> U
 private fun SubtitleTimingPanel(
     style: SubStyle,
     onChange: (SubStyle) -> Unit,
+    compact: Boolean = false,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        CaptionPreview(style)
-        Spacer(modifier = Modifier.height(16.dp))
+        if (!compact) {
+            CaptionPreview(style)
+            Spacer(Modifier.height(16.dp))
+        }
+        Text(
+            "POSITION",
+            color = Color.White.copy(alpha = 0.45f),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.8.sp,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Bottom",
+                "Low",
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 13.sp,
                 modifier = Modifier.padding(end = 12.dp),
@@ -5476,6 +5598,12 @@ private fun SubtitleTimingPanel(
                     activeTrackColor = Color.White,
                     inactiveTrackColor = Color.White.copy(alpha = 0.25f),
                 ),
+            )
+            Text(
+                "High",
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 13.sp,
+                modifier = Modifier.padding(start = 12.dp),
             )
         }
         Text(
@@ -5494,7 +5622,7 @@ private fun SubtitleTimingPanel(
                 }
             }
         }
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -5502,23 +5630,29 @@ private fun SubtitleTimingPanel(
 private fun SubtitleBackgroundPanel(
     style: SubStyle,
     onChange: (SubStyle) -> Unit,
+    compact: Boolean = false,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        CaptionPreview(style)
-        Spacer(modifier = Modifier.height(16.dp))
-        listOf(
-            SubBgMode.None to "None",
-            SubBgMode.Soft to "Soft",
-            SubBgMode.Blur to "Blur",
-            SubBgMode.Solid to "Solid",
-        ).forEach { (mode, label) ->
-            PlayerMenuRow(
-                label = label,
-                selected = style.bgMode == mode,
-                onClick = { onChange(style.copy(bgMode = mode)) },
-            )
+        if (!compact) {
+            CaptionPreview(style)
+            Spacer(Modifier.height(16.dp))
         }
-        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
+            listOf(
+                SubBgMode.None to "None",
+                SubBgMode.Soft to "Soft",
+                SubBgMode.Blur to "Plate",
+                SubBgMode.Solid to "Solid",
+            ).forEach { (mode, label) ->
+                captionToggleChip(label, style.bgMode == mode) {
+                    onChange(style.copy(bgMode = mode))
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "Opacity",
@@ -5544,7 +5678,7 @@ private fun SubtitleBackgroundPanel(
             fontSize = 13.sp,
             modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
         )
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -5572,14 +5706,14 @@ private fun PlayerGestureHint(
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.sp,
         )
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
             "Double-tap left or right to seek 10s\nDrag the left edge for brightness, the right edge for volume\nLong-press to play at 2×",
             color = Color.White.copy(alpha = 0.78f),
             fontSize = 13.sp,
             lineHeight = 19.sp,
         )
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(Modifier.height(12.dp))
         Text(
             "Got it",
             color = Color.Black,
@@ -5617,6 +5751,8 @@ private fun boostLabel(level: Int): String = when (level) {
 
 private fun edgeLabel(edge: Int): String = when (edge) {
     CaptionStyleCompat.EDGE_TYPE_OUTLINE -> "Outline"
+    CaptionStyleCompat.EDGE_TYPE_RAISED -> "Raised"
+    CaptionStyleCompat.EDGE_TYPE_DEPRESSED -> "Depressed"
     CaptionStyleCompat.EDGE_TYPE_NONE -> "None"
     else -> "Shadow"
 }
@@ -5624,7 +5760,7 @@ private fun edgeLabel(edge: Int): String = when (edge) {
 private fun bgLabel(mode: SubBgMode): String = when (mode) {
     SubBgMode.None -> "None"
     SubBgMode.Soft -> "Soft"
-    SubBgMode.Blur -> "Blur"
+    SubBgMode.Blur -> "Plate"
     SubBgMode.Solid -> "Solid"
 }
 
