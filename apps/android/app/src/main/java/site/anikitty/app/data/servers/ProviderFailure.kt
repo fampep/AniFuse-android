@@ -20,6 +20,7 @@ internal fun isHardProviderFailure(message: String?): Boolean {
     return "could not be reached" in msg ||
         "blocked" in msg ||
         "timeout" in msg ||
+        "timed out" in msg ||
         "empty sources" in msg ||
         " 403" in " $msg" ||
         "http 403" in msg ||

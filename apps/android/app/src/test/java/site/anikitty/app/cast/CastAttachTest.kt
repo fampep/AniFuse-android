@@ -426,10 +426,13 @@ class CastAttachTest {
 
     @Test
     fun clientRetriesBackOffThenStop() {
-        assertEquals(400L, castClientRetryDelayMs(1))
-        assertEquals(800L, castClientRetryDelayMs(2))
-        assertEquals(1_600L, castClientRetryDelayMs(3))
-        assertEquals(null, castClientRetryDelayMs(4))
+        assertEquals(120L, castClientRetryDelayMs(1))
+        assertEquals(240L, castClientRetryDelayMs(2))
+        assertEquals(480L, castClientRetryDelayMs(3))
+        assertEquals(960L, castClientRetryDelayMs(4))
+        assertEquals(1_920L, castClientRetryDelayMs(5))
+        assertEquals(1_920L, castClientRetryDelayMs(6))
+        assertEquals(null, castClientRetryDelayMs(7))
         assertEquals(null, castClientRetryDelayMs(0))
     }
 

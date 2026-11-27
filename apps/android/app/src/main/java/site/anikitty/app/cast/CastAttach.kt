@@ -38,14 +38,15 @@ internal fun castSessionReadiness(
 }
 
 /** How many times to retry a load that failed because the receiver client was missing. */
-internal const val CAST_CLIENT_RETRY_LIMIT = 3
+internal const val CAST_CLIENT_RETRY_LIMIT = 6
 
 /**
  * Backoff before retry [attempt] (1-based). Null means stop and play on the phone.
+ * Short steps so the first tap still lands once `remoteMediaClient` appears.
  */
 internal fun castClientRetryDelayMs(attempt: Int): Long? {
     if (attempt !in 1..CAST_CLIENT_RETRY_LIMIT) return null
-    return 400L shl (attempt - 1)
+    return 120L * (1L shl (attempt - 1).coerceAtMost(4))
 }
 
 /**

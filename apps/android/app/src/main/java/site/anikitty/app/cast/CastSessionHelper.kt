@@ -421,10 +421,30 @@ class CastSessionHelper private constructor(
         episode: Int,
         positionMs: Long,
         ticket: Int,
+        waitAttempt: Int = 0,
     ) {
         relay.publish(playback)
         val client = castContext.sessionManager.currentCastSession?.remoteMediaClient
-            ?: error("Chromecast is not connected")
+        if (client == null) {
+            // Session often reports connected a beat before remoteMediaClient
+            // exists. Re-arm on the main looper instead of failing the first tap.
+            if (waitAttempt >= 20 || closed.get() || ticket != generation.get()) {
+                error("Chromecast is not connected")
+            }
+            Log.i(TAG, "Cast start deferred; waiting for remoteMediaClient ($waitAttempt)")
+            main.postDelayed({
+                if (closed.get() || ticket != generation.get()) return@postDelayed
+                runCatching {
+                    start(playback, title, episode, positionMs, ticket, waitAttempt + 1)
+                }.onFailure {
+                    dropLoad(ticket)
+                    if (ticket == generation.get()) {
+                        fireLoadError(it.message ?: "Cast failed")
+                    }
+                }
+            }, 120L)
+            return
+        }
         watchLoad(client, ticket)
         val subs = subtitleConfigurations(playback.subtitles)
         val item = MediaItem.Builder()

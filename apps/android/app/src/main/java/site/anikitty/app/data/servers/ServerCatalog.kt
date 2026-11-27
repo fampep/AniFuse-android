@@ -66,7 +66,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         AniPmServer(cache = resolveCache),
         GogoAnimeServer(cache = resolveCache),
         AnizoneServer(cache = resolveCache),
-        AniwavesServer(cache = resolveCache),
+        AniwavesServer(cache = resolveCache, crypto = megaPlayCrypto),
         AnimeggServer(cache = resolveCache),
         AnigatoServer(cache = resolveCache),
         AniHostsServer(cache = resolveCache),
