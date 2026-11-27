@@ -16,6 +16,7 @@ internal fun isHardProviderFailure(message: String?): Boolean {
     if ("does not have" in msg) return false
     if ("needs a title" in msg) return false
     if ("only has subbed" in msg) return false
+    if ("only plays this on their site" in msg) return false
     return "could not be reached" in msg ||
         "blocked" in msg ||
         "timeout" in msg ||
