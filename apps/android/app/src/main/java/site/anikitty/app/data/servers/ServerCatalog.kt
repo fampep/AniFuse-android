@@ -45,6 +45,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         PlaybackHostHealth.attach(hostDir)
     }
     private val resolveCache = ResolveCache(context)
+    private val episodeAffinity = EpisodeHostAffinity(context)
     private val episodeArtCatalog = EpisodeArtCatalog.shared(context)
     private val megaPlayCrypto = MegaPlayCrypto(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -208,10 +209,16 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
             id = { it.server.id },
             name = { it.server.name },
         )
-        // Preferred stays first. Everyone else is ordered by recent CDN health so
-        // the parallel window burns on hosts that just played.
-        val ordered = preferHealthyHosts(sunk) { resolver ->
-            PlaybackHostHealth.score(playableHost(resolver.server.siteUrl.orEmpty()))
+        // Preferred stays first. Affinity for this episode rides second. Everyone
+        // else is ordered by recent CDN health so the parallel window burns on
+        // hosts that just played.
+        val affinity = episodeAffinity.recall(anilistId, episode, audio)
+        val boosted = boostAffinityProvider(sunk, affinity?.providerId) { it.server.id }
+        val ordered = preferHealthyHosts(boosted) { resolver ->
+            val siteScore = PlaybackHostHealth.score(playableHost(resolver.server.siteUrl.orEmpty()))
+            val affinityBoost =
+                if (affinity != null && resolver.server.id.equals(affinity.providerId, true)) 250 else 0
+            siteScore + affinityBoost
         }
         val errors = java.util.Collections.synchronizedList(ArrayList<String>())
         val preferred = ordered.first()
@@ -263,6 +270,17 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         if (raced != null) {
             val (resolver, sources) = raced.second
             rememberProviderUp(resolver)
+            val leadHost = playableHost(sources.firstOrNull()?.url.orEmpty())
+            if (leadHost.isNotEmpty()) {
+                episodeAffinity.remember(
+                    anilistId = anilistId,
+                    episode = episode,
+                    audio = audio,
+                    providerId = resolver.server.id,
+                    host = leadHost,
+                )
+                PlaybackHostHealth.note(leadHost, ok = true)
+            }
             val usedFallback = resolver.server.id != preferredId
             return ResolveFailoverResult(
                 sources = sources,
