@@ -75,7 +75,10 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         AniHostsServer(cache = resolveCache),
     )
     private val bundled: List<StreamResolver> =
-        siteResolvers + AniVaultServer(cache = resolveCache)
+        siteResolvers + AniVaultServer(
+            cache = resolveCache,
+            peers = { siteResolvers },
+        )
 
     /** Bundled site ids — live scrapers that ship with the APK. */
     val bundledSiteIds: Set<String> = bundled.map { it.server.id }.toSet()
