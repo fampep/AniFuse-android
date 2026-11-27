@@ -249,6 +249,7 @@ import site.anikitty.app.data.servers.PlaybackHttp
 import site.anikitty.app.data.servers.PlayableSource
 import site.anikitty.app.data.servers.PlayableWarmCache
 import site.anikitty.app.data.servers.PlaybackHostHealth
+import site.anikitty.app.data.servers.SegmentShadow
 import site.anikitty.app.data.servers.playableHost
 import site.anikitty.app.data.servers.SegmentStripDataSource
 import site.anikitty.app.data.servers.audioSwitchLabel
@@ -1072,7 +1073,10 @@ fun PlayerScreen(
         if (host.isNotEmpty()) PlaybackHostHealth.notePlaying(host, playbackOwner)
     }
     DisposableEffect(playbackOwner) {
-        onDispose { PlaybackHostHealth.clearPlaying(playbackOwner) }
+        onDispose {
+            PlaybackHostHealth.clearPlaying(playbackOwner)
+            SegmentShadow.clear(playbackOwner)
+        }
     }
     val latestArmShadow by rememberUpdatedState(onArmShadow)
     LaunchedEffect(ready, source?.url, anilistId, episode, playbackLocal, sessionStartedOffline) {
@@ -1100,6 +1104,15 @@ fun PlayerScreen(
         shadowHost = playableHost(armed.first().url).ifBlank { null }
         shadowAt = System.currentTimeMillis()
         shadowArmedHost = host
+        val standbyHost = shadowHost
+        if (standbyHost != null) {
+            SegmentShadow.arm(
+                fromHost = host,
+                toHost = standbyHost,
+                headers = armed.first().headers,
+                owner = playbackOwner,
+            )
+        }
         if (anilistId > 0 && shadowHost != null) {
             PlayableWarmCache.put(
                 anilistId = anilistId,

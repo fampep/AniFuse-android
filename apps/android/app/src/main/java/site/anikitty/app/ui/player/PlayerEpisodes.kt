@@ -698,11 +698,11 @@ private fun ActionCircle(
                     ),
                 )
                 .border(
-                    1.dp,
+                    0.5.dp,
                     if (active) {
                         Color.White
                     } else {
-                        Color.White.copy(alpha = 0.16f)
+                        Color.White.copy(alpha = 0.28f)
                     },
                     CircleShape,
                 ),
@@ -722,7 +722,7 @@ private fun ActionCircle(
         Text(
             label,
             color = when {
-                !enabled -> Color.White.copy(alpha = 0.35f)
+                !enabled -> Color.White.copy(alpha = 0.5f)
                 active -> Color.White
                 else -> Color.White.copy(alpha = 0.72f)
             },
