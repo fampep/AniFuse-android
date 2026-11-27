@@ -329,7 +329,7 @@ fun ExtensionStoreFeed(
                     fontSize = 15.sp,
                 )
                 Text(
-                    "AniList is the catalog. Live sites on this phone race for the file. AniVault is one of those sites: it races the same origins as anivault.tv and plays the winner here.",
+                    "AniList is the catalog. Live sites on this phone race for the file. AniVault asks anivault.co for its own source buttons and plays the file here.",
                     color = palette.muted,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,

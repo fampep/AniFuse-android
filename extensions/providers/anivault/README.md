@@ -2,4 +2,4 @@
 
 On-device resolver for [anivault.tv](https://anivault.tv/).
 
-AniVault does not host the video. The phone races the same live sites that player uses (Anikoto, reanime, Aniwaves, anizone, and the other resolvers already on the device) and plays the winning file here. AniVault stays out of the race when another site is selected.
+The phone calls the same public source buttons the site uses (`/api/anikoto_stream.php`, `/api/reanime_stream.php`, and the rest) on `https://www.anivault.co`. A show is found by the MAL id on the title hint, or by an exact title on `/api/hoshika/search`. The winning file plays here. The private scraper key stays on their server.
