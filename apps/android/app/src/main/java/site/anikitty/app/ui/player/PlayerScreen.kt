@@ -554,11 +554,10 @@ fun PlayerScreen(
     val downloadScope = rememberCoroutineScope()
     val download = if (anilistId > 0) {
         source?.let { current ->
-            val playing = PlaybackHostHealth.playingHost()
             downloadStatus(
                 current,
                 savedRow?.toSaved(),
-                yieldToPlayback = playing != null && playableHost(current.url) == playing,
+                playingHost = PlaybackHostHealth.playingHost(),
             )
         }
     } else {

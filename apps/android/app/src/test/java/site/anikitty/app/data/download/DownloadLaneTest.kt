@@ -115,10 +115,12 @@ class DownloadLaneTest {
             localPath = null,
             error = null,
         )
-        val status = downloadStatus(remote, queued, yieldToPlayback = true)
+        val status = downloadStatus(remote, queued, playingHost = "cdn-a.example")
         assertEquals("Waiting", status.label)
         assertEquals("Waiting", downloadButtonLabel(status))
         assertFalse(status.canStart)
+        val moved = queued.copy(sourceKey = "shadow", url = "https://cdn-b.example/a.mp4")
+        assertEquals("Queued", downloadStatus(remote, moved, playingHost = "cdn-a.example").label)
         assertEquals("In line", downloadStatus(remote, queued, ahead = 2).label)
         assertEquals(
             "dub",

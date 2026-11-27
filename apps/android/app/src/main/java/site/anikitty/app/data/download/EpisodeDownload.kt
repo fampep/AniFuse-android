@@ -99,7 +99,7 @@ internal fun downloadRowVisible(saved: SavedEpisode, source: PlayableSource): Bo
 internal fun downloadStatus(
     source: PlayableSource,
     saved: SavedEpisode?,
-    yieldToPlayback: Boolean = false,
+    playingHost: String? = null,
     ahead: Int = 0,
 ): DownloadStatus {
     val blocked = offlineBlockReason(source)
@@ -109,7 +109,7 @@ internal fun downloadStatus(
     return when (row.phase) {
         DownloadPhase.QUEUED -> DownloadStatus(
             when {
-                yieldToPlayback -> "Waiting"
+                downloadYields(row.url, playingHost, row.phase.name) -> "Waiting"
                 ahead > 0 -> "In line"
                 else -> "Queued"
             },
