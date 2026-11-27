@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items as lazyItems
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.activity.compose.BackHandler
@@ -61,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -86,6 +88,7 @@ import site.anikitty.app.ui.components.KittySectionHeading
 import site.anikitty.app.ui.components.StageGlassDisc
 import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.KittyGlassShape
+import site.anikitty.app.ui.theme.KittyHaptics
 import site.anikitty.app.ui.theme.LocalKittyPalette
 
 /**
@@ -151,6 +154,14 @@ fun ExtensionStoreFeed(
     }
 
     val bundledIds = catalog.bundledIds
+    val coldKeys = remember(resolvers, selectedId) { catalog.coldProviderKeys() }
+    val view = LocalView.current
+    val liveDock = remember(resolvers, bundledIds, selectedId) {
+        resolvers
+            .map { it.server }
+            .filter { it.id in bundledIds }
+            .distinctBy { it.id }
+    }
 
     // Always surface on-device resolvers even if the remote index is stale/offline.
     // First-party fampep metadata only for known bundled ids — community installs
@@ -329,12 +340,95 @@ fun ExtensionStoreFeed(
                     fontSize = 15.sp,
                 )
                 Text(
-                    "AniList is the catalog. Live sites on this phone race for the file. Pick one source or let failover try the rest.",
+                    "AniList is the catalog. Live sites on this phone race for the file. A miss stays soft — only unreachable sources cool out of the race.",
                     color = palette.muted,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
                     modifier = Modifier.padding(top = 6.dp),
                 )
+            }
+        }
+
+        if (liveDock.isNotEmpty()) {
+            item(key = "live-dock", contentType = "dock") {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "Race dock",
+                        color = palette.text,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                    )
+                    Text(
+                        "${liveDock.size} live · tap to lead the next play",
+                        color = palette.muted,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
+                    )
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(end = 4.dp),
+                    ) {
+                        lazyItems(liveDock, key = { it.id }) { server ->
+                            val selected = server.id == selectedId
+                            val cold = server.id.lowercase() in coldKeys ||
+                                server.name.trim().lowercase() in coldKeys
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .stageGlassPlate(
+                                        shape = RoundedCornerShape(999.dp),
+                                        elevated = selected,
+                                    )
+                                    .then(
+                                        if (selected) {
+                                            Modifier.border(0.5.dp, palette.accent, RoundedCornerShape(999.dp))
+                                        } else {
+                                            Modifier
+                                        },
+                                    )
+                                    .clickable {
+                                        catalog.select(server.id)
+                                        KittyHaptics.perform(view, KittyHaptics.Kind.Confirm)
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                            ) {
+                                ExtensionIcon(
+                                    iconUrl = server.iconUrl,
+                                    contentDescription = server.name,
+                                    size = 22.dp,
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    server.name,
+                                    color = palette.text,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 12.sp,
+                                )
+                                if (cold) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "COLD",
+                                        color = palette.faint,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 9.sp,
+                                    )
+                                } else if (selected) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "LEAD",
+                                        color = palette.onAccent,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 9.sp,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(999.dp))
+                                            .background(palette.accent)
+                                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -416,6 +510,8 @@ fun ExtensionStoreFeed(
             val newer = updates[listing.id]
             val onDevice = resolvers.any { it.server.id == listing.id }
             val selected = selectedId == listing.id
+            val cold = listing.id.lowercase() in coldKeys ||
+                listing.name.trim().lowercase() in coldKeys
             val icon = listing.iconUrl
                 ?: resolvers.firstOrNull { it.server.id == listing.id }?.server?.iconUrl
 
@@ -447,6 +543,19 @@ fun ExtensionStoreFeed(
                                 fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.weight(1f, fill = false),
                             )
+                            if (cold && onDevice) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    "COLD",
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(999.dp))
+                                        .background(palette.text.copy(alpha = 0.12f))
+                                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                                    color = palette.faint,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp,
+                                )
+                            }
                             if (selected) {
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(

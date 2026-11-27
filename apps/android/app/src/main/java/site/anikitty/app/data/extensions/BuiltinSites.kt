@@ -35,12 +35,27 @@ internal fun builtinStoreListings(): List<StoreListing> = listOf(
         protocol = "1.1",
         playsOnDevice = true,
     ),
+    StoreListing(
+        id = ONEKO_ID,
+        name = "0neko",
+        description = "On-device 0neko resolve. The playlist plays on this phone.",
+        github = ONEKO_SITE,
+        author = "0neko.cc",
+        featured = true,
+        iconUrl = "https://www.google.com/s2/favicons?domain=0neko.cc&sz=128",
+        siteUrl = ONEKO_SITE,
+        version = "site",
+        protocol = "1.1",
+        playsOnDevice = true,
+    ),
 )
 
 internal const val ANIREX_ID = "anirex"
 internal const val ANIREX_SITE = "https://anirex.to/"
 internal const val ANIMEHEAVEN_ID = "animeheaven"
 internal const val ANIMEHEAVEN_SITE = "https://animeheaven.me/"
+internal const val ONEKO_ID = "oneko"
+internal const val ONEKO_SITE = "https://beta.0neko.cc/"
 
 internal fun isCatalogSite(listing: StoreListing): Boolean = !listing.playsOnDevice
 

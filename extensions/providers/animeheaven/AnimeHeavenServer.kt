@@ -46,11 +46,15 @@ class AnimeHeavenServer(
         val show = findShow(anilistId, titleHint)
         val jar = linkedMapOf<String, String>()
         val animeUrl = "$SITE/anime.php?${show.id}"
-        val anime = heavenGet(http, jar, animeUrl, "$SITE/") ?: error(BLOCKED)
-        val key = animeHeavenEpisodeKey(anime, episode) ?: error(MISSING)
+        val anime = heavenFetch(http, jar, animeUrl, "$SITE/")
+        if (anime.code == 404) error(MISSING)
+        val animeBody = anime.body ?: error(BLOCKED)
+        val key = animeHeavenEpisodeKey(animeBody, episode) ?: error(MISSING)
         jar["key"] = key
-        val gate = heavenGet(http, jar, "$SITE/gate.php", animeUrl) ?: error(BLOCKED)
-        val files = animeHeavenMp4s(gate)
+        val gate = heavenFetch(http, jar, "$SITE/gate.php", animeUrl)
+        if (gate.code == 404) error(MISSING)
+        val gateBody = gate.body ?: error(BLOCKED)
+        val files = animeHeavenMp4s(gateBody)
         if (files.isEmpty()) error(MISSING)
         namedByServer(
             files.mapIndexed { index, url ->
@@ -177,12 +181,22 @@ internal fun animeHeavenMp4s(html: String): List<String> {
         .toList()
 }
 
+internal data class HeavenReply(val code: Int, val body: String?)
+
 internal fun heavenGet(
     http: OkHttpClient,
     jar: MutableMap<String, String>,
     url: String,
     referer: String,
-): String? {
+): String? = heavenFetch(http, jar, url, referer).body
+
+/** Gate/search fetch with status so 404 stays missing instead of sinking Heaven. */
+internal fun heavenFetch(
+    http: OkHttpClient,
+    jar: MutableMap<String, String>,
+    url: String,
+    referer: String,
+): HeavenReply {
     val request = Request.Builder().url(url).get()
         .header("Accept", "text/html,*/*")
         .header("Accept-Language", "en-US,en;q=0.9")
@@ -196,7 +210,7 @@ internal fun heavenGet(
     val response = try {
         call.execute()
     } catch (_: Exception) {
-        return null
+        return HeavenReply(0, null)
     }
     response.use {
         it.headers("Set-Cookie").forEach { raw ->
@@ -207,8 +221,9 @@ internal fun heavenGet(
                 jar[name] = value
             }
         }
-        if (it.code !in 200..299) return null
-        return it.body?.string()?.takeIf { body -> body.isNotBlank() }
+        val body = it.body?.string()?.takeIf { text -> text.isNotBlank() }
+        if (it.code !in 200..299) return HeavenReply(it.code, null)
+        return HeavenReply(it.code, body)
     }
 }
 

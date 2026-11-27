@@ -73,6 +73,7 @@ class AniNzServer(
             siteHeaders(),
         )
         if (aninzBlocked(body.code, body.text)) error(BLOCKED)
+        if (body.code == 404) error(MISSING)
         if (body.code !in 200..299) error(BLOCKED)
         val show = aninzPickShow(body.text, anilistId, title) ?: error(MISSING)
         cache?.putShow(ID, anilistId, "${show.source}:${show.id}", "$ORIGIN/anime/${enc(show.id)}")
@@ -104,11 +105,13 @@ class AniNzServer(
         val query = "selection=${enc(boot.selection)}&provider=$OWN_SESSION&ep=$episode&channel=$lang&telemetry=0"
         val body = get("$ORIGIN/api/anime/settlar/session?$query", siteHeaders())
         if (aninzBlocked(body.code, body.text)) error(BLOCKED)
+        if (body.code == 404) error(MISSING)
         if (body.code !in 200..299) error(BLOCKED)
         val embedUrl = aninzEmbedPageUrl(body.text) ?: error(MISSING)
         // Host-guard: load the embed document before /api/embed/session.
         val page = get(embedUrl, embedPageHeaders())
         if (aninzBlocked(page.code, page.text)) error(BLOCKED)
+        if (page.code == 404) error(MISSING)
         if (page.code !in 200..299) error(BLOCKED)
         return embedUrl
     }
