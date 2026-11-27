@@ -164,15 +164,10 @@ fun SpacePageHeader(
             .padding(horizontal = 20.dp, vertical = 8.dp),
     ) {
         if (onBack != null) {
-            Box(
-                modifier = Modifier
-                    .padding(bottom = 12.dp)
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(palette.surface)
-                    .border(1.dp, palette.hairline, CircleShape)
-                    .spacePress(onBack),
-                contentAlignment = Alignment.Center,
+            site.anikitty.app.ui.components.StageGlassDisc(
+                onClick = onBack,
+                modifier = Modifier.padding(bottom = 12.dp),
+                size = 44.dp,
             ) {
                 Icon(
                     Icons.AutoMirrored.Rounded.ArrowBack,

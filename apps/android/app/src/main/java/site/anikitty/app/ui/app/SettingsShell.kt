@@ -1310,14 +1310,7 @@ internal fun SettingsGroup(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .kittyGlassSoft(shape)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.White.copy(alpha = 0.07f), Color.Transparent),
-                    ),
-                )
-                .border(1.dp, Color.White.copy(alpha = 0.12f), shape)
-                .border(0.5.dp, palette.hairline, shape),
+                .stageGlassPlate(shape = shape, elevated = false),
             content = { content() },
         )
     }

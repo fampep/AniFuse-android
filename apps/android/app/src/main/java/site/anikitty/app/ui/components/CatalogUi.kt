@@ -155,14 +155,6 @@ fun KittyEmptyState(
             .padding(horizontal = 22.dp, vertical = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            "EMPTY",
-            color = palette.faint,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 11.sp,
-            letterSpacing = 2.sp,
-        )
-        Spacer(modifier = Modifier.height(10.dp))
         KittyFace(
             modifier = Modifier.size(64.dp),
             waving = true,
