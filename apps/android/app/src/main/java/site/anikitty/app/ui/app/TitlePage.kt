@@ -391,7 +391,7 @@ internal fun TitleStage(
                                         .width(92.dp)
                                         .height(132.dp)
                                         .clip(RoundedCornerShape(16.dp))
-                                        .border(1.dp, Color(0xFF292929), RoundedCornerShape(16.dp)),
+                                        .border(0.5.dp, Color(0xFF3A3A3A), RoundedCornerShape(16.dp)),
                                 )
                                 Text(
                                     "DETAILS",
@@ -1779,7 +1779,7 @@ private fun BackdropStrip(tiles: List<GalleryTile>, selected: Int, onSelect: (In
         contentPadding = PaddingValues(horizontal = KittySpace.md, vertical = KittySpace.sm),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(tiles.size) { index ->
+        items(tiles.size, key = { tiles[it].url }, contentType = { _ -> "still" }) { index ->
             val tile = tiles[index]
             val shape = RoundedCornerShape(10.dp)
             AsyncImage(

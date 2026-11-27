@@ -41,21 +41,44 @@ internal class AnifuseFeedCache(
     }
 
     fun downNames(): Set<String> {
-        val text = read(DOWN_FILE, DOWN_MAX_AGE_MS) ?: return emptySet()
-        return text.lineSequence()
+        val file = file(DOWN_FILE)
+        if (!file.isFile) {
+            downSnapshot = emptySet()
+            downSnapshotStamp = 0L
+            return emptySet()
+        }
+        val modified = file.lastModified()
+        if (now() - modified > DOWN_MAX_AGE_MS) return emptySet()
+        val snap = downSnapshot
+        if (snap != null && downSnapshotStamp == modified) return snap
+        val text = try {
+            file.readText()
+        } catch (_: Exception) {
+            return emptySet()
+        }
+        val parsed = text.lineSequence()
             .map { it.trim().lowercase() }
             .filter { it.isNotEmpty() }
             .toSet()
+        downSnapshot = parsed
+        downSnapshotStamp = modified
+        return parsed
     }
 
     fun writeDown(names: Collection<String>) {
-        write(DOWN_FILE, names.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.distinct().joinToString("\n"))
+        val set = names.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.distinct()
+        write(DOWN_FILE, set.joinToString("\n"))
+        downSnapshot = set.toSet()
+        downSnapshotStamp = file(DOWN_FILE).lastModified()
     }
 
     fun clear() {
         root.listFiles()?.forEach { file ->
             if (file.isFile) file.delete()
         }
+        downSnapshot = null
+        downSnapshotStamp = -1L
+        pulseMemory = null
     }
 
     /**
@@ -67,8 +90,9 @@ internal class AnifuseFeedCache(
         val drop = keys.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
         if (drop.isEmpty()) return
         synchronized(pulseLock) {
-            val keep = readPulse().filter { stamped - it.atMs <= DOWN_MAX_AGE_MS && it.key !in drop }
+            val keep = (pulseMemory ?: readPulse()).filter { stamped - it.atMs <= DOWN_MAX_AGE_MS && it.key !in drop }
             val next = keep + drop.map { PulseMark(it, stamped, ok) }
+            pulseMemory = next
             writePulse(next)
         }
     }
@@ -76,7 +100,8 @@ internal class AnifuseFeedCache(
     fun pulseDownKeys(holdMs: Long = LOCAL_HOLD_MS): Set<String> = synchronized(pulseLock) {
         val stamped = now()
         val latest = HashMap<String, PulseMark>()
-        for (mark in readPulse()) {
+        val marks = pulseMemory ?: readPulse().also { pulseMemory = it }
+        for (mark in marks) {
             val prev = latest[mark.key]
             if (prev == null || mark.atMs >= prev.atMs) latest[mark.key] = mark
         }
@@ -117,6 +142,9 @@ internal class AnifuseFeedCache(
     private data class PulseMark(val key: String, val atMs: Long, val ok: Boolean)
 
     private val pulseLock = Any()
+    private var pulseMemory: List<PulseMark>? = null
+    private var downSnapshot: Set<String>? = null
+    private var downSnapshotStamp: Long = -1L
 
     private fun file(name: String): File = File(root, safe(name))
 

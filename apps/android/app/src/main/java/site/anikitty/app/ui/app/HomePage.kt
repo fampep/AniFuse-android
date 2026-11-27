@@ -54,6 +54,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -559,7 +560,8 @@ internal fun HomePosterGrid(
             modifier = Modifier.padding(horizontal = 0.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            items.chunked(columns).forEach { row ->
+            val rows = remember(items, columns) { items.chunked(columns) }
+            rows.forEach { row ->
                 HomePosterLine(row = row, columns = columns, onOpen = onOpen)
             }
         }
@@ -572,14 +574,16 @@ internal fun HomePosterRow(
     onOpen: (AnimeSummary) -> Unit,
     captions: Map<Int, String> = emptyMap(),
 ) {
+    val open by rememberUpdatedState(onOpen)
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         items(items, key = { it.id }, contentType = { "poster" }) { anime ->
+            val openAnime = remember(anime.id) { { clicked: AnimeSummary -> open(clicked) } }
             HomePosterCell(
                 anime = anime,
-                onOpen = onOpen,
+                onOpen = openAnime,
                 caption = captions[anime.id],
                 modifier = Modifier.width(112.dp),
             )
@@ -612,7 +616,7 @@ private fun HomePosterCell(
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
                 .clip(RoundedCornerShape(16.dp))
-                .border(1.dp, Color(0xFF292929), RoundedCornerShape(16.dp)),
+                .border(0.5.dp, Color(0xFF3A3A3A), RoundedCornerShape(16.dp)),
         )
         Text(
             anime.title,

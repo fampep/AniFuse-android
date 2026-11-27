@@ -42,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -260,6 +261,8 @@ fun DiscoverFeed(
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
     val columns = posterColumns((maxWidth - 112.dp).coerceAtLeast(160.dp))
+    val openTitle by rememberUpdatedState(onOpen)
+    val posterRows = remember(grid, columns) { grid.chunked(columns) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -395,9 +398,9 @@ fun DiscoverFeed(
                         )
                     }
                 } else {
-                    grid.chunked(columns).forEach { row ->
+                    posterRows.forEach { row ->
                         item(key = "grid-${row.first().id}", contentType = "poster-row") {
-                            HomePosterLine(row = row, columns = columns, onOpen = onOpen)
+                            HomePosterLine(row = row, columns = columns, onOpen = { openTitle(it) })
                         }
                     }
                 }

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -199,8 +200,8 @@ fun AnifuseProvidersPage(
                         modifier = Modifier.padding(top = 6.dp),
                     )
                 }
-                items(providers.size) { index ->
-                    ProviderRow(providers[index])
+                items(providers, key = { it.id }, contentType = { "provider" }) { provider ->
+                    ProviderRow(provider)
                 }
             }
         }

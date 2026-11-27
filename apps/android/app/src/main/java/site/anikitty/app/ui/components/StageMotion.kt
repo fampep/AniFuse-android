@@ -3,6 +3,35 @@
 
 package site.anikitty.app.ui.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.dp
+import site.anikitty.app.ui.theme.prefersReducedMotion
+
+/**
+ * One short rise for content that replaces a shimmer.
+ * The caller owns when this enters composition, so a scroll recycle does not replay it.
+ */
+@Composable
+internal fun Modifier.stageArrive(): Modifier {
+    val reduced = prefersReducedMotion()
+    if (reduced) return this
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        progress.animateTo(1f, tween(durationMillis = 280, easing = FastOutSlowInEasing))
+    }
+    return this.graphicsLayer {
+        alpha = progress.value
+        translationY = (1f - progress.value) * 12.dp.toPx()
+    }
+}
+
 /**
  * Shared-axis pose for a predictive back swipe.
  * The translation matches the stage exit (`width / 6`) so the gesture and the

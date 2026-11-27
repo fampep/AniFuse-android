@@ -80,6 +80,21 @@ class AnifuseFeedCacheTest {
     }
 
     @Test
+    fun repeatedPulseNotesStayInMemoryAndANewCacheReadsTheFile() {
+        val dir = File.createTempFile("pulse-burst", "").apply {
+            delete()
+            mkdirs()
+        }
+        var now = 20_000L
+        val cache = AnifuseFeedCache(dir) { now }
+        repeat(20) { cache.notePulse(listOf("AniHosts"), ok = false) }
+        assertEquals(setOf("anihosts"), cache.pulseDownKeys())
+        val again = AnifuseFeedCache(dir) { now }
+        assertEquals(setOf("anihosts"), again.pulseDownKeys())
+        dir.deleteRecursively()
+    }
+
+    @Test
     fun aColdPreferredResolverLosesItsHeadStart() {
         assertEquals(900L, resolveHeadStartMs(anyDown = false, preferredCold = false))
         assertEquals(350L, resolveHeadStartMs(anyDown = true, preferredCold = false))

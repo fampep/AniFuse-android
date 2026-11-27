@@ -39,6 +39,10 @@ import site.anikitty.app.data.extensions.prepareStoreInstall
 class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = AnifuseApiStore(context)) {
     private val prefs = context.getSharedPreferences("anikitty_servers", Context.MODE_PRIVATE)
     private val providerHealth = AnifuseFeedCache(java.io.File(context.filesDir, "anifuse-cache"))
+
+    init {
+        PlaybackHostHealth.attach(java.io.File(context.filesDir, "playback-hosts"))
+    }
     private val resolveCache = ResolveCache(context)
     private val episodeArtCatalog = EpisodeArtCatalog.shared(context)
     private val megaPlayCrypto = MegaPlayCrypto(context)
@@ -181,6 +185,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         audio: String = "sub",
         titleHint: String? = null,
         onAttempt: ((serverName: String, index: Int, total: Int) -> Unit)? = null,
+        avoidHost: String? = null,
     ): ResolveFailoverResult {
         val list = _resolvers.value
         if (list.isEmpty()) error("No stream extensions installed")
@@ -230,16 +235,24 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
                     }
                     null
                 }
-                else -> resolver to sources
+                else -> {
+                    val named = namedByServer(playbackAudioLanguage(sources, audio), resolver.server.name)
+                    val accepted = sourcesAvoidingHost(named, avoidHost)
+                    if (accepted.isEmpty()) {
+                        errors += "${resolver.server.name}: same host"
+                        null
+                    } else {
+                        resolver to accepted
+                    }
+                }
             }
         }
         if (raced != null) {
             val (resolver, sources) = raced.second
             rememberProviderUp(resolver)
             val usedFallback = resolver.server.id != preferredId
-            val named = namedByServer(playbackAudioLanguage(sources, audio), resolver.server.name)
             return ResolveFailoverResult(
-                sources = named,
+                sources = sources,
                 server = resolver.server,
                 usedFallback = usedFallback,
                 attempted = errors + "${resolver.server.name}: ok",

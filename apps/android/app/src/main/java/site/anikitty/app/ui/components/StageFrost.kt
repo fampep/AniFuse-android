@@ -87,15 +87,14 @@ internal fun Modifier.stageFrosted(shape: androidx.compose.ui.graphics.Shape): M
         this.clip(shape).background(if (night) StageGlassFill else Color.White.copy(alpha = 0.96f))
     }
     val sheen = if (night) 0.16f else 0.42f
-    val stroke = if (night) StageGlassStroke else LocalKittyPalette.current.hairline
+    val stroke = if (night) Color.White.copy(alpha = 0.22f) else LocalKittyPalette.current.hairline
     return frosted
         .background(
             Brush.verticalGradient(
                 listOf(Color.White.copy(alpha = sheen), Color.Transparent),
             ),
         )
-        .border(1.dp, Color.White.copy(alpha = if (night) 0.20f else 0.44f), shape)
-        .border(1.dp, stroke, shape)
+        .border(0.5.dp, stroke, shape)
 }
 
 @Composable

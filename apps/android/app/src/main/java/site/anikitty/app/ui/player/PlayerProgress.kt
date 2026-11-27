@@ -169,8 +169,7 @@ internal fun NextEpisodePrompt(
                             ),
                         ),
                     )
-                    .border(1.dp, Color.White.copy(alpha = 0.16f), shape)
-                    .border(1.dp, site.anikitty.app.ui.components.StageGlassStroke, shape),
+                    .border(0.5.dp, Color.White.copy(alpha = 0.28f), shape),
             )
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
