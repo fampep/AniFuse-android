@@ -656,12 +656,12 @@ fun PlayerScreen(
         // and minBufferMs >= bufferForPlaybackMs. Violating that crashes on open.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 3_500,
-                /* maxBufferMs = */ 60_000,
-                /* bufferForPlaybackMs = */ 800,
-                /* bufferForPlaybackAfterRebufferMs = */ 2_500,
+                /* minBufferMs = */ 3_200,
+                /* maxBufferMs = */ 55_000,
+                /* bufferForPlaybackMs = */ 500,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_200,
             )
-            .setBackBuffer(40_000, true)
+            .setBackBuffer(36_000, true)
             .build()
         val metrics = context.resources.displayMetrics
         val seedBitrate = context.getSharedPreferences("anikitty_player", 0)
@@ -672,10 +672,10 @@ fun PlayerScreen(
             .build()
         // Flagship ABR: climb on healthy pipe, dump rungs the second stalls hit.
         val adaptive = AdaptiveTrackSelection.Factory(
-            /* minDurationForQualityIncreaseMs = */ 6_000,
-            /* maxDurationForQualityDecreaseMs = */ 3_200,
-            /* minDurationToRetainAfterDiscardMs = */ 16_000,
-            /* bandwidthFraction = */ 0.74f,
+            /* minDurationForQualityIncreaseMs = */ 5_500,
+            /* maxDurationForQualityDecreaseMs = */ 2_800,
+            /* minDurationToRetainAfterDiscardMs = */ 14_000,
+            /* bandwidthFraction = */ 0.78f,
         )
         val selector = DefaultTrackSelector(context, adaptive).apply {
             // Device locale is the default preference. A Danish phone then keeps

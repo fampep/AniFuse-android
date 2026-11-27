@@ -59,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -77,6 +78,8 @@ import site.anikitty.app.ui.components.AnimatedSearchIcon
 import site.anikitty.app.ui.components.ExtensionIcon
 import site.anikitty.app.ui.components.KittyEmptyState
 import site.anikitty.app.ui.components.KittySectionHeading
+import site.anikitty.app.ui.components.StageGlassDisc
+import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.KittyGlassShape
 import site.anikitty.app.ui.theme.LocalKittyPalette
 
@@ -270,15 +273,17 @@ fun ExtensionStoreFeed(
                         onBack = onBack,
                     )
                 }
-                IconButton(
-                    onClick = { refreshStore() },
-                    enabled = !busy,
+                StageGlassDisc(
+                    onClick = { if (!busy) refreshStore() },
                     modifier = Modifier.padding(top = 36.dp),
+                    size = 40.dp,
+                    selected = busy,
                 ) {
                     Icon(
                         Icons.Rounded.Refresh,
                         contentDescription = "Refresh store",
-                        tint = if (busy) palette.faint else palette.text,
+                        tint = if (busy) Color.Black else palette.text,
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }
@@ -290,9 +295,7 @@ fun ExtensionStoreFeed(
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier
                         .padding(top = 8.dp)
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(palette.surface)
-                        .border(1.dp, palette.hairline, RoundedCornerShape(999.dp))
+                        .stageGlassPlate(shape = RoundedCornerShape(999.dp))
                         .padding(horizontal = 10.dp, vertical = 5.dp),
                 )
             }
@@ -373,12 +376,13 @@ fun ExtensionStoreFeed(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(KittyGlassShape)
-                    .background(if (selected) palette.text.copy(alpha = 0.08f) else palette.surface)
-                    .border(
-                        1.dp,
-                        if (selected) palette.accent else palette.hairline,
-                        KittyGlassShape,
+                    .stageGlassPlate(shape = KittyGlassShape, elevated = selected)
+                    .then(
+                        if (selected) {
+                            Modifier.border(1.dp, palette.accent, KittyGlassShape)
+                        } else {
+                            Modifier
+                        },
                     )
                     .padding(14.dp),
             ) {
