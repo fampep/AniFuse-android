@@ -495,7 +495,7 @@ fun LocalFirstApp(
                 }
                 DockOverlay(
                     tabs = tabs,
-                    selectedId = if (tab == "store") "profile" else tab,
+                    selectedId = if (tab == "store") "" else tab,
                     profileImageUrl = aniListAuth.avatarUrl,
                     onSelect = { id ->
                         screen = Screen.Tabs
@@ -539,7 +539,7 @@ fun LocalFirstApp(
                 }
                 if (!isTelevision()) DockOverlay(
                     tabs = tabs,
-                    selectedId = if (tab == "store") "profile" else tab,
+                    selectedId = if (tab == "store") "" else tab,
                     profileImageUrl = aniListAuth.avatarUrl,
                     onSelect = { id ->
                         screen = Screen.Tabs
@@ -1390,7 +1390,9 @@ fun LocalFirstApp(
         if (!television && (screen is Screen.Tabs || screen is Screen.Detail)) {
             DockOverlay(
                 tabs = tabs,
-                selectedId = if (tab == "store") "profile" else tab,
+                // Keep the dock honest: Store is a profile subflow, so leave no
+                // tab selected instead of painting Profile as active.
+                selectedId = if (tab == "store") "" else tab,
                 profileImageUrl = aniListAuth.avatarUrl,
                 onSelect = { id ->
                     if (screen is Screen.Detail) {

@@ -2627,11 +2627,26 @@ fun PlayerScreen(
             onClick = { panel = PlayerMenuPage.Speed },
         )
         PlayerMenuRow(
+            label = "Sources",
+            value = source?.serverName?.takeIf { it.isNotBlank() }
+                ?: source?.label?.takeIf { it.isNotBlank() }
+                ?: if (playlist.isNotEmpty()) "Source ${sourceIndex + 1} of ${playlist.size}" else "None",
+            icon = Icons.Outlined.VideoLibrary,
+            showChevron = true,
+            onClick = {
+                sourcePanelFocus = true
+                panel = PlayerMenuPage.Quality
+            },
+        )
+        PlayerMenuRow(
             label = "Quality",
             value = menuQualityValue(qualityLabel),
             icon = Icons.Outlined.Equalizer,
             showChevron = true,
-            onClick = { panel = PlayerMenuPage.Quality },
+            onClick = {
+                sourcePanelFocus = false
+                panel = PlayerMenuPage.Quality
+            },
         )
         PlayerMenuRow(
             label = "Audio Tracks",
@@ -3656,31 +3671,70 @@ fun PlayerScreen(
         } else if (
             !inPip && ready && buffering && error == null &&
             seekFlashMs == 0L && !scrubbing && !holdBoost &&
-            !(theater && controlsVisible && !controlsLocked) &&
             !(!theater && castScreenUp)
         ) {
+            val chromeUp = theater && controlsVisible && !controlsLocked
             Column(
-                modifier = Modifier.align(Alignment.Center),
+                modifier = Modifier
+                    .align(if (chromeUp) Alignment.TopCenter else Alignment.Center)
+                    .then(
+                        if (chromeUp) {
+                            Modifier
+                                .windowInsetsPadding(WindowInsets.statusBars)
+                                .padding(top = 72.dp)
+                        } else {
+                            Modifier
+                        },
+                    ),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                CircularProgressIndicator(
-                    color = Color.White.copy(alpha = 0.9f),
-                    strokeWidth = 2.5.dp,
-                    modifier = Modifier.size(36.dp),
-                )
-                if (recoveryNote != null) {
-                    Text(
-                        recoveryNote!!,
-                        color = Color.White,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
+                if (chromeUp) {
+                    Row(
                         modifier = Modifier
-                            .padding(top = 14.dp)
                             .clip(RoundedCornerShape(999.dp))
-                            .background(Color(0xCC101010))
+                            .background(Color(0xCC101012))
                             .border(0.5.dp, Color.White.copy(alpha = 0.28f), RoundedCornerShape(999.dp))
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(
+                            color = Color.White.copy(alpha = 0.9f),
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            recoveryNote
+                                ?: if (playlist.size > 1) {
+                                    "Buffering · Source ${sourceIndex + 1} of ${playlist.size}"
+                                } else {
+                                    "Buffering"
+                                },
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                } else {
+                    CircularProgressIndicator(
+                        color = Color.White.copy(alpha = 0.9f),
+                        strokeWidth = 2.5.dp,
+                        modifier = Modifier.size(36.dp),
                     )
+                    if (recoveryNote != null) {
+                        Text(
+                            recoveryNote!!,
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                            modifier = Modifier
+                                .padding(top = 14.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(Color(0xCC101010))
+                                .border(0.5.dp, Color.White.copy(alpha = 0.28f), RoundedCornerShape(999.dp))
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                        )
+                    }
                 }
             }
         }
@@ -3907,7 +3961,10 @@ fun PlayerScreen(
                     AniFusePlayerChrome(
                         title = title,
                         episodeLine = if (isMovie) "Movie" else "Episode $episode",
-                        statusPill = "$res · $mode",
+                        statusPill = listOfNotNull(
+                            source?.serverName?.takeIf { it.isNotBlank() },
+                            "$res · $mode",
+                        ).joinToString(" · "),
                         playing = playing,
                         speedLabel = speedLabel(playbackSpeed),
                         showEpisodes = !isMovie && onPickEpisode != null && totalEpisodes > 1,
@@ -3928,7 +3985,8 @@ fun PlayerScreen(
                             controlsVisible = false
                         },
                         onSettings = {
-                            panel = PlayerMenuPage.Quality
+                            sourcePanelFocus = false
+                            panel = PlayerMenuPage.Root
                             controlsVisible = true
                         },
                         onPlayPause = {
@@ -3942,6 +4000,7 @@ fun PlayerScreen(
                             controlsVisible = true
                         },
                         onSources = {
+                            sourcePanelFocus = true
                             panel = PlayerMenuPage.Quality
                             controlsVisible = true
                         },

@@ -88,6 +88,7 @@ import site.anikitty.app.ui.components.KittySectionHeading
 import site.anikitty.app.ui.components.StageGlassDisc
 import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.KittyGlassShape
+import site.anikitty.app.ui.theme.kittyFloatingChrome
 import site.anikitty.app.ui.theme.KittyHaptics
 import site.anikitty.app.ui.theme.LocalKittyPalette
 
@@ -276,7 +277,6 @@ fun ExtensionStoreFeed(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(palette.page)
             .windowInsetsPadding(WindowInsets.statusBars)
             .padding(bottom = 100.dp),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
@@ -436,17 +436,19 @@ fun ExtensionStoreFeed(
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it.take(80) },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .kittyFloatingChrome(shape = RoundedCornerShape(18.dp), elevation = 10.dp),
                 singleLine = true,
                 placeholder = { Text("Search extensions", color = palette.faint) },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = palette.text,
                     unfocusedTextColor = palette.text,
                     cursorColor = palette.accent,
-                    focusedBorderColor = palette.accent,
-                    unfocusedBorderColor = palette.hairline,
-                    focusedContainerColor = palette.surface,
-                    unfocusedContainerColor = palette.surface,
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
                 ),
                 leadingIcon = {
                     AnimatedSearchIcon(
@@ -461,7 +463,7 @@ fun ExtensionStoreFeed(
                         }
                     }
                 },
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(18.dp),
             )
         }
 

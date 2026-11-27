@@ -63,6 +63,7 @@ import kotlinx.coroutines.launch
 import site.anikitty.app.data.anilist.AniListClient
 import site.anikitty.app.data.anilist.AnimeSummary
 import site.anikitty.app.data.friendlyFailure
+import site.anikitty.app.ui.components.KittyEmptyState
 import site.anikitty.app.ui.components.KittyBottomSheet
 import site.anikitty.app.ui.components.KittyChip
 import site.anikitty.app.ui.components.StageGlassDisc
@@ -344,15 +345,13 @@ fun DiscoverFeed(
                 }
                 if (error != null && trending.isEmpty()) {
                     item {
-                        Column(
+                        KittyEmptyState(
+                            title = "Couldn't load Discover",
+                            body = error ?: "Check your connection and try again.",
+                            actionLabel = "Try again",
+                            onAction = { reload() },
                             modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            Text(error ?: "Couldn't load the catalog", color = palette.text, fontSize = 14.sp)
-                            OutlinedButton(onClick = { reload() }) {
-                                Text("Try again", color = palette.text)
-                            }
-                        }
+                        )
                     }
                     return@LazyColumn
                 }
@@ -390,11 +389,14 @@ fun DiscoverFeed(
                     item { ShimmerBox(modifier = Modifier.fillMaxWidth().padding(16.dp).height(180.dp)) }
                 } else if (grid.isEmpty()) {
                     item {
-                        Text(
-                            if (applied.active()) "Nothing matches these filters." else "Nothing in $category right now.",
-                            color = palette.muted,
-                            fontSize = 14.sp,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        KittyEmptyState(
+                            title = if (applied.active()) "No matches" else "Nothing here",
+                            body = if (applied.active()) {
+                                "Nothing matches these filters."
+                            } else {
+                                "Nothing in $category right now."
+                            },
+                            modifier = Modifier.padding(16.dp),
                         )
                     }
                 } else {

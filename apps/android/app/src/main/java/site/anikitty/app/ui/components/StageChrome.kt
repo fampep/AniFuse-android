@@ -84,7 +84,8 @@ fun StageGlassDisc(
     )
 }
 
-/** Soft glass plate with a top sheen — doors, empty states, continue art. */
+/** Soft glass plate with a top sheen — doors, empty states, continue art.
+ *  Translucent so poster color from the haze source can bleed through. */
 fun Modifier.stageGlassPlate(
     shape: Shape = RoundedCornerShape(22.dp),
     elevated: Boolean = false,
@@ -96,7 +97,7 @@ fun Modifier.stageGlassPlate(
         spotColor = Color.Black.copy(alpha = 0.34f),
     )
     .clip(shape)
-    .background(Color(0xFF101010))
+    .background(if (elevated) Color(0xE6101012) else Color(0xD6101010))
     .background(
         Brush.verticalGradient(
             listOf(StageGlassSheen, Color.Transparent),

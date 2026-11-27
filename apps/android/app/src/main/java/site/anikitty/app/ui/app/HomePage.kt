@@ -117,22 +117,23 @@ internal fun HomeBar(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Brand-first top bar — Animo layout, AniFuse monochrome.
+        // Brand is the hero; "Tonight" is the supporting beat.
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 "ANIFUSE",
-                color = palette.muted,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 11.sp,
-                letterSpacing = 1.8.sp,
-            )
-            Text(
-                "Tonight",
                 color = ink,
                 fontWeight = FontWeight.Black,
                 fontSize = 28.sp,
                 letterSpacing = (-1.1).sp,
                 maxLines = 1,
+            )
+            Text(
+                "Tonight",
+                color = palette.muted,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                letterSpacing = 0.4.sp,
+                modifier = Modifier.padding(top = 2.dp),
             )
         }
         if (LocalDemoMode.current) {
