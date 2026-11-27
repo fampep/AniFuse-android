@@ -45,4 +45,34 @@ class PlayableWarmCacheTest {
         assertNull(PlayableWarmCache.peek(3, 4, "dub", nowMs = 20L))
         assertEquals(1, PlayableWarmCache.peek(3, 4, "SUB", nowMs = 20L)?.size)
     }
+
+    @Test
+    fun liveLaneBeatsNextWhenProbing() = kotlinx.coroutines.runBlocking {
+        PlayableWarmCache.put(
+            11,
+            3,
+            "sub",
+            listOf(PlayableSource(url = "https://cdn.example/next.m3u8")),
+            lane = PlayableWarmCache.LANE_NEXT,
+            nowMs = 10L,
+        )
+        PlayableWarmCache.put(
+            11,
+            3,
+            "sub",
+            listOf(PlayableSource(url = "https://cdn.example/live.m3u8")),
+            lane = PlayableWarmCache.LANE_LIVE,
+            nowMs = 20L,
+        )
+        val hit = takeProbedWarm(
+            anilistId = 11,
+            episode = 3,
+            audio = "sub",
+            nowMs = 30L,
+            probe = { it },
+        )
+        assertEquals("https://cdn.example/live.m3u8", hit.single().url)
+        assertNull(PlayableWarmCache.peek(11, 3, "sub", PlayableWarmCache.LANE_LIVE, nowMs = 40L))
+        assertEquals(1, PlayableWarmCache.peek(11, 3, "sub", PlayableWarmCache.LANE_NEXT, nowMs = 40L)?.size)
+    }
 }

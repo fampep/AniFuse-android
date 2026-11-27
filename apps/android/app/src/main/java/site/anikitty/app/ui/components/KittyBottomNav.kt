@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -162,7 +163,15 @@ fun KittyBottomNav(
                         .padding(horizontal = 2.dp)
                         .clip(RoundedCornerShape(22.dp))
                         .background(dock.selected)
-                        .border(0.5.dp, Color.White.copy(alpha = 0.28f), RoundedCornerShape(22.dp)),
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.White.copy(alpha = if (nightDock) 0.14f else 0.10f),
+                                    Color.Transparent,
+                                ),
+                            ),
+                        )
+                        .border(0.5.dp, Color.White.copy(alpha = 0.32f), RoundedCornerShape(22.dp)),
                 )
             }
             Row(

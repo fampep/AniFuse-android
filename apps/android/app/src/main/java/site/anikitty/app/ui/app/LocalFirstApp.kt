@@ -892,14 +892,11 @@ fun LocalFirstApp(
                                 usedFallback = false,
                             )
                         } else {
-                            val warmedRaw = site.anikitty.app.data.servers.PlayableWarmCache.take(
+                            val warmed = site.anikitty.app.data.servers.takeProbedWarm(
                                 anilistId = current.anime.id,
                                 episode = nextEpisode,
                                 audio = nextAudio,
                             )
-                            val warmed = warmedRaw?.let {
-                                site.anikitty.app.data.servers.PlayableWarmProbe.filterAlive(it)
-                            }.orEmpty()
                             if (warmed.isNotEmpty()) {
                                 val warmServer = runCatching {
                                     streamServers.selectedResolver().server
@@ -948,6 +945,13 @@ fun LocalFirstApp(
                         }
                         ensureActive()
                         val commit = languageToSave(failed = false) ?: return@launch
+                        site.anikitty.app.data.servers.PlayableWarmCache.put(
+                            anilistId = current.anime.id,
+                            episode = nextEpisode,
+                            audio = nextAudio,
+                            sources = resolved.sources,
+                            lane = site.anikitty.app.data.servers.PlayableWarmCache.LANE_LIVE,
+                        )
                         site.anikitty.app.data.servers.SourceBadgeCache.remember(
                             context,
                             current.anime.id,
@@ -1052,6 +1056,13 @@ fun LocalFirstApp(
                             audio = playerAudio,
                             titleHint = current.anime.streamTitleHint(),
                         ).sources
+                        site.anikitty.app.data.servers.PlayableWarmCache.put(
+                            anilistId = current.anime.id,
+                            episode = current.episode,
+                            audio = playerAudio,
+                            sources = resolved,
+                            lane = site.anikitty.app.data.servers.PlayableWarmCache.LANE_LIVE,
+                        )
                         site.anikitty.app.data.servers.SourceBadgeCache.remember(
                             context,
                             current.anime.id,
@@ -2597,19 +2608,43 @@ private fun TitleDetailScreen(
             }
             runCatching {
                 historyDao.touchFromCatalog(detail)
-                val resolved = streamServers.resolveWithFailover(
+                val warmed = site.anikitty.app.data.servers.takeProbedWarm(
                     anilistId = detail.id,
                     episode = playEpisode,
                     audio = audio,
-                    titleHint = detail.streamTitleHint(),
-                    onAttempt = { name, index, total ->
-                        status = if (total <= 1) {
-                            "Getting stream via $name…"
-                        } else {
-                            "Trying $name (${index + 1}/$total)…"
-                        }
-                    },
                 )
+                val resolved = if (warmed.isNotEmpty()) {
+                    status = "Opening warm stream…"
+                    val warmServer = runCatching {
+                        streamServers.selectedResolver().server
+                    }.getOrElse {
+                        site.anikitty.app.data.servers.StreamServer(
+                            id = "warm-cache",
+                            name = warmed.firstOrNull()?.serverName ?: "Warm",
+                            description = "Live reopen",
+                        )
+                    }
+                    site.anikitty.app.data.servers.ResolveFailoverResult(
+                        sources = warmed,
+                        server = warmServer,
+                        usedFallback = false,
+                        attempted = listOf("warm-live: ok"),
+                    )
+                } else {
+                    streamServers.resolveWithFailover(
+                        anilistId = detail.id,
+                        episode = playEpisode,
+                        audio = audio,
+                        titleHint = detail.streamTitleHint(),
+                        onAttempt = { name, index, total ->
+                            status = if (total <= 1) {
+                                "Getting stream via $name…"
+                            } else {
+                                "Trying $name (${index + 1}/$total)…"
+                            }
+                        },
+                    )
+                }
                 historyDao.get(detail.id)?.let {
                     val sameEpisode = it.episode == playEpisode
                     historyDao.upsert(
@@ -2622,6 +2657,13 @@ private fun TitleDetailScreen(
                     )
                 }
                 lastWatchedEp = playEpisode
+                site.anikitty.app.data.servers.PlayableWarmCache.put(
+                    anilistId = detail.id,
+                    episode = playEpisode,
+                    audio = audio,
+                    sources = resolved.sources,
+                    lane = site.anikitty.app.data.servers.PlayableWarmCache.LANE_LIVE,
+                )
                 site.anikitty.app.data.servers.SourceBadgeCache.remember(
                     context,
                     detail.id,
