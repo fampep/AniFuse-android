@@ -69,9 +69,14 @@ import site.anikitty.app.BuildConfig
 import site.anikitty.app.data.friendlyFailure
 import site.anikitty.app.data.extensions.ExtensionManifest
 import site.anikitty.app.data.extensions.ExtensionStoreClient
+import site.anikitty.app.data.extensions.StoreCardRole
 import site.anikitty.app.data.extensions.StoreListing
+import site.anikitty.app.data.extensions.builtinStoreListings
 import site.anikitty.app.data.extensions.explainInstallFailure
+import site.anikitty.app.data.extensions.isCatalogSite
 import site.anikitty.app.data.extensions.isRetiredExtension
+import site.anikitty.app.data.extensions.storeCardRole
+import site.anikitty.app.data.extensions.storeListingMatches
 import site.anikitty.app.data.servers.ServerCatalog
 import site.anikitty.app.data.servers.StreamServer
 import site.anikitty.app.ui.components.AnimatedSearchIcon
@@ -180,6 +185,10 @@ fun ExtensionStoreFeed(
                 protocol = existing.protocol?.takeIf { it.isNotBlank() } ?: fallback.protocol,
             )
         }
+        for (site in builtinStoreListings()) {
+            if (isRetiredExtension(site.id, site.name)) continue
+            if (byId[site.id] == null) byId[site.id] = site
+        }
         byId.values.toList()
     }
 
@@ -188,12 +197,7 @@ fun ExtensionStoreFeed(
         val base = if (q.isEmpty()) {
             mergedListings
         } else {
-            mergedListings.filter { listing ->
-                listing.name.contains(q, ignoreCase = true) ||
-                    listing.description.contains(q, ignoreCase = true) ||
-                    listing.author.contains(q, ignoreCase = true) ||
-                    listing.id.contains(q, ignoreCase = true)
-            }
+            mergedListings.filter { storeListingMatches(it, q) }
         }
         // Live site extensions are first-class again — never force-deprecate them.
         base.map { listing ->
@@ -214,18 +218,28 @@ fun ExtensionStoreFeed(
     }
 
     val rows = remember(filtered, bundledIds) {
-        val onPhone = filtered.filter { it.id in bundledIds && !it.deprecated }
-        val community = filtered.filter { it.id !in bundledIds && !it.deprecated }
+        val onPhone = filtered.filter { it.id in bundledIds && !it.deprecated && it.playsOnDevice }
+        val catalogSites = filtered.filter { isCatalogSite(it) && !it.deprecated }
+        val community = filtered.filter { it.id !in bundledIds && !it.deprecated && it.playsOnDevice }
         val deprecated = filtered.filter { it.deprecated }
         buildList {
             if (onPhone.isNotEmpty()) {
                 add(
                     StoreRow.Head(
                         title = "Live sites on this phone",
-                        subtitle = "Direct scrapers. Failover races every enabled source.",
+                        subtitle = "These resolvers race on the phone. AniList stays the catalog.",
                     ),
                 )
                 onPhone.forEach { add(StoreRow.Card(it)) }
+            }
+            if (catalogSites.isNotEmpty()) {
+                add(
+                    StoreRow.Head(
+                        title = "Sites on the list",
+                        subtitle = "Known origins. They join playback when an extension for them is installed.",
+                    ),
+                )
+                catalogSites.forEach { add(StoreRow.Card(it)) }
             }
             if (community.isNotEmpty()) {
                 add(
@@ -301,6 +315,29 @@ fun ExtensionStoreFeed(
             }
         }
 
+        item(key = "how", contentType = "how") {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .stageGlassPlate(shape = RoundedCornerShape(22.dp))
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+            ) {
+                Text(
+                    "How extensions work",
+                    color = palette.text,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                )
+                Text(
+                    "AniList is the catalog. Live sites on this phone race for the file. A site on the list, such as AniVault, is known here and opens in the browser until an extension that can resolve it is installed.",
+                    color = palette.muted,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+        }
+
         item {
             OutlinedTextField(
                 value = query,
@@ -349,12 +386,21 @@ fun ExtensionStoreFeed(
             }
         }
 
-        lazyItems(rows, key = { row ->
-            when (row) {
-                is StoreRow.Head -> "head-${row.title}"
-                is StoreRow.Card -> "store-${row.listing.id}"
-            }
-        }) { row ->
+        lazyItems(
+            rows,
+            key = { row ->
+                when (row) {
+                    is StoreRow.Head -> "head-${row.title}"
+                    is StoreRow.Card -> "store-${row.listing.id}"
+                }
+            },
+            contentType = { row ->
+                when (row) {
+                    is StoreRow.Head -> "head"
+                    is StoreRow.Card -> "card"
+                }
+            },
+        ) { row ->
             if (row is StoreRow.Head) {
                 KittySectionHeading(
                     title = row.title,
@@ -379,7 +425,7 @@ fun ExtensionStoreFeed(
                     .stageGlassPlate(shape = KittyGlassShape, elevated = selected)
                     .then(
                         if (selected) {
-                            Modifier.border(1.dp, palette.accent, KittyGlassShape)
+                            Modifier.border(0.5.dp, palette.accent, KittyGlassShape)
                         } else {
                             Modifier
                         },
@@ -519,34 +565,57 @@ fun ExtensionStoreFeed(
                             )
                         }
                     }
-                    if (selected) {
-                        OutlinedButton(
+                    val role = storeCardRole(
+                        selected = selected,
+                        deprecated = listing.deprecated,
+                        onDevice = onDevice,
+                        bundled = isBundled,
+                        sample = listing.id == "site.anikitty.example.hello",
+                        catalogSite = isCatalogSite(listing),
+                    )
+                    when (role) {
+                        StoreCardRole.Selected -> OutlinedButton(
                             onClick = { status = "Already using ${listing.name}" },
                             enabled = !busy,
                             modifier = Modifier.height(48.dp),
                             shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, palette.accent),
+                            border = BorderStroke(0.5.dp, palette.accent),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = palette.accent),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                         ) {
                             Text("Selected", fontWeight = FontWeight.Bold)
                         }
-                    } else if (listing.deprecated) {
-                        Text(
-                            "Deprecated — playback now goes through AniFuse",
+                        StoreCardRole.Deprecated -> Text(
+                            "Not in the playback race",
                             style = MaterialTheme.typography.labelSmall,
                             color = palette.faint,
                             modifier = Modifier.padding(vertical = 12.dp),
                         )
-                    } else {
-                        val sample = listing.id == "site.anikitty.example.hello"
-                        Button(
+                        StoreCardRole.OpenSite -> Button(
                             onClick = {
-                                when {
-                                    sample && !onDevice && !isBundled -> {
-                                        status = "Hello is a sample listing, not a stream"
-                                    }
-                                    onDevice || isBundled -> {
+                                val site = listing.siteUrl
+                                if (site.isNullOrBlank()) {
+                                    status = "${listing.name} is on the list"
+                                } else {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(site)))
+                                }
+                            },
+                            enabled = !busy,
+                            modifier = Modifier.height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = palette.accent,
+                                contentColor = palette.onAccent,
+                            ),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        ) {
+                            Text("Open site", fontWeight = FontWeight.Bold)
+                        }
+                        else -> Button(
+                            onClick = {
+                                when (role) {
+                                    StoreCardRole.Example -> status = "Hello is a sample listing, not a stream"
+                                    StoreCardRole.Use -> {
                                         catalog.select(listing.id)
                                         status = "Selected ${listing.name}"
                                     }
@@ -566,7 +635,7 @@ fun ExtensionStoreFeed(
                                     }
                                 }
                             },
-                            enabled = !busy && !(sample && !onDevice && !isBundled),
+                            enabled = !busy && role != StoreCardRole.Example,
                             modifier = Modifier.height(48.dp),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(
@@ -578,8 +647,8 @@ fun ExtensionStoreFeed(
                             Text(
                                 when {
                                     busy && busyId == listing.id -> "Installing…"
-                                    onDevice || isBundled -> "Use"
-                                    sample -> "Example"
+                                    role == StoreCardRole.Use -> "Use"
+                                    role == StoreCardRole.Example -> "Example"
                                     else -> "Install"
                                 },
                                 fontWeight = FontWeight.Bold,
@@ -635,8 +704,8 @@ fun ExtensionStoreFeed(
                     .clip(KittyGlassShape)
                     .background(if (showGithub) palette.text.copy(alpha = 0.08f) else palette.surface)
                     .border(
-                        1.dp,
-                        if (showGithub) palette.accent.copy(alpha = 0.55f) else palette.hairline,
+                        0.5.dp,
+                        if (showGithub) palette.accent.copy(alpha = 0.7f) else palette.hairline,
                         KittyGlassShape,
                     )
                     .clickable { showGithub = !showGithub }
