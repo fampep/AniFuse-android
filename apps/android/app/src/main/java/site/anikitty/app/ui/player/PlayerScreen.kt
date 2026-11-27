@@ -1068,12 +1068,15 @@ fun PlayerScreen(
         }
     }
     val playbackOwner = remember { Any() }
-    LaunchedEffect(ready, source?.url, source?.leadKey, playbackOwner) {
+    LaunchedEffect(ready, source?.url, playbackOwner) {
         if (!ready) return@LaunchedEffect
         val host = playbackHost(source?.url.orEmpty())
         if (host.isNotEmpty()) PlaybackHostHealth.notePlaying(host, playbackOwner)
+    }
+    LaunchedEffect(playing, source?.url, source?.leadKey, anilistId) {
+        if (!playing) return@LaunchedEffect
         val key = source?.leadKey
-        if (!key.isNullOrBlank()) AniVaultLead.note(anilistId, audio, key)
+        if (!key.isNullOrBlank()) AniVaultLead.note(anilistId, key)
     }
     DisposableEffect(playbackOwner) {
         onDispose {

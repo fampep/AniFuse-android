@@ -182,6 +182,12 @@ internal fun anivaultButtons(audio: String): List<AniVaultButton> = when {
 internal fun anivaultAskKey(button: AniVaultButton): String =
     "${button.endpoint}|${button.audio}|${button.server.orEmpty().trim().lowercase()}"
 
+/** Audio mode baked into a lead key. Empty when the key is not one of ours. */
+internal fun anivaultLeadMode(leadKey: String): String? {
+    val mode = leadKey.split('|').getOrNull(1)?.trim()?.lowercase().orEmpty()
+    return mode.takeIf { it.isNotEmpty() && leadKey.split('|').size == 3 }
+}
+
 /** The server that played this show last, then every other server in site order. */
 internal fun anivaultLeadFirst(buttons: List<AniVaultButton>, leadKey: String?): List<AniVaultButton> {
     if (leadKey.isNullOrBlank()) return buttons
@@ -333,10 +339,11 @@ internal object AniVaultLead {
         }
     }
 
-    fun note(anilistId: Int, audio: String, leadKey: String) {
-        if (anilistId <= 0 || leadKey.isBlank()) return
+    fun note(anilistId: Int, leadKey: String) {
+        val mode = anivaultLeadMode(leadKey) ?: return
+        if (anilistId <= 0) return
         synchronized(lock) {
-            memory[slot(anilistId, audio)] = leadKey.trim()
+            memory[slot(anilistId, mode)] = leadKey.trim()
             saveLocked()
         }
     }

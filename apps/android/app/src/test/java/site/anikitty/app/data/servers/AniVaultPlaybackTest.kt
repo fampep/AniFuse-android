@@ -111,7 +111,8 @@ class AniVaultPlaybackTest {
         AniVaultLead.reset()
         val hd2 = anivaultButtons("sub").first { it.server == "Hd-2" }
         val key = anivaultAskKey(hd2)
-        AniVaultLead.note(21, "Sub", key)
+        AniVaultLead.note(21, key)
+        assertEquals("sub", anivaultLeadMode(key))
         val next = anivaultLeadFirst(anivaultButtons("sub"), AniVaultLead.preferred(21, "sub"))
         assertEquals("Hd-2", next.first().server)
         assertEquals("Hd-1", next[1].server)
@@ -120,6 +121,7 @@ class AniVaultPlaybackTest {
             "Hd-1",
             anivaultLeadFirst(anivaultButtons("dub"), AniVaultLead.preferred(21, "sub")).first().server,
         )
+        assertNull(AniVaultLead.preferred(21, "dub"))
         AniVaultLead.attach(dir)
         assertEquals(key, AniVaultLead.preferred(21, "sub"))
         val files = listOf(
