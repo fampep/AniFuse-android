@@ -215,8 +215,13 @@ private fun ChromeIcon(icon: ImageVector, description: String, onClick: () -> Un
         modifier = Modifier
             .size(44.dp)
             .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.08f))
-            .border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape)
+            .background(Color(0xCC121214))
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
+                ),
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape)
             .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

@@ -26,10 +26,10 @@ val KittyGlassShapeTight = RoundedCornerShape(16.dp)
 val KittyGlassShapePill = RoundedCornerShape(999.dp)
 
 /** Floating dock / top chrome — translucent so artwork bleeds through. */
-val KittyDockFill = Color(0xB30E0E0E)
-val KittyDockStroke = Color(0x33FFFFFF)
-val KittyChromeFill = Color(0xCC121212)
-val KittyChromeStroke = Color(0x26FFFFFF)
+val KittyDockFill = Color(0xD60A0A0C)
+val KittyDockStroke = Color(0x47FFFFFF)
+val KittyChromeFill = Color(0xD4121214)
+val KittyChromeStroke = Color(0x38FFFFFF)
 
 /** Solid dark panel — no frosted sheen. */
 fun Modifier.kittyGlass(

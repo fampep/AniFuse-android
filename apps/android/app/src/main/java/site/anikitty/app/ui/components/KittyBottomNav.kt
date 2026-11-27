@@ -94,7 +94,7 @@ private fun dockColors(): DockColors {
             selected = Color.White,
             idle = Color(0xFF8A8A8A),
             ink = Color(0xFF080808),
-            sheenTop = Color.White.copy(alpha = 0.08f),
+            sheenTop = Color.White.copy(alpha = 0.16f),
         )
     } else {
         DockColors(
@@ -103,7 +103,7 @@ private fun dockColors(): DockColors {
             selected = palette.accent,
             idle = palette.muted,
             ink = palette.onAccent,
-            sheenTop = Color.White.copy(alpha = 0.35f),
+            sheenTop = Color.White.copy(alpha = 0.42f),
         )
     }
 }

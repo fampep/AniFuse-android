@@ -501,13 +501,21 @@ internal fun PlayerValueCard(
     audioSelected: Boolean,
     onAudio: () -> Unit,
     onMore: () -> Unit,
+    sourceSelected: Boolean = false,
+    onSource: (() -> Unit)? = null,
 ) {
+    val shape = RoundedCornerShape(20.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xFF14151A))
-            .border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(20.dp))
+            .clip(shape)
+            .background(Color(0xCC101012))
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
+                ),
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.14f), shape)
             .padding(vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -515,8 +523,8 @@ internal fun PlayerValueCard(
             icon = Icons.Rounded.Dns,
             label = "Source",
             value = sourceLabel,
-            accent = false,
-            onClick = null,
+            accent = sourceSelected,
+            onClick = onSource,
             modifier = Modifier.weight(1f),
         )
         ValueCellDivider()
@@ -682,17 +690,22 @@ private fun ActionCircle(
                 .clip(CircleShape)
                 .background(
                     if (active) {
-                        PlayerChrome.Accent.copy(alpha = 0.14f)
+                        Color.White.copy(alpha = 0.94f)
                     } else {
-                        Color.White.copy(alpha = 0.04f)
+                        Color(0xCC141416)
                     },
+                )
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.White.copy(alpha = if (active) 0.0f else 0.10f), Color.Transparent),
+                    ),
                 )
                 .border(
                     1.dp,
                     if (active) {
-                        PlayerChrome.Accent.copy(alpha = 0.85f)
+                        Color.White
                     } else {
-                        Color.White.copy(alpha = 0.14f)
+                        Color.White.copy(alpha = 0.16f)
                     },
                     CircleShape,
                 ),
@@ -703,8 +716,8 @@ private fun ActionCircle(
                 contentDescription = null,
                 tint = when {
                     !enabled -> Color.White.copy(alpha = 0.3f)
-                    active -> PlayerChrome.Accent
-                    else -> Color.White.copy(alpha = 0.88f)
+                    active -> Color(0xFF080808)
+                    else -> Color.White.copy(alpha = 0.92f)
                 },
                 modifier = Modifier.size(23.dp),
             )
@@ -713,10 +726,10 @@ private fun ActionCircle(
             label,
             color = when {
                 !enabled -> Color.White.copy(alpha = 0.35f)
-                active -> PlayerChrome.Accent
-                else -> Color.White.copy(alpha = 0.75f)
+                active -> Color.White
+                else -> Color.White.copy(alpha = 0.72f)
             },
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.SemiBold,
             fontSize = 11.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

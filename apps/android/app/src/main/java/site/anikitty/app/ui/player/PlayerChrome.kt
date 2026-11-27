@@ -88,26 +88,30 @@ internal fun PlayerPageBar(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val barShape = RoundedCornerShape(18.dp)
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout))
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .clip(barShape)
+            .background(Color(0xD6101012))
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xF0101012), Color(0xE00B0C0E)),
+                    listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
                 ),
             )
-            .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout))
-            .padding(horizontal = 6.dp, vertical = 6.dp),
+            .border(1.dp, Color.White.copy(alpha = 0.14f), barShape)
+            .padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ChromeDisc(onClick = onBack, size = 48.dp) {
+        ChromeDisc(onClick = onBack, size = 44.dp) {
             Icon(
                 Icons.AutoMirrored.Rounded.ArrowBack,
                 contentDescription = "Back",
                 tint = Color.White,
             )
         }
-        // One line, like the reference bar: title · episode · show.
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -158,6 +162,8 @@ internal fun PlayerEpisodeShelf(
     qualityLabel: String = "Auto",
     qualitySelected: Boolean = false,
     onQuality: () -> Unit = {},
+    sourceSelected: Boolean = false,
+    onSource: () -> Unit = {},
     audioSelected: Boolean = false,
     onAudio: () -> Unit = {},
     onMore: () -> Unit = {},
@@ -225,17 +231,18 @@ internal fun PlayerEpisodeShelf(
                         headline,
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 21.sp,
-                        letterSpacing = (-0.4).sp,
+                        fontSize = 22.sp,
+                        letterSpacing = (-0.5).sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         "Episode $episode · ${if (audio == "dub") "DUB" else "SUB"}",
-                        color = Color.White.copy(alpha = 0.55f),
-                        fontWeight = FontWeight.Medium,
+                        color = Color.White.copy(alpha = 0.58f),
+                        fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp,
-                        modifier = Modifier.padding(top = 2.dp),
+                        letterSpacing = 0.2.sp,
+                        modifier = Modifier.padding(top = 4.dp),
                     )
                 }
             }
@@ -246,6 +253,8 @@ internal fun PlayerEpisodeShelf(
                 qualityLabel = qualityLabel,
                 qualitySelected = qualitySelected,
                 onQuality = onQuality,
+                sourceSelected = sourceSelected,
+                onSource = onSource,
                 audioLabel = audioLabel,
                 audioSelected = audioSelected,
                 onAudio = onAudio,

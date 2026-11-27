@@ -134,13 +134,13 @@ import site.anikitty.app.data.servers.ServerCatalog
 import site.anikitty.app.ui.components.EpisodeSlide
 import site.anikitty.app.ui.icons.FluentuiSystemIconsBookmarkFilled
 import site.anikitty.app.ui.icons.FluentuiSystemIconsBookmarkOutline
-import site.anikitty.app.ui.icons.FluentuiSystemIconsCalendarClockFilled
-import site.anikitty.app.ui.icons.FluentuiSystemIconsCalendarClockOutline
 import site.anikitty.app.ui.icons.FluentuiSystemIconsHomeFilled
 import site.anikitty.app.ui.icons.FluentuiSystemIconsHomeOutline
 import site.anikitty.app.ui.icons.FluentuiSystemIconsMoviesAndTvFilled
+import site.anikitty.app.ui.icons.FluentuiSystemIconsMoviesAndTvOutline
 import site.anikitty.app.ui.icons.FluentuiSystemIconsPersonFilled
 import site.anikitty.app.ui.icons.FluentuiSystemIconsPersonOutline
+import site.anikitty.app.ui.icons.FluentuiSystemIconsSearchSparkleFilled
 import site.anikitty.app.ui.icons.FluentuiSystemIconsSearchSparkleOutline
 import site.anikitty.app.ui.components.KittyBottomNav
 import site.anikitty.app.ui.components.LocalPosterFlight
@@ -360,10 +360,15 @@ fun LocalFirstApp(
             KittyNavTab(
                 "discover",
                 "Discover",
-                FluentuiSystemIconsMoviesAndTvFilled,
+                FluentuiSystemIconsMoviesAndTvOutline,
                 FluentuiSystemIconsMoviesAndTvFilled,
             ),
-            KittyNavTab("search", "Search", FluentuiSystemIconsSearchSparkleOutline, FluentuiSystemIconsSearchSparkleOutline),
+            KittyNavTab(
+                "search",
+                "Search",
+                FluentuiSystemIconsSearchSparkleOutline,
+                FluentuiSystemIconsSearchSparkleFilled,
+            ),
             KittyNavTab("library", "Library", FluentuiSystemIconsBookmarkOutline, FluentuiSystemIconsBookmarkFilled),
             KittyNavTab("profile", "Profile", FluentuiSystemIconsPersonOutline, FluentuiSystemIconsPersonFilled),
         )
@@ -548,6 +553,7 @@ fun LocalFirstApp(
                     anifuseApi = anifuseApi,
                     onOpen = { anime, ep -> openDetail(anime, ep) },
                     onOpenSearch = { tab = "search" },
+                    onOpenDiscover = { tab = "discover" },
                     onOpenGenre = { genre ->
                         searchGenre = genre
                         tab = "search"
@@ -1227,9 +1233,10 @@ private fun HomeFeed(
     history: List<WatchHistoryEntity>,
     historyDao: WatchHistoryDao,
     streamServers: ServerCatalog,
-    @Suppress("UNUSED_PARAMETER") anifuseApi: AnifuseApi,
+    anifuseApi: AnifuseApi,
     onOpen: (AnimeSummary, Int?) -> Unit,
     onOpenSearch: () -> Unit,
+    onOpenDiscover: () -> Unit = {},
     onOpenGenre: (String) -> Unit,
     onOpenSchedule: () -> Unit,
     onOpenAccount: () -> Unit,
@@ -1260,6 +1267,11 @@ private fun HomeFeed(
     var airingToday by remember { mutableStateOf<List<AiringSlot>>(emptyList()) }
     var latestDub by remember { mutableStateOf<List<AiringSlot>>(emptyList()) }
     var latestTick by remember { mutableIntStateOf(0) }
+    // Warm remote/provider-down cache so the next Watch Now race skips dead CDNs.
+    LaunchedEffect(demo) {
+        if (demo) return@LaunchedEffect
+        runCatching { anifuseApi.providers() }
+    }
     LaunchedEffect(demo, latestTick) {
         if (demo) {
             val now = System.currentTimeMillis() / 1000L
@@ -1702,6 +1714,16 @@ private fun HomeFeed(
                                         savedIds = savedIds,
                                         logos = heroLogos,
                                         inset = false,
+                                        onViewAll = onOpenDiscover,
+                                        heading = if (airingToday.isNotEmpty()) "Today released" else "Spotlight",
+                                    )
+                                }
+                                val reelPool = trending.filter { it.onShelf(shelf) }.ifEmpty { heroItems }
+                                if (reelPool.isNotEmpty()) item(key = "reels", contentType = "reels") {
+                                    HomeTrendingReels(
+                                        items = reelPool,
+                                        onOpen = openCatalog,
+                                        onViewAll = onOpenDiscover,
                                     )
                                 }
                             }

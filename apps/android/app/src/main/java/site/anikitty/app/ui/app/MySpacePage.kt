@@ -44,11 +44,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.rounded.Check
+import site.anikitty.app.ui.icons.FluentuiSystemIconsArrowSync
 import site.anikitty.app.ui.icons.FluentuiSystemIconsBookmarkOutline
 import site.anikitty.app.ui.icons.FluentuiSystemIconsMoviesAndTvFilled
 import site.anikitty.app.ui.icons.FluentuiSystemIconsStarFilled
+import site.anikitty.app.ui.theme.kittyGlassSoft
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -398,12 +399,18 @@ fun MySpaceFeed(
                 }
             }
             item {
+                val weekShape = RoundedCornerShape(16.dp)
                 Row(
                     modifier = Modifier
                         .padding(horizontal = 20.dp)
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(palette.surface)
+                        .kittyGlassSoft(weekShape)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.White.copy(alpha = 0.08f), Color.Transparent),
+                            ),
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.12f), weekShape)
                         .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -575,7 +582,7 @@ private fun CloudSyncBlock(
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Sync,
+                            imageVector = FluentuiSystemIconsArrowSync,
                             contentDescription = "Sync AniList",
                             tint = if (syncing) palette.text else palette.text.copy(alpha = 0.6f),
                             modifier = Modifier
@@ -863,13 +870,18 @@ private fun EmptyPanel(
     onAction: (() -> Unit)? = null,
 ) {
     val palette = LocalKittyPalette.current
+    val shape = RoundedCornerShape(16.dp)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(palette.text.copy(alpha = 0.02f))
-            .border(1.dp, palette.text.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+            .kittyGlassSoft(shape)
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = 0.06f), Color.Transparent),
+                ),
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.10f), shape)
             .padding(vertical = 40.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -1386,12 +1398,17 @@ private fun WatchSelectBar(
 ) {
     val palette = LocalKittyPalette.current
     val ready = count > 0 && !busy
+    val shape = RoundedCornerShape(16.dp)
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(palette.surface)
-            .border(0.5.dp, palette.text.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
+            .kittyGlassSoft(shape)
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = 0.08f), Color.Transparent),
+                ),
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.12f), shape)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {

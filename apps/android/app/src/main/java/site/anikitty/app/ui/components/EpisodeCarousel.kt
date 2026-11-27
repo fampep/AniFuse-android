@@ -567,7 +567,9 @@ private fun EpisodeStillCard(
                     error = { ThumbFallback(slide.number, Color.White, Color(0xFF141416)) },
                 )
             } else {
-                ShimmerBox(Modifier.fillMaxSize())
+                // No still yet — show the episode number glass plate, never an
+                // eternal shimmer that looks like a stuck load.
+                ThumbFallback(slide.number, Color.White.copy(alpha = 0.82f), Color(0xFF141416))
             }
             if (watched && progress >= 1f) {
                 Box(

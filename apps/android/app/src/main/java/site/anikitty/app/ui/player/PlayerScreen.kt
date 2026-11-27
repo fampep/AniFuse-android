@@ -372,6 +372,11 @@ fun PlayerScreen(
     /** True until the first successful resume seek or a user quality pick. */
     var allowHistoryFallback by remember { mutableStateOf(true) }
     var panel by remember { mutableStateOf(PlayerMenuPage.None) }
+    /** When true, Quality sheet leads with Sources (opened from the Source chip). */
+    var sourcePanelFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(panel) {
+        if (panel != PlayerMenuPage.Quality) sourcePanelFocus = false
+    }
     var episodeJumpFocus by remember { mutableStateOf(false) }
     var immersive by remember { mutableStateOf(true) }
     var resizeMode by remember {
@@ -2395,15 +2400,8 @@ fun PlayerScreen(
                 val resolutions = videoOptions.ifEmpty {
                     listOf(VideoOption(id = "auto", label = "Auto (best available)"))
                 }
-                PlayerMenuSectionLabel("Resolution")
-                resolutions.forEach { opt ->
-                    PlayerMenuRow(
-                        label = opt.label,
-                        selected = selectedVideoId == opt.id,
-                        onClick = { selectedVideoId = opt.id },
-                    )
-                }
-                if (playlist.size > 1) {
+                // Source chip lands on CDN picks first; Quality chip keeps resolution first.
+                if (sourcePanelFocus && playlist.isNotEmpty()) {
                     PlayerMenuSectionLabel("Sources")
                     playlist.forEachIndexed { index, src ->
                         val meta = listOfNotNull(
@@ -2412,7 +2410,38 @@ fun PlayerScreen(
                             src.audio?.takeIf { it.isNotBlank() },
                         ).joinToString(" · ").ifBlank { null }
                         PlayerMenuRow(
-                            label = src.label,
+                            label = src.label.ifBlank {
+                                src.serverName?.takeIf { it.isNotBlank() } ?: "Source ${index + 1}"
+                            },
+                            value = meta
+                                ?: src.subtitles.joinToString(", ") { it.label }
+                                    .takeIf { src.subtitles.isNotEmpty() }
+                                    .orEmpty(),
+                            selected = index == sourceIndex,
+                            onClick = { pickQuality(index) },
+                        )
+                    }
+                }
+                PlayerMenuSectionLabel("Resolution")
+                resolutions.forEach { opt ->
+                    PlayerMenuRow(
+                        label = opt.label,
+                        selected = selectedVideoId == opt.id,
+                        onClick = { selectedVideoId = opt.id },
+                    )
+                }
+                if (!sourcePanelFocus && playlist.isNotEmpty()) {
+                    PlayerMenuSectionLabel("Sources")
+                    playlist.forEachIndexed { index, src ->
+                        val meta = listOfNotNull(
+                            src.serverName?.takeIf { it.isNotBlank() },
+                            src.quality?.takeIf { it.isNotBlank() },
+                            src.audio?.takeIf { it.isNotBlank() },
+                        ).joinToString(" · ").ifBlank { null }
+                        PlayerMenuRow(
+                            label = src.label.ifBlank {
+                                src.serverName?.takeIf { it.isNotBlank() } ?: "Source ${index + 1}"
+                            },
                             value = meta
                                 ?: src.subtitles.joinToString(", ") { it.label }
                                     .takeIf { src.subtitles.isNotEmpty() }
@@ -4165,23 +4194,39 @@ fun PlayerScreen(
                     ?: source?.qualityRating?.takeIf { it.isNotBlank() }
                     ?: "Auto",
                 qualityLabel = shortQuality(qualityLabel),
-                qualitySelected = panel == PlayerMenuPage.Quality,
+                qualitySelected = panel == PlayerMenuPage.Quality && !sourcePanelFocus,
                 onQuality = {
-                    panel = if (panel == PlayerMenuPage.Quality) {
-                        PlayerMenuPage.None
+                    if (panel == PlayerMenuPage.Quality && !sourcePanelFocus) {
+                        panel = PlayerMenuPage.None
                     } else {
-                        PlayerMenuPage.Quality
+                        sourcePanelFocus = false
+                        panel = PlayerMenuPage.Quality
                     }
+                    controlsVisible = true
+                },
+                sourceSelected = panel == PlayerMenuPage.Quality && sourcePanelFocus,
+                onSource = {
+                    if (panel == PlayerMenuPage.Quality && sourcePanelFocus) {
+                        sourcePanelFocus = false
+                        panel = PlayerMenuPage.None
+                    } else {
+                        sourcePanelFocus = true
+                        panel = PlayerMenuPage.Quality
+                    }
+                    controlsVisible = true
                 },
                 audioSelected = panel == PlayerMenuPage.Audio,
                 onAudio = {
+                    sourcePanelFocus = false
                     panel = if (panel == PlayerMenuPage.Audio) {
                         PlayerMenuPage.None
                     } else {
                         PlayerMenuPage.Audio
                     }
+                    controlsVisible = true
                 },
                 onMore = {
+                    sourcePanelFocus = false
                     panel = if (panel == PlayerMenuPage.None) PlayerMenuPage.Root else PlayerMenuPage.None
                     controlsVisible = true
                 },

@@ -778,3 +778,411 @@ val FluentuiSystemIconsSettingsOutline: ImageVector
     }
 
 private var _SettingsOutline: ImageVector? = null
+
+val FluentuiSystemIconsMoviesAndTvOutline: ImageVector
+    get() {
+        if (_MoviesAndTvOutline != null) return _MoviesAndTvOutline!!
+        _MoviesAndTvOutline = ImageVector.Builder(
+            name = "movies-and-tv-outline",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(19.75f, 3.875f)
+                lineTo(19.801f, 4.035f)
+                lineTo(20.352f, 5.957f)
+                curveTo(20.457f, 6.322f, 20.272f, 6.702f, 19.934f, 6.85f)
+                lineTo(19.838f, 6.885f)
+                lineTo(9.111f, 9.96f)
+                horizontalLineTo(20.25f)
+                curveTo(20.63f, 9.961f, 20.943f, 10.243f, 20.993f, 10.609f)
+                lineTo(21f, 10.711f)
+                verticalLineTo(19.209f)
+                curveTo(21f, 20.672f, 19.858f, 21.867f, 18.417f, 21.954f)
+                lineTo(18.25f, 21.959f)
+                horizontalLineTo(5.75f)
+                curveTo(4.288f, 21.959f, 3.092f, 20.817f, 3.005f, 19.376f)
+                lineTo(3f, 19.209f)
+                verticalLineTo(10.817f)
+                lineTo(2.478f, 8.996f)
+                curveTo(2.075f, 7.59f, 2.843f, 6.126f, 4.204f, 5.645f)
+                lineTo(4.364f, 5.594f)
+                lineTo(16.379f, 2.149f)
+                curveTo(17.784f, 1.746f, 19.249f, 2.514f, 19.75f, 3.875f)
+                close()
+                moveTo(18.25f, 11.46f)
+                horizontalLineTo(4.5f)
+                verticalLineTo(19.209f)
+                curveTo(4.5f, 19.899f, 5.06f, 20.459f, 5.75f, 20.459f)
+                horizontalLineTo(18.25f)
+                curveTo(18.94f, 20.459f, 19.5f, 19.899f, 19.5f, 19.209f)
+                verticalLineTo(11.46f)
+                close()
+                moveTo(16.113f, 3.646f)
+                lineTo(4.777f, 6.891f)
+                curveTo(4.155f, 7.069f, 3.779f, 7.689f, 3.891f, 8.312f)
+                lineTo(4.02f, 8.747f)
+                lineTo(6.273f, 6.607f)
+                lineTo(7.986f, 9.698f)
+                lineTo(9.316f, 8.335f)
+                lineTo(11.029f, 5.244f)
+                lineTo(13.069f, 4.659f)
+                lineTo(14.783f, 7.75f)
+                lineTo(16.113f, 6.386f)
+                lineTo(17.634f, 3.646f)
+                close()
+            }
+        }.build()
+        return _MoviesAndTvOutline!!
+    }
+
+private var _MoviesAndTvOutline: ImageVector? = null
+
+val FluentuiSystemIconsSearchSparkleFilled: ImageVector
+    get() {
+        if (_SearchSparkleFilled != null) return _SearchSparkleFilled!!
+        _SearchSparkleFilled = ImageVector.Builder(
+            name = "search-sparkle-filled",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(11f, 2.5f)
+                curveTo(15.142f, 2.5f, 18.5f, 5.858f, 18.5f, 10f)
+                curveTo(18.5f, 11.848f, 17.831f, 13.536f, 16.73f, 14.841f)
+                lineTo(21.03f, 19.146f)
+                curveTo(21.323f, 19.439f, 21.323f, 19.914f, 21.03f, 20.207f)
+                curveTo(20.763f, 20.473f, 20.347f, 20.496f, 20.056f, 20.274f)
+                lineTo(19.97f, 20.207f)
+                lineTo(15.665f, 15.907f)
+                curveTo(14.36f, 17.008f, 12.672f, 17.677f, 10.824f, 17.677f)
+                curveTo(6.682f, 17.677f, 3.324f, 14.319f, 3.324f, 10.177f)
+                curveTo(3.324f, 6.035f, 6.682f, 2.677f, 10.824f, 2.677f)
+                close()
+                moveTo(11f, 4.25f)
+                curveTo(7.755f, 4.25f, 5.125f, 6.88f, 5.125f, 10.125f)
+                curveTo(5.125f, 13.37f, 7.755f, 16f, 11f, 16f)
+                curveTo(14.245f, 16f, 16.875f, 13.37f, 16.875f, 10.125f)
+                curveTo(16.875f, 6.88f, 14.245f, 4.25f, 11f, 4.25f)
+                close()
+                moveTo(18.484f, 8f)
+                curveTo(18.547f, 8f, 18.608f, 8.02f, 18.659f, 8.056f)
+                curveTo(18.71f, 8.092f, 18.749f, 8.142f, 18.77f, 8.201f)
+                lineTo(19.019f, 8.967f)
+                curveTo(19.096f, 9.199f, 19.227f, 9.411f, 19.4f, 9.584f)
+                curveTo(19.574f, 9.757f, 19.785f, 9.888f, 20.018f, 9.965f)
+                lineTo(20.783f, 10.213f)
+                curveTo(20.857f, 10.238f, 20.908f, 10.276f, 20.944f, 10.327f)
+                curveTo(20.981f, 10.378f, 21f, 10.439f, 21f, 10.502f)
+                curveTo(21f, 10.565f, 20.981f, 10.626f, 20.944f, 10.677f)
+                curveTo(20.908f, 10.728f, 20.857f, 10.766f, 20.798f, 10.787f)
+                lineTo(20.033f, 11.035f)
+                curveTo(19.801f, 11.112f, 19.589f, 11.243f, 19.415f, 11.416f)
+                curveTo(19.242f, 11.589f, 19.112f, 11.801f, 19.034f, 12.033f)
+                lineTo(18.785f, 12.799f)
+                curveTo(18.764f, 12.858f, 18.726f, 12.908f, 18.675f, 12.944f)
+                curveTo(18.624f, 12.98f, 18.563f, 13f, 18.5f, 13f)
+                curveTo(18.437f, 13f, 18.376f, 12.98f, 18.325f, 12.944f)
+                curveTo(18.274f, 12.908f, 18.236f, 12.858f, 18.215f, 12.799f)
+                lineTo(17.966f, 12.033f)
+                curveTo(17.889f, 11.8f, 17.759f, 11.588f, 17.586f, 11.414f)
+                curveTo(17.413f, 11.24f, 17.2f, 11.109f, 16.967f, 11.031f)
+                lineTo(16.202f, 10.783f)
+                curveTo(16.143f, 10.762f, 16.092f, 10.724f, 16.056f, 10.673f)
+                curveTo(16.02f, 10.622f, 16f, 10.561f, 16f, 10.498f)
+                curveTo(16f, 10.436f, 16.02f, 10.374f, 16.056f, 10.323f)
+                curveTo(16.092f, 10.272f, 16.143f, 10.234f, 16.202f, 10.213f)
+                lineTo(16.967f, 9.965f)
+                curveTo(17.197f, 9.886f, 17.406f, 9.754f, 17.576f, 9.581f)
+                curveTo(17.747f, 9.408f, 17.875f, 9.198f, 17.951f, 8.967f)
+                lineTo(18.199f, 8.201f)
+                curveTo(18.22f, 8.142f, 18.259f, 8.092f, 18.31f, 8.056f)
+                curveTo(18.361f, 8.02f, 18.422f, 8f, 18.484f, 8f)
+                close()
+                moveTo(14.473f, 0f)
+                curveTo(14.585f, 0f, 14.695f, 0.035f, 14.787f, 0.1f)
+                curveTo(14.879f, 0.165f, 14.948f, 0.257f, 14.985f, 0.363f)
+                lineTo(15.434f, 1.739f)
+                curveTo(15.573f, 2.158f, 15.808f, 2.539f, 16.12f, 2.851f)
+                curveTo(16.432f, 3.162f, 16.813f, 3.397f, 17.231f, 3.536f)
+                lineTo(18.609f, 3.983f)
+                curveTo(18.743f, 4.028f, 18.835f, 4.098f, 18.9f, 4.189f)
+                curveTo(18.965f, 4.281f, 19f, 4.391f, 19f, 4.504f)
+                curveTo(19f, 4.616f, 18.965f, 4.726f, 18.9f, 4.817f)
+                curveTo(18.835f, 4.909f, 18.743f, 4.979f, 18.637f, 5.017f)
+                lineTo(17.259f, 5.464f)
+                curveTo(16.84f, 5.603f, 16.46f, 5.838f, 16.148f, 6.149f)
+                curveTo(15.835f, 6.461f, 15.6f, 6.842f, 15.461f, 7.261f)
+                lineTo(15.014f, 8.637f)
+                curveTo(14.977f, 8.743f, 14.907f, 8.835f, 14.815f, 8.9f)
+                curveTo(14.723f, 8.965f, 14.613f, 9f, 14.5f, 9f)
+                curveTo(14.387f, 9f, 14.278f, 8.965f, 14.186f, 8.9f)
+                curveTo(14.094f, 8.835f, 14.024f, 8.743f, 13.986f, 8.637f)
+                lineTo(13.539f, 7.261f)
+                curveTo(13.4f, 6.842f, 13.165f, 6.461f, 12.854f, 6.146f)
+                curveTo(12.542f, 5.833f, 12.161f, 5.597f, 11.741f, 5.457f)
+                lineTo(10.363f, 5.01f)
+                curveTo(10.257f, 4.972f, 10.165f, 4.902f, 10.1f, 4.811f)
+                curveTo(10.035f, 4.719f, 10f, 4.609f, 10f, 4.496f)
+                curveTo(10f, 4.384f, 10.035f, 4.274f, 10.1f, 4.183f)
+                curveTo(10.165f, 4.091f, 10.257f, 4.021f, 10.363f, 3.983f)
+                lineTo(11.741f, 3.536f)
+                curveTo(12.155f, 3.393f, 12.53f, 3.157f, 12.837f, 2.846f)
+                curveTo(13.136f, 2.543f, 13.362f, 2.176f, 13.5f, 1.773f)
+                lineTo(13.959f, 0.363f)
+                curveTo(13.996f, 0.257f, 14.066f, 0.165f, 14.158f, 0.1f)
+                curveTo(14.25f, 0.035f, 14.36f, 0f, 14.473f, 0f)
+                close()
+            }
+        }.build()
+        return _SearchSparkleFilled!!
+    }
+
+private var _SearchSparkleFilled: ImageVector? = null
+
+val FluentuiSystemIconsAlertOutline: ImageVector
+    get() {
+        if (_AlertOutline != null) return _AlertOutline!!
+        _AlertOutline = ImageVector.Builder(
+            name = "alert-outline",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(9.042f, 19.003f)
+                curveTo(9.276f, 20.444f, 10.516f, 21.5f, 12f, 21.5f)
+                curveTo(13.484f, 21.5f, 14.724f, 20.444f, 14.958f, 19.003f)
+                horizontalLineTo(9.042f)
+                close()
+                moveTo(12f, 2f)
+                curveTo(16.079f, 2f, 19.382f, 5.253f, 19.496f, 9.323f)
+                lineTo(19.5f, 9.5f)
+                verticalLineTo(13.501f)
+                lineTo(20.793f, 15.793f)
+                curveTo(21.238f, 16.553f, 20.778f, 17.5f, 19.905f, 17.5f)
+                horizontalLineTo(4.095f)
+                curveTo(3.222f, 17.5f, 2.762f, 16.553f, 3.207f, 15.793f)
+                lineTo(4.5f, 13.501f)
+                verticalLineTo(9.5f)
+                curveTo(4.5f, 5.358f, 7.858f, 2f, 12f, 2f)
+                close()
+                moveTo(12f, 3.5f)
+                curveTo(8.686f, 3.5f, 6f, 6.186f, 6f, 9.5f)
+                verticalLineTo(13.794f)
+                lineTo(4.904f, 16f)
+                horizontalLineTo(19.096f)
+                lineTo(18f, 13.794f)
+                verticalLineTo(9.5f)
+                curveTo(18f, 6.186f, 15.314f, 3.5f, 12f, 3.5f)
+                close()
+            }
+        }.build()
+        return _AlertOutline!!
+    }
+
+private var _AlertOutline: ImageVector? = null
+
+val FluentuiSystemIconsArrowSync: ImageVector
+    get() {
+        if (_ArrowSync != null) return _ArrowSync!!
+        _ArrowSync = ImageVector.Builder(
+            name = "arrow-sync",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(16.053f, 5.084f)
+                curveTo(18.993f, 6.564f, 21f, 9.557f, 21f, 13f)
+                curveTo(21f, 17.418f, 17.418f, 21f, 13f, 21f)
+                curveTo(10.758f, 21f, 8.73f, 20.079f, 7.278f, 18.595f)
+                lineTo(8.339f, 17.534f)
+                curveTo(9.491f, 18.761f, 11.157f, 19.5f, 13f, 19.5f)
+                curveTo(16.59f, 19.5f, 19.5f, 16.59f, 19.5f, 13f)
+                curveTo(19.5f, 10.336f, 17.896f, 8.058f, 15.603f, 7.099f)
+                lineTo(14.25f, 9f)
+                horizontalLineTo(10f)
+                verticalLineTo(4.75f)
+                lineTo(11.947f, 6.916f)
+                curveTo(12.297f, 6.743f, 12.66f, 6.597f, 13.036f, 6.481f)
+                close()
+                moveTo(7.947f, 18.916f)
+                curveTo(5.007f, 17.436f, 3f, 14.443f, 3f, 11f)
+                curveTo(3f, 6.582f, 6.582f, 3f, 11f, 3f)
+                curveTo(13.242f, 3f, 15.27f, 3.921f, 16.722f, 5.405f)
+                lineTo(15.661f, 6.466f)
+                curveTo(14.509f, 5.239f, 12.843f, 4.5f, 11f, 4.5f)
+                curveTo(7.41f, 4.5f, 4.5f, 7.41f, 4.5f, 11f)
+                curveTo(4.5f, 13.664f, 6.104f, 15.942f, 8.397f, 16.901f)
+                lineTo(9.75f, 15f)
+                horizontalLineTo(14f)
+                verticalLineTo(19.25f)
+                lineTo(12.053f, 17.084f)
+                curveTo(11.703f, 17.257f, 11.34f, 17.403f, 10.964f, 17.519f)
+                close()
+            }
+        }.build()
+        return _ArrowSync!!
+    }
+
+private var _ArrowSync: ImageVector? = null
+
+val FluentuiSystemIconsHeartOutline: ImageVector
+    get() {
+        if (_HeartOutline != null) return _HeartOutline!!
+        _HeartOutline = ImageVector.Builder(
+            name = "heart-outline",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(12.82f, 5.58f)
+                lineTo(12f, 6.402f)
+                lineTo(11.18f, 5.58f)
+                curveTo(9.076f, 3.479f, 5.666f, 3.479f, 3.565f, 5.58f)
+                curveTo(1.46f, 7.685f, 1.46f, 11.095f, 3.565f, 13.2f)
+                lineTo(11.47f, 21.106f)
+                curveTo(11.763f, 21.399f, 12.237f, 21.399f, 12.53f, 21.106f)
+                lineTo(20.435f, 13.2f)
+                curveTo(22.54f, 11.095f, 22.54f, 7.685f, 20.435f, 5.58f)
+                curveTo(18.334f, 3.479f, 14.924f, 3.479f, 12.82f, 5.58f)
+                close()
+                moveTo(19.374f, 6.641f)
+                curveTo(20.875f, 8.142f, 20.875f, 10.638f, 19.374f, 12.139f)
+                lineTo(12f, 19.513f)
+                lineTo(4.626f, 12.139f)
+                curveTo(3.125f, 10.638f, 3.125f, 8.142f, 4.626f, 6.641f)
+                curveTo(6.127f, 5.14f, 8.623f, 5.14f, 10.124f, 6.641f)
+                lineTo(11.47f, 7.986f)
+                curveTo(11.763f, 8.279f, 12.237f, 8.279f, 12.53f, 7.986f)
+                lineTo(13.876f, 6.641f)
+                curveTo(15.377f, 5.14f, 17.873f, 5.14f, 19.374f, 6.641f)
+                close()
+            }
+        }.build()
+        return _HeartOutline!!
+    }
+
+private var _HeartOutline: ImageVector? = null
+
+val FluentuiSystemIconsHeartFilled: ImageVector
+    get() {
+        if (_HeartFilled != null) return _HeartFilled!!
+        _HeartFilled = ImageVector.Builder(
+            name = "heart-filled",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(12.82f, 5.58f)
+                lineTo(12f, 6.402f)
+                lineTo(11.18f, 5.58f)
+                curveTo(9.076f, 3.479f, 5.666f, 3.479f, 3.565f, 5.58f)
+                curveTo(1.46f, 7.685f, 1.46f, 11.095f, 3.565f, 13.2f)
+                lineTo(11.47f, 21.106f)
+                curveTo(11.763f, 21.399f, 12.237f, 21.399f, 12.53f, 21.106f)
+                lineTo(20.435f, 13.2f)
+                curveTo(22.54f, 11.095f, 22.54f, 7.685f, 20.435f, 5.58f)
+                curveTo(18.334f, 3.479f, 14.924f, 3.479f, 12.82f, 5.58f)
+                close()
+            }
+        }.build()
+        return _HeartFilled!!
+    }
+
+private var _HeartFilled: ImageVector? = null
+
+val FluentuiSystemIconsShareOutline: ImageVector
+    get() {
+        if (_ShareOutline != null) return _ShareOutline!!
+        _ShareOutline = ImageVector.Builder(
+            name = "share-outline",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(17f, 2.75f)
+                curveTo(18.795f, 2.75f, 20.25f, 4.205f, 20.25f, 6f)
+                curveTo(20.25f, 7.795f, 18.795f, 9.25f, 17f, 9.25f)
+                curveTo(15.795f, 9.25f, 14.748f, 8.594f, 14.193f, 7.618f)
+                lineTo(9.53f, 10.31f)
+                curveTo(9.666f, 10.679f, 9.75f, 11.078f, 9.75f, 11.5f)
+                curveTo(9.75f, 11.922f, 9.666f, 12.321f, 9.53f, 12.69f)
+                lineTo(14.193f, 15.382f)
+                curveTo(14.748f, 14.406f, 15.795f, 13.75f, 17f, 13.75f)
+                curveTo(18.795f, 13.75f, 20.25f, 15.205f, 20.25f, 17f)
+                curveTo(20.25f, 18.795f, 18.795f, 20.25f, 17f, 20.25f)
+                curveTo(15.205f, 20.25f, 13.75f, 18.795f, 13.75f, 17f)
+                curveTo(13.75f, 16.578f, 13.834f, 16.179f, 13.97f, 15.81f)
+                lineTo(9.307f, 13.118f)
+                curveTo(8.752f, 14.094f, 7.705f, 14.75f, 6.5f, 14.75f)
+                curveTo(4.705f, 14.75f, 3.25f, 13.295f, 3.25f, 11.5f)
+                curveTo(3.25f, 9.705f, 4.705f, 8.25f, 6.5f, 8.25f)
+                curveTo(7.705f, 8.25f, 8.752f, 8.906f, 9.307f, 9.882f)
+                lineTo(13.97f, 7.19f)
+                curveTo(13.834f, 6.821f, 13.75f, 6.422f, 13.75f, 6f)
+                curveTo(13.75f, 4.205f, 15.205f, 2.75f, 17f, 2.75f)
+                close()
+                moveTo(17f, 15.25f)
+                curveTo(16.034f, 15.25f, 15.25f, 16.034f, 15.25f, 17f)
+                curveTo(15.25f, 17.966f, 16.034f, 18.75f, 17f, 18.75f)
+                curveTo(17.966f, 18.75f, 18.75f, 17.966f, 18.75f, 17f)
+                curveTo(18.75f, 16.034f, 17.966f, 15.25f, 17f, 15.25f)
+                close()
+                moveTo(6.5f, 9.75f)
+                curveTo(5.534f, 9.75f, 4.75f, 10.534f, 4.75f, 11.5f)
+                curveTo(4.75f, 12.466f, 5.534f, 13.25f, 6.5f, 13.25f)
+                curveTo(7.466f, 13.25f, 8.25f, 12.466f, 8.25f, 11.5f)
+                curveTo(8.25f, 10.534f, 7.466f, 9.75f, 6.5f, 9.75f)
+                close()
+                moveTo(17f, 4.25f)
+                curveTo(16.034f, 4.25f, 15.25f, 5.034f, 15.25f, 6f)
+                curveTo(15.25f, 6.966f, 16.034f, 7.75f, 17f, 7.75f)
+                curveTo(17.966f, 7.75f, 18.75f, 6.966f, 18.75f, 6f)
+                curveTo(18.75f, 5.034f, 17.966f, 4.25f, 17f, 4.25f)
+                close()
+            }
+        }.build()
+        return _ShareOutline!!
+    }
+
+private var _ShareOutline: ImageVector? = null
+
+val FluentuiSystemIconsPlayFilled: ImageVector
+    get() {
+        if (_PlayFilled != null) return _PlayFilled!!
+        _PlayFilled = ImageVector.Builder(
+            name = "play-filled",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(5f, 5.274f)
+                curveTo(5f, 3.903f, 6.504f, 3.063f, 7.679f, 3.783f)
+                lineTo(20.037f, 11.509f)
+                curveTo(21.16f, 12.197f, 21.16f, 13.803f, 20.037f, 14.491f)
+                lineTo(7.679f, 22.217f)
+                curveTo(6.504f, 22.937f, 5f, 22.097f, 5f, 20.726f)
+                verticalLineTo(5.274f)
+                close()
+            }
+        }.build()
+        return _PlayFilled!!
+    }
+
+private var _PlayFilled: ImageVector? = null

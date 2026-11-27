@@ -209,11 +209,15 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
                 if (err is CancellationException) throw err
                 val msg = err.message?.takeIf { it.isNotBlank() } ?: err::class.java.simpleName
                 errors += "${resolver.server.name}: $msg"
+                rememberProviderDown(resolver, msg)
                 null
             }
             when {
                 sources.isNullOrEmpty() -> {
-                    if (sources != null) errors += "${resolver.server.name}: empty sources"
+                    if (sources != null) {
+                        errors += "${resolver.server.name}: empty sources"
+                        rememberProviderDown(resolver, "empty sources")
+                    }
                     null
                 }
                 else -> resolver to sources
@@ -221,6 +225,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         }
         if (raced != null) {
             val (resolver, sources) = raced.second
+            rememberProviderUp(resolver)
             val usedFallback = resolver.server.id != preferredId
             val named = namedByServer(playbackAudioLanguage(sources, audio), resolver.server.name)
             return ResolveFailoverResult(
@@ -300,6 +305,33 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
     }
 
     private fun downProviderNames(): Set<String> = providerHealth.downNames()
+
+    /** Soft-block providers that just hard-failed so the next race skips them first. */
+    private fun rememberProviderDown(resolver: StreamResolver, message: String?) {
+        val msg = message.orEmpty().lowercase()
+        val hard = "could not be reached" in msg ||
+            "blocked" in msg ||
+            "timeout" in msg ||
+            "empty sources" in msg ||
+            "403" in msg ||
+            "503" in msg ||
+            "challenge" in msg ||
+            "cloudflare" in msg
+        if (!hard) return
+        val next = providerHealth.downNames() +
+            resolver.server.id.lowercase() +
+            resolver.server.name.trim().lowercase()
+        providerHealth.writeDown(next)
+    }
+
+    private fun rememberProviderUp(resolver: StreamResolver) {
+        val down = providerHealth.downNames()
+        if (down.isEmpty()) return
+        val cleared = down -
+            resolver.server.id.lowercase() -
+            resolver.server.name.trim().lowercase()
+        if (cleared.size != down.size) providerHealth.writeDown(cleared)
+    }
 
     private companion object {
         const val KEY_SELECTED = "selected_server_id"

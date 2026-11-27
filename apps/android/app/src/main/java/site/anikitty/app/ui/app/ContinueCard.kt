@@ -273,7 +273,25 @@ fun ContinueWatchCard(
                 .background(Color(0xFF141416)),
         ) {
             if (image.isNullOrBlank()) {
-                ShimmerBox(modifier = Modifier.fillMaxSize())
+                // Poster still missing — ink plate with EP mark, not a stuck shimmer.
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.linearGradient(
+                                listOf(Color(0xFF1A1A1E), Color(0xFF0C0C0E)),
+                            ),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "EP ${shown.episode}",
+                        color = Color.White.copy(alpha = 0.55f),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        letterSpacing = 1.sp,
+                    )
+                }
             } else {
                 KittyImage(
                     url = image,

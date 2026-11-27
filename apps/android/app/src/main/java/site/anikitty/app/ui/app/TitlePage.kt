@@ -44,15 +44,17 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.Extension
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.rounded.Bookmark
-import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.PlayArrow
+import site.anikitty.app.ui.icons.FluentuiSystemIconsBookmarkFilled
+import site.anikitty.app.ui.icons.FluentuiSystemIconsBookmarkOutline
+import site.anikitty.app.ui.icons.FluentuiSystemIconsHeartFilled
+import site.anikitty.app.ui.icons.FluentuiSystemIconsHeartOutline
+import site.anikitty.app.ui.icons.FluentuiSystemIconsPlayFilled
+import site.anikitty.app.ui.icons.FluentuiSystemIconsShareOutline
+import site.anikitty.app.ui.theme.kittyGlassSoft
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -462,12 +464,16 @@ internal fun TitleStage(
                                     compact = true,
                                 )
                                 TvTitleIcon(
-                                    icon = if (favourite) Icons.Rounded.Favorite else Icons.Outlined.FavoriteBorder,
+                                    icon = if (favourite) FluentuiSystemIconsHeartFilled else FluentuiSystemIconsHeartOutline,
                                     label = "Favourite",
                                     onClick = onFavourite,
                                 )
                                 TvTitleIcon(
-                                    icon = if (listStatus != null) Icons.Rounded.Bookmark else Icons.Outlined.BookmarkBorder,
+                                    icon = if (listStatus != null) {
+                                        FluentuiSystemIconsBookmarkFilled
+                                    } else {
+                                        FluentuiSystemIconsBookmarkOutline
+                                    },
                                     label = "My List",
                                     onClick = { if (canEditList) listSheet = true else onMyList() },
                                 )
@@ -569,20 +575,24 @@ internal fun TitleStage(
                     Spacer(Modifier.height(KittySpace.sm))
                     Row(horizontalArrangement = Arrangement.spacedBy(KittySpace.sm)) {
                         TitleAction(
-                            icon = if (listStatus != null || favourite) Icons.Rounded.Bookmark else Icons.Outlined.BookmarkBorder,
+                            icon = if (listStatus != null || favourite) {
+                                FluentuiSystemIconsBookmarkFilled
+                            } else {
+                                FluentuiSystemIconsBookmarkOutline
+                            },
                             label = if (listStatus != null) listBadge(listStatus) else "My List",
                             onClick = { if (canEditList) listSheet = true else onMyList() },
                             modifier = Modifier.weight(1f),
                         )
                         TitleAction(
-                            icon = Icons.Outlined.Share,
+                            icon = FluentuiSystemIconsShareOutline,
                             label = "Share",
                             onClick = onShare,
                             modifier = Modifier.weight(1f),
                         )
                         if (trailerClick != null) {
                             TitleAction(
-                                icon = Icons.Rounded.PlayArrow,
+                                icon = FluentuiSystemIconsPlayFilled,
                                 label = "Trailer",
                                 onClick = trailerClick,
                                 modifier = Modifier.weight(1f),
@@ -913,7 +923,11 @@ internal fun TitleStage(
                     HeaderIcon(
                         onClick = { if (canEditList) listSheet = true else onMyList() },
                         description = "Watchlist",
-                        icon = if (listStatus != null) Icons.Rounded.Bookmark else Icons.Outlined.BookmarkBorder,
+                        icon = if (listStatus != null) {
+                            FluentuiSystemIconsBookmarkFilled
+                        } else {
+                            FluentuiSystemIconsBookmarkOutline
+                        },
                     )
                     HeaderIcon(
                         onClick = { detailTab = "details"; showMore = true },
@@ -935,7 +949,7 @@ internal fun TitleStage(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    if (favourite) Icons.Rounded.Favorite else Icons.Outlined.FavoriteBorder,
+                    if (favourite) FluentuiSystemIconsHeartFilled else FluentuiSystemIconsHeartOutline,
                     contentDescription = null,
                     tint = palette.text,
                     modifier = Modifier.size(20.dp),
@@ -1414,12 +1428,17 @@ private fun TitleAction(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalKittyPalette.current
+    val shape = RoundedCornerShape(KittyRadius.md)
     Column(
         modifier = modifier
             .defaultMinSize(minHeight = 52.dp)
-            .clip(RoundedCornerShape(KittyRadius.md))
-            .background(palette.surface)
-            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(KittyRadius.md))
+            .kittyGlassSoft(shape)
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = 0.08f), Color.Transparent),
+                ),
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.14f), shape)
             .spacePress(onClick)
             .padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

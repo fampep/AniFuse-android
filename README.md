@@ -3,8 +3,8 @@
 
   <h1>AniFuse</h1>
 
-  <p><strong>Your AniList, on the phone.</strong><br>
-  Browse and sign in with AniList. Watch on the device. Progress stays with you.</p>
+  <p><strong>Your AniList. On the phone. Streams from live sites.</strong><br>
+  Monochrome glass chrome. Colour stays in the artwork. Progress stays with you.</p>
 
   <p>
     <a href="https://github.com/fampep/AniFuse-android/releases/latest"><img src="https://img.shields.io/github/v/release/fampep/AniFuse-android?display_name=tag&style=for-the-badge&label=stable&labelColor=0a0a0a&color=f5f5f5" alt="Latest stable release"></a>
@@ -27,8 +27,24 @@
     <a href="https://t.me/Anikittymoe">Telegram</a>
     ·
     <a href="https://github.com/fampep/AniFuse-android/issues">Issues</a>
+    ·
+    <a href="CONTRIBUTING.md">Contributing</a>
   </p>
 </div>
+
+<p align="center">
+  <img src="docs/screenshots/home.png" alt="AniFuse Home on Pixel 8" width="220">
+  &nbsp;
+  <img src="docs/screenshots/title.png" alt="AniFuse Title page on Pixel 8" width="220">
+  &nbsp;
+  <img src="docs/screenshots/player.png" alt="AniFuse Player on Pixel 8" width="220">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/library.png" alt="AniFuse Library on Pixel 8" width="220">
+  &nbsp;
+  <img src="docs/screenshots/profile.png" alt="AniFuse Profile on Pixel 8" width="220">
+</p>
 
 > [!WARNING]
 > **Unofficial.** AniFuse is not affiliated with AniList, any studio, or any streaming site.
@@ -39,48 +55,94 @@
 >
 > **No warranty. Use at your own risk.** Install APKs only from the [releases of this repository](https://github.com/fampep/AniFuse-android/releases). A file from anywhere else is not this project.
 
-AniFuse is the Android client. Package id `site.anikitty.app` and the `anikitty://` deep link stay as they are so an existing install updates in place. The self-hosted resolver is [fampep/anifuse](https://github.com/fampep/anifuse).
+---
 
-## Install
+## What it is
 
-Android 8 or newer. Open the release, download the APK, and allow install from this source if Android asks.
-
-1. **Stable** — [latest stable release](https://github.com/fampep/AniFuse-android/releases/latest). Everyday build. The file is `AniFuse_1.2.13.apk` (the version in the name matches the release).
-2. **Dev** — [rolling APK](https://github.com/fampep/AniFuse-android/releases/download/dev/AniFuse_dev.apk), or the newest prerelease on the [releases page](https://github.com/fampep/AniFuse-android/releases). This is the build from the latest push to `main`. It can break.
-
-The same choice is inside the app under **Profile → App**: Stable or Dev. A newer build on the channel you picked shows up there.
-
-## Releases
-
-Names follow [uBlock Origin](https://github.com/gorhill/uBlock/releases). The GitHub tag and the release title are the version. There is no `v` prefix.
-
-| Channel | Name | Example | When it is published |
-| --- | --- | --- | --- |
-| Stable | `x.y.z` | `1.2.13` | Manual. Run the Release workflow with **stable** checked, or push a commit whose message contains `[stable]`. |
-| Dev / alpha | `x.y.zbN` | `1.2.13b0`, `1.2.13b1` | Every other push to `main`. `b` starts at `0` and counts up. Marked as a prerelease. |
-
-After stable `1.2.12`, the next dev builds are `1.2.13b0`, `1.2.13b1`, and so on. Cutting stable on that line publishes `1.2.13`, then `main` moves to `1.2.14b0`.
-
-Older builds used `1.2.12-dev.28` and a `v` on the tag. Those still install. A phone on `1.2.12-dev.28` treats `1.2.12b29` as newer, and `1.2.12` as newer than either. The floating `dev` tag is only a moving download. It is not a version.
-
-Each numbered release attaches `AniFuse_<version>.apk`, signed with the same key as the previous builds so it installs over them. Version name and version code live in [`VERSION`](VERSION).
-
-## The app
-
-Local-first Android app: Kotlin, Jetpack Compose, Media3. Sign-in is AniList on the device. There is no AniFuse account.
+AniFuse is a **local-first Android client** (Kotlin, Jetpack Compose, Media3).
 
 | | |
 | --- | --- |
-| **Home** | Cinematic picks, continue watching, and the shelves you keep |
-| **Discover** | Genre, year, season, format, status, and score filters |
-| **Search** | AniList search |
-| **Library** | Watching, plan to watch, completed, and downloads |
-| **Profile** | AniList stats, app builds, and settings |
-| **Player** | Sub and dub, skip intro and outro when the source has timings, speed, picture-in-picture, and Chromecast when a TV is available |
-| **Progress** | Saved on the phone, and synced to AniList when you are signed in |
-| **Look** | Black and white chrome. Colour stays in the artwork |
+| Package | `site.anikitty.app` |
+| Deep link | `anikitty://` (kept so existing installs update in place) |
+| Account | AniList on device — there is no AniFuse account |
+| Streams | Live site extensions on the phone (bundled + store). Optional self-hosted API: [fampep/anifuse](https://github.com/fampep/anifuse) |
 
-Streams go through the **AniFuse resolver API**. It asks the healthy providers and returns ranked URLs with the headers those CDNs expect. The hosted demo is the default. **Settings → AniFuse API** points the app at your own instance and shows provider health. If one source fails mid-episode, the player tries the next source and keeps the playhead. Community extensions install from the in-app store or a manifest link and can be turned off one by one. The app plays URLs. It does not upload episodes.
+Black-and-white chrome. Anime artwork carries the colour. The floating glass dock is always one thumb away from Home, Discover, Search, Library, and Profile.
+
+---
+
+## Install
+
+**Android 8 or newer.** Open a release, download the APK, allow install from this source if Android asks.
+
+| Channel | Get it | Notes |
+| --- | --- | --- |
+| **Stable** | [Latest stable](https://github.com/fampep/AniFuse-android/releases/latest) | Everyday build. Filename is `AniFuse_<version>.apk`. |
+| **Dev** | [Rolling APK](https://github.com/fampep/AniFuse-android/releases/download/dev/AniFuse_dev.apk) or newest prerelease on [Releases](https://github.com/fampep/AniFuse-android/releases) | Latest push to `main`. Can break. |
+
+Inside the app: **Profile → App** → Stable or Dev. A newer build on the channel you picked shows up there.
+
+---
+
+## Screens
+
+Pixel 8 device frames of the current monochrome glass UI (night theme, public catalog). Capture notes: [`docs/screenshots/README.md`](docs/screenshots/README.md).
+
+| Screen | What you get |
+| --- | --- |
+| **Home** | Spotlight hero, continue watching, shelves, floating glass dock |
+| **Title** | Full-bleed art, glass actions, episode stills from live sites + AniZip |
+| **Player** | Media3 — Source / Quality / Audio card, failover, PiP, Cast |
+| **Library** | Week goal, AniList lists, continue row |
+| **Profile** | AniList identity, stats, settings hub |
+
+---
+
+## Features
+
+### Browse & library
+
+- **Home** — cinematic picks, continue watching, latest sub/dub shelves
+- **Discover** — genre, year, season, format, status, score
+- **Search** — AniList search
+- **Library** — watching / plan / completed, downloads, week goal
+- **Profile** — AniList stats, look, player, extensions, builds
+
+### Playback
+
+- Sub and dub, auto next, skip intro/outro when timings exist
+- Adaptive quality, instant source failover when a CDN dies
+- Picture-in-Picture and Chromecast when a route is available
+- Progress saved on the phone and synced to AniList when signed in
+
+### Look
+
+- Black & white chrome · floating glass dock · Fluent icon set
+- Artwork and stills carry colour; AMOLED look available in settings
+
+### Sources
+
+Bundled live-site resolvers (Anikoto, AniGato, ani.pm / AniPm, AniNz, …) race with health-aware failover. Community extensions install from the in-app store or a manifest link and can be toggled one by one. The app plays URLs — it does not upload episodes.
+
+---
+
+## Releases
+
+Names follow [uBlock Origin](https://github.com/gorhill/uBlock/releases). Tag and title are the version. No `v` prefix.
+
+| Channel | Name | Example | When |
+| --- | --- | --- | --- |
+| Stable | `x.y.z` | `1.2.13` | Manual: Release workflow with **stable**, or a commit message containing `[stable]` |
+| Dev / alpha | `x.y.zbN` | `1.2.13b0` | Every other push to `main`. Prerelease. `b` counts up from `0` |
+
+After stable `1.2.12`, next dev builds are `1.2.13b0`, `1.2.13b1`, … Cutting stable publishes `1.2.13`, then `main` moves to `1.2.14b0`.
+
+Older builds used `1.2.12-dev.28` and a `v` on the tag. Those still install. Each numbered release attaches `AniFuse_<version>.apk`, signed with the same key so it installs over previous builds. Version name and code live in [`VERSION`](VERSION).
+
+The floating `dev` tag is only a moving download — not a version number.
+
+---
 
 ## Extensions
 
@@ -93,6 +155,8 @@ Streams go through the **AniFuse resolver API**. It asks the healthy providers a
 
 A link in the store is not fampep running that server. Community extensions stay with their authors.
 
+---
+
 ## Build
 
 ```bash
@@ -100,7 +164,11 @@ cd apps/android
 ./gradlew :app:assembleRelease
 ```
 
-The release APK is `apps/android/app/build/outputs/apk/release/`. Pull requests run unit tests, a debug APK, and lint. Pushes to `main` run the tests again and publish the release APK.
+Release APK: `apps/android/app/build/outputs/apk/release/`.
+
+Pull requests run unit tests, a debug APK, and lint. Pushes to `main` re-run tests and publish the release APK.
+
+---
 
 ## License
 
@@ -108,4 +176,4 @@ Copyright 2026 fampep · [Apache License 2.0](LICENSE)
 
 This product uses the TMDB API but is not endorsed or certified by TMDB.
 
-Questions and bugs → [GitHub issues](https://github.com/fampep/AniFuse-android/issues). Chat → [Telegram](https://t.me/Anikittymoe). Support → [Ko-fi](https://ko-fi.com/E6C820K9H8). Pull requests → [CONTRIBUTING.md](CONTRIBUTING.md).
+Questions and bugs → [GitHub issues](https://github.com/fampep/AniFuse-android/issues). Chat → [Telegram](https://t.me/Anikittymoe). Support → [Ko-fi](https://ko-fi.com/E6C820K9H8).

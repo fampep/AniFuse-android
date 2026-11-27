@@ -50,13 +50,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Extension
-import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Tv
-import androidx.compose.material.icons.outlined.Cloud
-import androidx.compose.material.icons.outlined.PlayArrow
+import site.anikitty.app.ui.icons.FluentuiSystemIconsAlertOutline
+import site.anikitty.app.ui.icons.FluentuiSystemIconsArrowSync
+import site.anikitty.app.ui.icons.FluentuiSystemIconsMoviesAndTvOutline
+import site.anikitty.app.ui.icons.FluentuiSystemIconsPlayFilled
+import site.anikitty.app.ui.theme.KittyGlass
+import site.anikitty.app.ui.theme.kittyGlassSoft
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -110,6 +111,7 @@ import site.anikitty.app.data.servers.ServerCatalog
 import site.anikitty.app.data.servers.sourcesPageSubtitle
 import site.anikitty.app.data.extensions.HttpExtensionResolver
 import site.anikitty.app.ui.components.ExtensionIcon
+import site.anikitty.app.ui.icons.FluentuiSystemIconsBookmarkOutline
 import site.anikitty.app.ui.icons.FluentuiSystemIconsHomeOutline
 import site.anikitty.app.ui.icons.FluentuiSystemIconsPersonOutline
 import site.anikitty.app.ui.icons.FluentuiSystemIconsSettingsOutline
@@ -340,13 +342,20 @@ internal fun AniListProfileCard(
                     .spacePress(onSignOut),
             )
         }
+        val cardShape = RoundedCornerShape(18.dp)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(if (onBanner) Color(0xFF0C0C10) else palette.surface)
-                .border(0.5.dp, if (onBanner) Color.White.copy(alpha = 0.08f) else palette.hairline, RoundedCornerShape(12.dp)),
+                .clip(cardShape)
+                .background(if (onBanner) Color(0xCC0A0A0C) else KittyGlass)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
+                    ),
+                )
+                .border(1.dp, Color.White.copy(alpha = 0.14f), cardShape)
+                .border(0.5.dp, if (onBanner) Color.White.copy(alpha = 0.08f) else palette.hairline, cardShape),
         ) {
             if (!auth.bannerUrl.isNullOrBlank()) {
                 AsyncImage(
@@ -416,9 +425,10 @@ internal fun AniListProfileCard(
                 }
             }
         }
-        if (!auth.about.isNullOrBlank()) {
+        val aboutPlain = remember(auth.about) { stripAniListAbout(auth.about) }
+        if (aboutPlain.isNotBlank()) {
             Text(
-                auth.about.orEmpty(),
+                aboutPlain,
                 color = palette.muted,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 4,
@@ -1150,7 +1160,7 @@ private fun SettingsHubBody(
     val playback = @Composable {
         SettingsGroup(title = "Playback") {
             SettingsHubRow(
-                icon = Icons.Outlined.PlayArrow,
+                icon = FluentuiSystemIconsPlayFilled,
                 title = "Player",
                 detail = "Autoplay, speed, audio",
                 plain = true,
@@ -1170,7 +1180,7 @@ private fun SettingsHubBody(
                 onClick = { onOpen("account") },
             )
             SettingsHubRow(
-                icon = Icons.Outlined.Tv,
+                icon = FluentuiSystemIconsMoviesAndTvOutline,
                 title = "Devices",
                 detail = if (demo) "Not available in the demo" else "Pair or unpair a TV",
                 plain = true,
@@ -1188,7 +1198,7 @@ private fun SettingsHubBody(
                 onClick = { onOpen("sources") },
             )
             SettingsHubRow(
-                icon = Icons.Outlined.Cloud,
+                icon = FluentuiSystemIconsArrowSync,
                 title = "Optional API",
                 detail = "Not used for playback · $apiEndpoint",
                 plain = true,
@@ -1199,7 +1209,7 @@ private fun SettingsHubBody(
     val downloads = @Composable {
         SettingsGroup(title = "Downloads") {
             SettingsHubRow(
-                icon = Icons.Outlined.Download,
+                icon = FluentuiSystemIconsBookmarkOutline,
                 title = "Saved episodes",
                 detail = "Play copies stored on this phone",
                 plain = true,
@@ -1210,7 +1220,7 @@ private fun SettingsHubBody(
     val notifications = @Composable {
         SettingsGroup(title = "Notifications") {
             SettingsHubRow(
-                icon = Icons.Outlined.Notifications,
+                icon = FluentuiSystemIconsAlertOutline,
                 title = "Notification centre",
                 detail = "Airing, downloads, updates",
                 plain = true,
@@ -1280,12 +1290,18 @@ internal fun SettingsGroup(
             letterSpacing = 0.6.sp,
             modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
         )
+        val shape = RoundedCornerShape(site.anikitty.app.ui.theme.KittyRadius.lg)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(site.anikitty.app.ui.theme.KittyRadius.lg))
-                .background(palette.surface)
-                .border(0.5.dp, palette.hairline, RoundedCornerShape(site.anikitty.app.ui.theme.KittyRadius.lg)),
+                .kittyGlassSoft(shape)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.White.copy(alpha = 0.07f), Color.Transparent),
+                    ),
+                )
+                .border(1.dp, Color.White.copy(alpha = 0.12f), shape)
+                .border(0.5.dp, palette.hairline, shape),
             content = { content() },
         )
     }
@@ -1813,4 +1829,22 @@ private fun formatBytes(bytes: Long): String = when {
     bytes >= 1_048_576L -> "%.1f MB".format(bytes / 1_048_576.0)
     bytes >= 1024L -> "%.0f KB".format(bytes / 1024.0)
     else -> "$bytes B"
+}
+
+/** AniList about fields are HTML (and often markdown) — Profile shows plain text only. */
+private fun stripAniListAbout(raw: String?): String {
+    if (raw.isNullOrBlank()) return ""
+    val plain = android.text.Html.fromHtml(raw, android.text.Html.FROM_HTML_MODE_COMPACT)
+        ?.toString()
+        .orEmpty()
+    return plain
+        .replace('\u00a0', ' ')
+        .replace(Regex("`+"), "")
+        .replace(Regex("\\*{1,3}"), "")
+        .replace(Regex("_{1,3}"), "")
+        .replace(Regex("~{1,2}"), "")
+        .lines()
+        .joinToString(" ") { it.trim() }
+        .replace(Regex("\\s{2,}"), " ")
+        .trim()
 }
