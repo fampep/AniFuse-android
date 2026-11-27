@@ -43,6 +43,53 @@ interface EpisodeDownloadDao {
     @Query("SELECT * FROM episode_download ORDER BY updatedAtEpochMs DESC LIMIT 40")
     suspend fun recent(): List<EpisodeDownloadEntity>
 
+    /** Oldest unfinished save first. The lane runs one of these at a time. */
+    @Query(
+        """
+        SELECT * FROM episode_download
+        WHERE phase IN ('QUEUED', 'RUNNING')
+        ORDER BY updatedAtEpochMs ASC
+        """,
+    )
+    suspend fun active(): List<EpisodeDownloadEntity>
+
+    /**
+     * A refused CDN is replaced by the shadow host. The generation must still
+     * match so a cancel during the swap is not overwritten.
+     */
+    @Query(
+        """
+        UPDATE episode_download
+        SET url = :url,
+            headersJson = :headersJson,
+            sourceKey = :sourceKey,
+            hls = :hls,
+            stripBytes = :stripBytes,
+            hlsStreams = NULL,
+            phase = 'QUEUED',
+            progressPercent = 0,
+            localPath = NULL,
+            error = NULL,
+            updatedAtEpochMs = :updatedAtEpochMs
+        WHERE anilistId = :anilistId
+          AND episode = :episode
+          AND url = :previousUrl
+          AND updatedAtEpochMs = :previousUpdatedAt
+        """,
+    )
+    suspend fun retarget(
+        anilistId: Int,
+        episode: Int,
+        previousUrl: String,
+        previousUpdatedAt: Long,
+        url: String,
+        headersJson: String,
+        sourceKey: String,
+        hls: Boolean,
+        stripBytes: Int,
+        updatedAtEpochMs: Long,
+    ): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(row: EpisodeDownloadEntity)
 

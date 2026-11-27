@@ -25,6 +25,34 @@ internal object PlaybackHostHealth {
     private var dir: File? = null
     private var lastBody: String? = null
 
+    @Volatile
+    private var playing: String? = null
+
+    @Volatile
+    private var playingOwner: Any? = null
+
+    /**
+     * The CDN [owner] is reading. A newer player can replace it. The owner that
+     * left must not clear a host the next episode already recorded.
+     */
+    fun notePlaying(host: String?, owner: Any) {
+        synchronized(lock) {
+            val key = host?.trim()?.lowercase()?.ifBlank { null }
+            playing = key
+            playingOwner = if (key == null) null else owner
+        }
+    }
+
+    fun clearPlaying(owner: Any) {
+        synchronized(lock) {
+            if (playingOwner !== owner) return
+            playing = null
+            playingOwner = null
+        }
+    }
+
+    fun playingHost(): String? = playing
+
     fun attach(root: File) {
         synchronized(lock) {
             if (dir?.absolutePath == root.absolutePath && marks.isNotEmpty()) return
@@ -70,6 +98,8 @@ internal object PlaybackHostHealth {
     /** Tests keep the ledger off disk. */
     fun detach() {
         synchronized(lock) {
+            playing = null
+            playingOwner = null
             dir = null
             lastBody = null
             marks.clear()

@@ -16,6 +16,18 @@ class PlaybackHostHealthTest {
     }
 
     @Test
+    fun aLeavingPlayerDoesNotClearTheHostTheNextEpisodeRecorded() {
+        val first = Any()
+        val next = Any()
+        PlaybackHostHealth.notePlaying("cdn-a.example", first)
+        PlaybackHostHealth.notePlaying("cdn-b.example", next)
+        PlaybackHostHealth.clearPlaying(first)
+        assertEquals("cdn-b.example", PlaybackHostHealth.playingHost())
+        PlaybackHostHealth.clearPlaying(next)
+        assertEquals(null, PlaybackHostHealth.playingHost())
+    }
+
+    @Test
     fun aFailureSinksAndAFasterSuccessOutranksASlowOne() {
         PlaybackHostHealth.detach()
         PlaybackHostHealth.note("cdn-a.example", ok = false, nowMs = 5_000L)
