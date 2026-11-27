@@ -65,17 +65,41 @@ data class StoreListing(
 /**
  * Settlar and Yozora are retired aliases.
  * Anime Nexus and Miruro are removed from the app.
- * ani.pm (anipm.pk) is a live bundled provider again — do not retire it.
+ * The only live ani.pm card is the bundled [anipm] resolver — every other
+ * ani.pm / anipm.pk listing (community mirrors, old settlar packs) is retired
+ * so the Store never shows two ani.pm extensions.
  */
-internal fun isRetiredExtension(id: String, name: String = ""): Boolean {
-    fun norm(raw: String) = raw.trim().lowercase().replace(".", "").replace(" ", "")
+internal fun isRetiredExtension(id: String, name: String = "", siteUrl: String? = null): Boolean {
+    fun norm(raw: String) = raw.trim().lowercase().replace(".", "").replace(" ", "").replace("-", "").replace("_", "")
     val key = norm(id)
     if (key == "settlar" || key == "yozora" || key == "animenexus" || key == "miruro") {
         return true
     }
     val label = norm(name)
-    return label == "settlar" || label == "yozora" ||
+    if (label == "settlar" || label == "yozora" ||
         label == "animenexus" || label == "miruro"
+    ) {
+        return true
+    }
+    // One ani.pm only — the bundled id. Drop every other pack for that site.
+    if (key != "anipm" && isAniPmAlias(key, label, siteUrl)) return true
+    return false
+}
+
+/** True when a listing is clearly ani.pm / anipm.pk but not the bundled id. */
+internal fun isAniPmAlias(idNorm: String, nameNorm: String, siteUrl: String?): Boolean {
+    if (nameNorm == "anipm" || nameNorm == "anipmpk") return true
+    if (idNorm == "anipmpk" || idNorm.endsWith("anipm") || idNorm.contains("anipmpk")) return true
+    val host = siteUrl
+        ?.trim()
+        ?.lowercase()
+        ?.removePrefix("https://")
+        ?.removePrefix("http://")
+        ?.substringBefore('/')
+        ?.substringBefore(':')
+        ?.removePrefix("www.")
+        .orEmpty()
+    return host == "ani.pm" || host == "anipm.pk"
 }
 
 data class StoreIndex(

@@ -170,13 +170,13 @@ fun ExtensionStoreFeed(
     val mergedListings = remember(listings, resolvers, installedExt, bundledIds) {
         val byId = LinkedHashMap<String, StoreListing>()
         for (listing in listings) {
-            if (isRetiredExtension(listing.id, listing.name)) continue
+            if (isRetiredExtension(listing.id, listing.name, listing.siteUrl)) continue
             byId[listing.id] = listing
         }
         val manifests = installedExt.associateBy { it.id }
         for (resolver in resolvers) {
             val server = resolver.server
-            if (isRetiredExtension(server.id, server.name)) continue
+            if (isRetiredExtension(server.id, server.name, server.siteUrl)) continue
             val existing = byId[server.id]
             val bundled = server.id in bundledIds
             if (existing == null) {
@@ -188,17 +188,22 @@ fun ExtensionStoreFeed(
             }
             if (!bundled) continue
             val fallback = server.toStoreListing(bundled = true)
-            byId[server.id] = existing.copy(
-                name = existing.name.ifBlank { fallback.name },
-                description = existing.description.ifBlank { fallback.description },
-                iconUrl = existing.iconUrl ?: fallback.iconUrl,
-                siteUrl = existing.siteUrl ?: fallback.siteUrl,
-                version = existing.version?.takeIf { it.isNotBlank() } ?: fallback.version,
-                protocol = existing.protocol?.takeIf { it.isNotBlank() } ?: fallback.protocol,
-            )
+            // Bundled ani.pm always wins — never keep a stale settlar mirror card.
+            byId[server.id] = if (server.id == "anipm") {
+                fallback
+            } else {
+                existing.copy(
+                    name = existing.name.ifBlank { fallback.name },
+                    description = existing.description.ifBlank { fallback.description },
+                    iconUrl = existing.iconUrl ?: fallback.iconUrl,
+                    siteUrl = existing.siteUrl ?: fallback.siteUrl,
+                    version = existing.version?.takeIf { it.isNotBlank() } ?: fallback.version,
+                    protocol = existing.protocol?.takeIf { it.isNotBlank() } ?: fallback.protocol,
+                )
+            }
         }
         for (site in builtinStoreListings()) {
-            if (isRetiredExtension(site.id, site.name)) continue
+            if (isRetiredExtension(site.id, site.name, site.siteUrl)) continue
             if (byId[site.id] == null) byId[site.id] = site
         }
         byId.values.toList()

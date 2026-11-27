@@ -20,6 +20,9 @@ class ExtensionStoreMergeTest {
         assertTrue(isRetiredExtension("miruro", "Miruro"))
         assertFalse(isRetiredExtension("reanime", "reanime"))
         assertFalse(isRetiredExtension("anigato", "AniGato"))
+        // Only the bundled anipm card stays — every other ani.pm pack is retired.
+        assertTrue(isRetiredExtension("site.anikitty.anipm", "Ani.pm"))
+        assertTrue(isRetiredExtension("extra", "ani.pm", "https://anipm.pk"))
     }
 
     @Test
@@ -61,7 +64,7 @@ class ExtensionStoreMergeTest {
             listOf("reanime", "anipm", "site.anikitty.example.hello", "anirex", "animeheaven", "oneko", "twodhive"),
             merged.extensions.map { it.id },
         )
-        assertEquals("Ani.pm", merged.extensions.first { it.id == "anipm" }.name)
+        assertEquals("ani.pm", merged.extensions.first { it.id == "anipm" }.name)
     }
 
     @Test
@@ -141,10 +144,9 @@ class ExtensionStoreMergeTest {
 
     private fun anipm() = StoreListing(
         id = "anipm",
-        name = "Ani.pm",
-        description = "ani.pm via anipm.pk",
-        github = "https://github.com/fampep/anikitty-extensions/tree/main/providers/anipm",
-    )
+        name = "ani.pm",
+        description = "On-device ani.pm resolve. The first-party playlist plays on this phone.",
+        github = "https://github.com/fampep/anikitty-extensions/tree/main/providers/anipm",    )
 
     private fun hello() = StoreListing(
         id = "site.anikitty.example.hello",
