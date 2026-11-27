@@ -86,6 +86,16 @@ internal fun sourceKey(source: PlayableSource): String {
 internal fun savedMatches(saved: SavedEpisode, source: PlayableSource): Boolean =
     saved.sourceKey == sourceKey(source)
 
+/**
+ * A shadow swap changes the source key while the save is still this episode.
+ * That row stays on the button so a tap does not start the host that just refused.
+ * A finished file for a different source can still be replaced.
+ */
+internal fun downloadRowVisible(saved: SavedEpisode, source: PlayableSource): Boolean {
+    if (savedMatches(saved, source)) return true
+    return saved.phase == DownloadPhase.QUEUED || saved.phase == DownloadPhase.RUNNING
+}
+
 internal fun downloadStatus(
     source: PlayableSource,
     saved: SavedEpisode?,
@@ -94,7 +104,7 @@ internal fun downloadStatus(
 ): DownloadStatus {
     val blocked = offlineBlockReason(source)
     if (blocked != null) return DownloadStatus(blocked, canStart = false, canRemove = false)
-    val row = saved?.takeIf { savedMatches(it, source) }
+    val row = saved?.takeIf { downloadRowVisible(it, source) }
         ?: return DownloadStatus("Download", canStart = true, canRemove = false)
     return when (row.phase) {
         DownloadPhase.QUEUED -> DownloadStatus(

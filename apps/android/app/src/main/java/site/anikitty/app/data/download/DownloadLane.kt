@@ -10,11 +10,13 @@ import site.anikitty.app.data.servers.rankShadowCandidates
 /** One WorkManager chain for every episode. Parallel jobs were pulling the playing CDN. */
 internal const val DOWNLOAD_LANE = "episode-download-lane"
 
-/** How long the lane waits before asking WorkManager to try again. */
+/** How often the lane looks again while playback owns the CDN. */
 internal const val LANE_YIELD_SLICE_MS = 1_500L
 
-/** Slices spent inside one run before the lane backs off. 8 × 1.5s. */
-internal const val LANE_YIELD_SLICES = 8
+/** A dropped connection resumes this many times. Yielding to playback does not spend them. */
+internal const val DOWNLOAD_IO_ATTEMPTS = 3
+
+internal fun downloadIoShouldResume(attempt: Int): Boolean = attempt in 1 until DOWNLOAD_IO_ATTEMPTS
 
 internal data class LaneCandidate(
     val anilistId: Int,

@@ -54,7 +54,7 @@ class EpisodeDownloadWorker(
     private suspend fun drain(): Result {
         val dao = (applicationContext as AnikittyApp).database.episodeDownloadDao()
         val deferred = HashSet<Pair<Int, Int>>()
-        var waits = 0
+        val ioAttempts = HashMap<String, Int>()
         while (!isStopped) {
             val rows = dao.active().map { row ->
                 LaneCandidate(row.anilistId, row.episode, row.url, row.updatedAtEpochMs)
@@ -62,14 +62,15 @@ class EpisodeDownloadWorker(
             when (val pick = nextLaneDownload(rows, PlaybackHostHealth.playingHost(), deferred)) {
                 LaneChoice.Idle -> return Result.success()
                 LaneChoice.Wait -> {
-                    if (waits >= LANE_YIELD_SLICES) return Result.retry()
-                    waits++
+                    val onlyDeferred = rows.isNotEmpty() && rows.all { (it.anilistId to it.episode) in deferred }
                     delay(LANE_YIELD_SLICE_MS)
+                    // A dropped connection retries inside this run. Waiting for
+                    // playback must not spend that budget via WorkManager retries.
+                    if (onlyDeferred) deferred.clear()
                 }
                 is LaneChoice.Run -> {
-                    waits = 0
                     val row = dao.get(pick.anilistId, pick.episode) ?: continue
-                    when (runOne(dao, row)) {
+                    when (runOne(dao, row, ioAttempts)) {
                         LaneStep.Continue -> Unit
                         LaneStep.Defer -> deferred += pick.anilistId to pick.episode
                         LaneStep.RetryLane -> return Result.retry()
@@ -82,7 +83,11 @@ class EpisodeDownloadWorker(
 
     private enum class LaneStep { Continue, Defer, RetryLane }
 
-    private suspend fun runOne(dao: EpisodeDownloadDao, row: EpisodeDownloadEntity): LaneStep {
+    private suspend fun runOne(
+        dao: EpisodeDownloadDao,
+        row: EpisodeDownloadEntity,
+        ioAttempts: MutableMap<String, Int>,
+    ): LaneStep {
         if (!row.url.startsWith("http://") && !row.url.startsWith("https://")) {
             publish(dao, row, DownloadPhase.FAILED.name, 0, null, "Can't save this source")
             return LaneStep.Continue
@@ -100,22 +105,18 @@ class EpisodeDownloadWorker(
             throw cancelled
         } catch (rejected: DownloadHostRejectedException) {
             val swapped = retargetToShadow(dao, row)
-            if (swapped == null) {
-                dropPartial(row)
-                publish(dao, row, DownloadPhase.FAILED.name, 0, null, httpFailure(rejected.code))
-            }
+            if (swapped == null) abandonRefused(dao, row, httpFailure(rejected.code))
             LaneStep.Continue
         } catch (error: Exception) {
             val code = httpCodeIn(error)
             if (code != null && downloadTransfer(code, 0) == DownloadTransfer.Swap) {
                 val swapped = retargetToShadow(dao, row)
-                if (swapped == null) {
-                    dropPartial(row)
-                    publish(dao, row, DownloadPhase.FAILED.name, 0, null, httpFailure(code))
-                }
+                if (swapped == null) abandonRefused(dao, row, httpFailure(code))
                 return LaneStep.Continue
             }
-            val retryable = error is IOException && runAttemptCount < 3
+            val attempt = (ioAttempts[ioKey(row)] ?: 0) + 1
+            ioAttempts[ioKey(row)] = attempt
+            val retryable = error is IOException && downloadIoShouldResume(attempt)
             val wrote = publish(
                 dao,
                 row,
@@ -371,7 +372,6 @@ class EpisodeDownloadWorker(
             if (!PlayableWarmProbe.alive(pick)) return null
         }
         val chosen = pick ?: return null
-        if (!keepPartialForNextUrl(row.url, chosen.url)) dropPartial(row)
         val now = System.currentTimeMillis()
         val wrote = dao.retarget(
             anilistId = row.anilistId,
@@ -386,8 +386,21 @@ class EpisodeDownloadWorker(
             updatedAtEpochMs = now,
         )
         if (wrote == 0) return null
+        if (!keepPartialForNextUrl(row.url, chosen.url)) dropPartial(row)
         return dao.get(row.anilistId, row.episode)
     }
+
+    /**
+     * No shadow, and this generation still owns the row. A cancel or a newer
+     * enqueue during the swap leaves that save's bytes alone.
+     */
+    private suspend fun abandonRefused(dao: EpisodeDownloadDao, row: EpisodeDownloadEntity, message: String) {
+        if (!stillCurrent(dao, row)) return
+        val wrote = publish(dao, row, DownloadPhase.FAILED.name, 0, null, message)
+        if (wrote) dropPartial(row)
+    }
+
+    private fun ioKey(row: EpisodeDownloadEntity): String = "${row.anilistId}:${row.episode}:${row.url}"
 
     private fun dropPartial(row: EpisodeDownloadEntity) {
         removeSavedBytes(applicationContext, row)

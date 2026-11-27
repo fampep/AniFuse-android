@@ -28,9 +28,27 @@ internal object PlaybackHostHealth {
     @Volatile
     private var playing: String? = null
 
-    /** The CDN the player is reading right now. Downloads on this host wait. */
-    fun notePlaying(host: String?) {
-        playing = host?.trim()?.lowercase()?.ifBlank { null }
+    @Volatile
+    private var playingOwner: Any? = null
+
+    /**
+     * The CDN [owner] is reading. A newer player can replace it. The owner that
+     * left must not clear a host the next episode already recorded.
+     */
+    fun notePlaying(host: String?, owner: Any) {
+        synchronized(lock) {
+            val key = host?.trim()?.lowercase()?.ifBlank { null }
+            playing = key
+            playingOwner = if (key == null) null else owner
+        }
+    }
+
+    fun clearPlaying(owner: Any) {
+        synchronized(lock) {
+            if (playingOwner !== owner) return
+            playing = null
+            playingOwner = null
+        }
     }
 
     fun playingHost(): String? = playing
@@ -79,8 +97,9 @@ internal object PlaybackHostHealth {
 
     /** Tests keep the ledger off disk. */
     fun detach() {
-        playing = null
         synchronized(lock) {
+            playing = null
+            playingOwner = null
             dir = null
             lastBody = null
             marks.clear()

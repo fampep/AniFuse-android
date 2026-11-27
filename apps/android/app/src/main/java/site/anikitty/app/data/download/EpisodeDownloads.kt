@@ -64,7 +64,9 @@ internal object EpisodeDownloads {
         val work = WorkManager.getInstance(context)
         // A job left over from the per-episode names must not run beside the lane.
         work.cancelUniqueWork(downloadWorkName(anilistId, episode))
-        work.enqueueUniqueWork(DOWNLOAD_LANE, ExistingWorkPolicy.KEEP, request)
+        // APPEND schedules a pass after the one already running, so a row that
+        // lands as the current drain decides to stop is not left QUEUED forever.
+        work.enqueueUniqueWork(DOWNLOAD_LANE, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
     }
 
     suspend fun remove(context: Context, row: EpisodeDownloadEntity) {
@@ -73,9 +75,9 @@ internal object EpisodeDownloads {
         // Drop the row before cancelling work. An HLS save that sees a stop
         // while the row is still current would queue itself again.
         dao.delete(row.anilistId, row.episode)
-        val work = WorkManager.getInstance(app)
-        work.cancelUniqueWork(downloadWorkName(row.anilistId, row.episode))
-        if (dao.active().isEmpty()) work.cancelUniqueWork(DOWNLOAD_LANE)
+        // Leave the lane running. Cancelling it here races a save that was just
+        // appended, and the drain exits on its own once nothing is queued.
+        WorkManager.getInstance(app).cancelUniqueWork(downloadWorkName(row.anilistId, row.episode))
         app.getSystemService(NotificationManager::class.java)
             ?.cancel(downloadNotificationId(row.anilistId, row.episode))
         removeSavedBytes(app, row)

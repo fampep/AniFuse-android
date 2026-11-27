@@ -1066,13 +1066,14 @@ fun PlayerScreen(
             }
         }
     }
-    LaunchedEffect(ready, source?.url) {
+    val playbackOwner = remember { Any() }
+    LaunchedEffect(ready, source?.url, playbackOwner) {
         if (!ready) return@LaunchedEffect
         val host = playbackHost(source?.url.orEmpty())
-        if (host.isNotEmpty()) PlaybackHostHealth.notePlaying(host)
+        if (host.isNotEmpty()) PlaybackHostHealth.notePlaying(host, playbackOwner)
     }
-    DisposableEffect(Unit) {
-        onDispose { PlaybackHostHealth.notePlaying(null) }
+    DisposableEffect(playbackOwner) {
+        onDispose { PlaybackHostHealth.clearPlaying(playbackOwner) }
     }
     val latestArmShadow by rememberUpdatedState(onArmShadow)
     LaunchedEffect(ready, source?.url, anilistId, episode, playbackLocal, sessionStartedOffline) {
@@ -1085,7 +1086,6 @@ fun PlayerScreen(
         delay(SHADOW_ARM_DELAY_MS)
         if (playbackHost(source?.url.orEmpty()) != host) return@LaunchedEffect
         PlaybackHostHealth.note(host, ok = true)
-        PlaybackHostHealth.notePlaying(host)
         val armed = try {
             arm(host, latestSources)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
