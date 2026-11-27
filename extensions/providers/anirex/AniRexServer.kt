@@ -46,7 +46,7 @@ class AniRexServer(
         require(anilistId > 0) { "anilistId required" }
         require(episode > 0) { "episode required" }
         val mode = if (audio.equals("dub", ignoreCase = true)) "dub" else "sub"
-        val body = read("$SITE/api/watch/$anilistId/$episode") ?: error(BLOCKED)
+        val body = watchBody(anilistId, episode)
         val embeds = anirexPlayerUrls(body)
         if (embeds.isEmpty()) error(MISSING)
         var lastError: String = MISSING
@@ -166,10 +166,16 @@ class AniRexServer(
         return segmentMask
     }
 
-    private fun read(url: String): String? {
-        val reply = get(url, referer = "$SITE/", accept = "application/json")
-        if (reply.code !in 200..299) return null
-        return reply.body.takeIf { it.isNotBlank() }
+    /**
+     * `/api/watch` 404 means this episode is missing — do not sink AniRex as
+     * unreachable. Challenges and transport failures stay [BLOCKED].
+     */
+    private fun watchBody(anilistId: Int, episode: Int): String {
+        val reply = get("$SITE/api/watch/$anilistId/$episode", referer = "$SITE/", accept = "application/json")
+        if (reply.challenged) error(BLOCKED)
+        if (reply.code == 404) error(MISSING)
+        if (reply.code !in 200..299) error(anirexHttpFailure(reply.code, reply.body))
+        return reply.body.takeIf { it.isNotBlank() } ?: error(MISSING)
     }
 
     private fun get(url: String, referer: String, accept: String): Reply {

@@ -29,7 +29,11 @@ class AniRexPlaybackTest {
         assertTrue(anirexPlayerUrls("""{"servers":[]}""").isEmpty())
         assertTrue(anirexPlayerUrls("not-json").isEmpty())
         assertTrue(AniRexServer.MISSING.contains("AniRex"))
+        assertTrue(AniRexServer.MISSING.contains("does not have"))
+        assertTrue(AniRexServer.BLOCKED.contains("could not be reached"))
         assertEquals(AniRexServer.BLOCKED, anirexHttpFailure(403, "Just a moment..."))
-        assertEquals(AniRexServer.MISSING, anirexHttpFailure(404, "{}"))
+        assertEquals(AniRexServer.MISSING, anirexHttpFailure(404, """{"message":"No stream available for this episode"}"""))
+        assertEquals(AniRexServer.BLOCKED, anirexHttpFailure(0, ""))
+        assertTrue(anirexHttpFailure(500, "<html>Server Error</html>").contains("HTTP 500"))
     }
 }
