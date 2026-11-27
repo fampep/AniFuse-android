@@ -44,6 +44,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import site.anikitty.app.ui.theme.KittyHaptics
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.withTimeoutOrNull
 import site.anikitty.app.data.skip.SkipTimes
@@ -88,6 +90,10 @@ fun GlassScrubber(
     val latestOnScrub by rememberUpdatedState(onScrub)
     val latestOnFinished by rememberUpdatedState(onScrubFinished)
     val density = LocalDensity.current
+    val view = LocalView.current
+    val trackIdle = remember { Color(0xFF2A2A2E) }
+    val trackBuffered = remember { Color(0xFF8A8A8E) }
+    val playhead = remember { Color.White }
     var focused by remember { mutableStateOf(false) }
     var latestFraction by remember { mutableFloatStateOf(clamped) }
 
@@ -166,6 +172,7 @@ fun GlassScrubber(
                                     }
                                     if (event == null) {
                                         dragging = true
+                                        KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
                                         latestFraction = latest
                                         latestOnScrub(latest)
                                         continue
@@ -183,6 +190,7 @@ fun GlassScrubber(
                                     val dy = change.position.y - start.y
                                     if (dx * dx + dy * dy > slop * slop) {
                                         dragging = true
+                                        KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
                                         change.consume()
                                         latest = fractionAt(change.position.x)
                                         latestFraction = latest
@@ -192,6 +200,7 @@ fun GlassScrubber(
                                     val event = awaitPointerEvent()
                                     val change = event.changes.firstOrNull { it.id == down.id }
                                     if (change == null || !change.pressed) {
+                                        KittyHaptics.perform(view, KittyHaptics.Kind.Confirm)
                                         latestOnFinished(latest)
                                         finished = true
                                         break
@@ -203,7 +212,10 @@ fun GlassScrubber(
                                 }
                             }
                         } finally {
-                            if (dragging && !finished) latestOnFinished(latest)
+                            if (dragging && !finished) {
+                                KittyHaptics.perform(view, KittyHaptics.Kind.Confirm)
+                                latestOnFinished(latest)
+                            }
                         }
                     }
                 },
@@ -211,9 +223,9 @@ fun GlassScrubber(
             val cy = size.height / 2f
             val trackH = (if (scrubbing) 6.dp else 4.5.dp).toPx()
             val radius = CornerRadius(trackH / 2f, trackH / 2f)
-            val unplayed = Color(0xFF242426)
-            val bufferedColor = Color(0xFF6E6E72)
-            val played = Color.White
+            val unplayed = trackIdle
+            val bufferedColor = trackBuffered
+            val played = playhead
 
             drawRoundRect(
                 color = unplayed,

@@ -386,7 +386,9 @@ class EpisodeDownloadWorker(
             updatedAtEpochMs = now,
         )
         if (wrote == 0) return null
-        if (!keepPartialForNextUrl(row.url, chosen.url)) dropPartial(row)
+        if (!keepPartialForNextUrl(row.url, chosen.url)) {
+            dropPartial(row, keepSegments = row.hls)
+        }
         return dao.get(row.anilistId, row.episode)
     }
 
@@ -402,8 +404,8 @@ class EpisodeDownloadWorker(
 
     private fun ioKey(row: EpisodeDownloadEntity): String = "${row.anilistId}:${row.episode}:${row.url}"
 
-    private fun dropPartial(row: EpisodeDownloadEntity) {
-        removeSavedBytes(applicationContext, row)
+    private fun dropPartial(row: EpisodeDownloadEntity, keepSegments: Boolean = false) {
+        removeSavedBytes(applicationContext, row, keepSegments)
     }
 
     private suspend fun stopOrRetry(dao: EpisodeDownloadDao, row: EpisodeDownloadEntity): Result {

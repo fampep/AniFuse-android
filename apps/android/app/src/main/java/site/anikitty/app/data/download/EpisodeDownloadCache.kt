@@ -21,6 +21,8 @@ import androidx.media3.exoplayer.hls.offline.HlsDownloader
 import site.anikitty.app.data.servers.FlixUnwrapDataSource
 import site.anikitty.app.data.servers.GotakuObfDataSource
 import site.anikitty.app.data.servers.PlaybackHttp
+import site.anikitty.app.data.servers.isHlsMediaSegment
+import site.anikitty.app.data.servers.segmentCacheIdentity
 import site.anikitty.app.data.servers.SegmentStripDataSource
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
@@ -47,7 +49,8 @@ internal object EpisodeDownloadCache {
 @UnstableApi
 internal fun episodeCacheKey(anilistId: Int, episode: Int): CacheKeyFactory =
     CacheKeyFactory { spec ->
-        val identity = spec.key ?: spec.uri.toString()
+        val raw = spec.key ?: spec.uri.toString()
+        val identity = if (isHlsMediaSegment(raw)) segmentCacheIdentity(raw) else raw
         episodeCachePrefix(anilistId, episode) + identity
     }
 
@@ -131,7 +134,7 @@ internal fun hlsPlanFromPlaylist(playlist: HlsMultivariantPlaylist): HlsSavePlan
 }
 
 @UnstableApi
-internal fun removeSavedBytes(context: Context, row: EpisodeDownloadEntity) {
+internal fun removeSavedBytes(context: Context, row: EpisodeDownloadEntity, keepSegments: Boolean = false) {
     row.localPath?.let { path ->
         File(path).delete()
         File("$path.part").delete()
@@ -143,7 +146,7 @@ internal fun removeSavedBytes(context: Context, row: EpisodeDownloadEntity) {
         row.url,
         row.hls,
     ).forEach { it.delete() }
-    if (!row.hls) return
+    if (!row.hls || keepSegments) return
     val headers = decodeHeaders(row.headersJson)
     val userAgent = headers["User-Agent"] ?: DOWNLOAD_USER_AGENT
     try {

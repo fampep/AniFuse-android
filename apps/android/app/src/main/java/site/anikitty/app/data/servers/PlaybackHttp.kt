@@ -21,6 +21,7 @@ internal object PlaybackHttp {
         .followRedirects(true)
         .followSslRedirects(true)
         .retryOnConnectionFailure(true)
+        .addInterceptor(SegmentRetargetInterceptor())
         .build()
 
     fun factory(headers: Map<String, String>, userAgent: String): OkHttpDataSource.Factory =
