@@ -112,6 +112,7 @@ object PlayableWarmCache {
 /**
  * Consume the freshest warm lane that still answers. Live reopen wins over a
  * next-episode prefetch so a mid-watch return never races cold CDNs again.
+ * [diskRecall] covers process death after the in-memory map is gone.
  */
 suspend fun takeProbedWarm(
     anilistId: Int,
@@ -120,11 +121,28 @@ suspend fun takeProbedWarm(
     lanes: List<String> = listOf(PlayableWarmCache.LANE_LIVE, PlayableWarmCache.LANE_NEXT),
     nowMs: Long = System.currentTimeMillis(),
     probe: suspend (List<PlayableSource>) -> List<PlayableSource> = { PlayableWarmProbe.filterAlive(it) },
+    diskRecall: (() -> List<PlayableSource>?)? = null,
+    onDiskMiss: (() -> Unit)? = null,
 ): List<PlayableSource> {
     for (lane in lanes) {
         val raw = PlayableWarmCache.take(anilistId, episode, audio, lane, nowMs) ?: continue
         val alive = probe(raw)
         if (alive.isNotEmpty()) return alive
     }
-    return emptyList()
+    val disk = diskRecall?.invoke().orEmpty()
+    if (disk.isEmpty()) return emptyList()
+    val alive = probe(disk)
+    if (alive.isEmpty()) {
+        onDiskMiss?.invoke()
+        return emptyList()
+    }
+    PlayableWarmCache.put(
+        anilistId = anilistId,
+        episode = episode,
+        audio = audio,
+        sources = alive,
+        lane = PlayableWarmCache.LANE_LIVE,
+        nowMs = nowMs,
+    )
+    return alive
 }

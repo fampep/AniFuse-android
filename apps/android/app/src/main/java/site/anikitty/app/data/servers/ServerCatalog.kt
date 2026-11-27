@@ -46,6 +46,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
     }
     private val resolveCache = ResolveCache(context)
     private val episodeAffinity = EpisodeHostAffinity(context)
+    private val liveSources = LiveSourceStore(context)
     private val episodeArtCatalog = EpisodeArtCatalog.shared(context)
     private val megaPlayCrypto = MegaPlayCrypto(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -182,6 +183,22 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
     }
 
     /**
+     * Instant reopen: memory live/next lanes first, then the disk-backed copy
+     * that survives process death. Empty means the caller should race CDNs.
+     */
+    suspend fun takeProbedLive(
+        anilistId: Int,
+        episode: Int,
+        audio: String,
+    ): List<PlayableSource> = takeProbedWarm(
+        anilistId = anilistId,
+        episode = episode,
+        audio = audio,
+        diskRecall = { liveSources.recall(anilistId, episode, audio) },
+        onDiskMiss = { liveSources.forget(anilistId, episode, audio) },
+    )
+
+    /**
      * Resolve using the selected installed provider first, then automatically
      * try every other **enabled** provider until one returns sources.
      * A fallback plays this episode only. The provider the user picked stays selected.
@@ -281,6 +298,15 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
                 )
                 PlaybackHostHealth.note(leadHost, ok = true)
             }
+            // Survive process death: next Play probes this before any race.
+            PlayableWarmCache.put(
+                anilistId = anilistId,
+                episode = episode,
+                audio = audio,
+                sources = sources,
+                lane = PlayableWarmCache.LANE_LIVE,
+            )
+            liveSources.remember(anilistId, episode, audio, sources)
             val usedFallback = resolver.server.id != preferredId
             return ResolveFailoverResult(
                 sources = sources,

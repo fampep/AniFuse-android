@@ -75,4 +75,32 @@ class PlayableWarmCacheTest {
         assertNull(PlayableWarmCache.peek(11, 3, "sub", PlayableWarmCache.LANE_LIVE, nowMs = 40L))
         assertEquals(1, PlayableWarmCache.peek(11, 3, "sub", PlayableWarmCache.LANE_NEXT, nowMs = 40L)?.size)
     }
+
+    @Test
+    fun diskRecallSurvivesEmptyMemory() = kotlinx.coroutines.runBlocking {
+        var forgotten = false
+        val hit = takeProbedWarm(
+            anilistId = 7,
+            episode = 2,
+            audio = "dub",
+            nowMs = 50L,
+            probe = { it },
+            diskRecall = {
+                listOf(PlayableSource(url = "https://cdn.example/disk.m3u8", label = "Disk"))
+            },
+            onDiskMiss = { forgotten = true },
+        )
+        assertEquals("https://cdn.example/disk.m3u8", hit.single().url)
+        assertEquals(false, forgotten)
+        assertEquals(
+            1,
+            PlayableWarmCache.peek(7, 2, "dub", PlayableWarmCache.LANE_LIVE, nowMs = 60L)?.size,
+        )
+    }
+
+    @Test
+    fun liveSourceKeysNormalizeAudio() {
+        assertEquals("9:1:sub", LiveSourceStore.key(9, 1, "SUB"))
+        assertEquals("9:1:dub", LiveSourceStore.key(9, 1, " dub "))
+    }
 }
