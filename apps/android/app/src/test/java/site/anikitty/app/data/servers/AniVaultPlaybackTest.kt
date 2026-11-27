@@ -64,53 +64,6 @@ class AniVaultPlaybackTest {
     }
 
     @Test
-    fun dubButtonsMapOntoOnDeviceOriginPeers() {
-        assertEquals("anikoto", anivaultDevicePeerId("anikoto_stream.php"))
-        assertEquals("reanime", anivaultDevicePeerId("reanime_stream.php"))
-        assertEquals("aniwaves", anivaultDevicePeerId("aniwaves_stream.php"))
-        assertEquals("anizone", anivaultDevicePeerId("anizone_stream.php"))
-        assertNull(anivaultDevicePeerId("animeheaven_stream.php"))
-        assertNull(anivaultDevicePeerId("desidub_stream.php"))
-        assertNull(anivaultDevicePeerId("animenosub_stream.php"))
-        val dub = anivaultButtons("dub")
-        val jobs = anivaultDeviceJobs(dub, lead = null, warm = false)
-        assertEquals(listOf("anikoto", "reanime", "aniwaves", "anizone"), jobs.map { it.first })
-        assertEquals("Hd-1", jobs.first().third.label)
-        assertEquals("English (Zone)", jobs.last().third.label)
-        val hd1 = anivaultAskKey(dub.first { it.label == "Hd-1" })
-        val warm = anivaultDeviceJobs(dub, lead = hd1, warm = true)
-        assertEquals(listOf("anikoto"), warm.map { it.first })
-        assertTrue(anivaultDeviceJobs(dub, lead = null, warm = true).isEmpty())
-        val stamped = anivaultDeviceSource(
-            PlayableSource(url = "https://cdn.example/d.m3u8", label = "Mega", hls = true),
-            dub.first { it.label == "Hd-1" },
-        )
-        assertEquals("Hd-1", stamped.label)
-        assertEquals(hd1, stamped.leadKey)
-        assertEquals("en", stamped.audioLanguage)
-        assertEquals(
-            listOf(1 to dub.first { it.label == "Vidstream-2" }),
-            anivaultDeviceExtras(dub, "anikoto", skipIndex = 0),
-        )
-        val vid = dub.first { it.label == "Vidstream-2" }
-        assertEquals(1, anivaultDeviceSlot(dub, "anikoto", vid))
-        assertEquals(0, anivaultDeviceSlot(dub, "anikoto", dub.first { it.label == "Hd-1" }))
-        // Lead-first order would wrongly make Vidstream-2 slot 0; warm must use site order.
-        val leadFirst = anivaultLeadFirst(dub, anivaultAskKey(vid))
-        assertEquals("Vidstream-2", leadFirst.first().label)
-        assertEquals(0, anivaultDeviceSlot(leadFirst, "anikoto", vid))
-        assertEquals(1, anivaultDeviceSlot(dub, "anikoto", vid))
-        val peerFiles = listOf(
-            PlayableSource(url = "https://cdn.example/hd1.m3u8", label = "A"),
-            PlayableSource(url = "https://cdn.example/vid2.m3u8", label = "B"),
-        )
-        assertEquals("https://cdn.example/vid2.m3u8", anivaultDevicePick(peerFiles, 1)?.url)
-        assertEquals("https://cdn.example/hd1.m3u8", anivaultDevicePick(peerFiles, 9)?.url)
-        assertTrue(AniVaultServer.PEER_TIMEOUT_MS < AniVaultServer.RESOLVE_BUDGET_MS)
-        assertTrue(AniVaultServer.FAILOVER_GRACE_MS < AniVaultServer.PEER_TIMEOUT_MS)
-    }
-
-    @Test
     fun selectingAniVaultStaysOnAniVaultServers() {
         val all = listOf(stub("anikoto"), stub("anivault"), stub("reanime"))
         assertEquals(listOf("anivault"), playbackResolvers("anivault", all).map { it.server.id })

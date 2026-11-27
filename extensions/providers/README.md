@@ -19,6 +19,7 @@ Playback stays on the phone. This repository is where the extension version of e
 | [animegg](./animegg) | animegg.org episode file |
 | [anigato](./anigato) | anigato.lol playlist for the AniList id |
 | [anivault](./anivault) | anivault.tv. Asks AniVault's own source buttons and plays the file here |
+| [oneko](./oneko) | beta.0neko.cc AniList-keyed playlist |
 
 Each resolver sets optional `quality`, `audio`, and `qualityRating` on `PlayableSource` only from data it parsed (HLS `RESOLUTION` / `CODECS` / `CHANNELS`, or the site’s own label). A missing fact stays null.
 

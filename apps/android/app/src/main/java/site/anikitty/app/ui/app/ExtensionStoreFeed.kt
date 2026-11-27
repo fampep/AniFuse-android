@@ -882,6 +882,7 @@ private fun bundledStoreVersion(id: String): String = when (id) {
     "animegg" -> "1.0.0"
     "anigato" -> "1.0.0"
     "anivault" -> "1.0.0"
+    "oneko" -> "1.0.0"
     else -> "1.1.1"
 }
 
@@ -905,5 +906,6 @@ private fun providerSource(id: String): String = when (id) {
     "animegg" -> "https://github.com/fampep/anikitty-extensions/tree/main/providers/animegg"
     "anigato" -> "https://github.com/fampep/anikitty-extensions/tree/main/providers/anigato"
     "anivault" -> "https://anivault.tv/"
+    "oneko" -> "https://beta.0neko.cc/"
     else -> "https://github.com/fampep/anikitty-extensions"
 }
