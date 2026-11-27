@@ -4,7 +4,8 @@
 package site.anikitty.app.ui.app
 
 import androidx.room.withTransaction
-import androidx.activity.compose.BackHandler
+import androidx.activity.BackEventCompat
+import androidx.activity.compose.PredictiveBackHandler
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
@@ -87,6 +88,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -163,6 +165,15 @@ import site.anikitty.app.data.local.applyWatchImport
 import site.anikitty.app.data.local.readWatchProgressBackup
 import site.anikitty.app.data.local.shareWatchProgress
 import site.anikitty.app.data.local.watchImportSummary
+import site.anikitty.app.ui.components.ProvideStageChrome
+import site.anikitty.app.ui.components.STAGE_EDGE_LEFT
+import site.anikitty.app.ui.components.STAGE_EDGE_RIGHT
+import site.anikitty.app.ui.components.StageBackBridge
+import site.anikitty.app.ui.components.StageBackPose
+import site.anikitty.app.ui.components.stageBackPose
+import site.anikitty.app.ui.components.stageHazeSource
+import site.anikitty.app.ui.components.stagePredictive
+import site.anikitty.app.ui.theme.KittyHaptics
 import site.anikitty.app.ui.theme.LocalKittyPalette
 import site.anikitty.app.ui.theme.LookState
 import site.anikitty.app.ui.theme.ShimmerBox
@@ -406,14 +417,20 @@ fun LocalFirstApp(
         val found = runCatching { aniList.mediaBrief(missing) }.getOrDefault(emptyMap())
         if (found.isNotEmpty()) releasedById = releasedById + found
     }
-    BackHandler(
-        enabled = screen is Screen.Detail ||
-            screen == Screen.Continue ||
-            screen == Screen.Schedule ||
-            screen == Screen.Providers ||
-            screen == Screen.Inbox ||
-            (screen == Screen.Tabs && tab != "home"),
-    ) {
+    val shellBackEnabled = screen is Screen.Detail ||
+        screen == Screen.Continue ||
+        screen == Screen.Schedule ||
+        screen == Screen.Providers ||
+        screen == Screen.Inbox ||
+        (screen == Screen.Tabs && tab != "home")
+    val shellBack = remember { StageBackBridge() }
+    var stagePose by remember { mutableStateOf(StageBackPose.Rest) }
+    val shellView = LocalView.current
+    shellBack.slide = true
+    shellBack.reduced = prefersReducedMotion()
+    shellBack.onPose = { stagePose = it }
+    shellBack.onHaptic = { KittyHaptics.perform(shellView, KittyHaptics.Kind.Confirm) }
+    shellBack.onCommit = {
         when {
             screen is Screen.Detail -> popDetailOrTabs()
             screen == Screen.Continue || screen == Screen.Schedule ||
@@ -422,10 +439,29 @@ fun LocalFirstApp(
             else -> Unit
         }
     }
-
+    PredictiveBackHandler(enabled = shellBackEnabled) { events ->
+        var edge = STAGE_EDGE_LEFT
+        try {
+            events.collect { event ->
+                edge = if (event.swipeEdge == BackEventCompat.EDGE_RIGHT) {
+                    STAGE_EDGE_RIGHT
+                } else {
+                    STAGE_EDGE_LEFT
+                }
+                shellBack.onPose(stageBackPose(event.progress, edge, shellBack.reduced))
+            }
+            shellBack.onHaptic()
+            shellBack.onCommit()
+        } finally {
+            shellBack.onPose(StageBackPose.Rest)
+        }
+    }
+    ProvideStageChrome(pose = stagePose) {
+    var shellHandled = false
     when (screen) {
         Screen.Schedule -> {
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.fillMaxSize().stagePredictive()) {
+                Box(Modifier.fillMaxSize().stageHazeSource()) {
                 ScheduleFeed(
                     aniList = aniList,
                     onBack = { screen = Screen.Tabs },
@@ -433,6 +469,7 @@ fun LocalFirstApp(
                     followedEpisodes = followedEpisodes,
                     inProgressIds = inProgressIds,
                 )
+                }
                 DockOverlay(
                     tabs = tabs,
                     selectedId = "discover",
@@ -444,16 +481,18 @@ fun LocalFirstApp(
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
-            return
+            shellHandled = true
         }
         Screen.Inbox -> {
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.fillMaxSize().stagePredictive()) {
+                Box(Modifier.fillMaxSize().stageHazeSource()) {
                 NotificationCenter(
                     aniList = aniList,
                     history = history,
                     onBack = { screen = Screen.Tabs },
                     onOpen = { anime, episode -> openDetail(anime, episode) },
                 )
+                }
                 DockOverlay(
                     tabs = tabs,
                     selectedId = if (tab == "store") "profile" else tab,
@@ -465,10 +504,10 @@ fun LocalFirstApp(
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
-            return
+            shellHandled = true
         }
         Screen.Continue -> {
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.fillMaxSize().stagePredictive()) {
                 ContinueAllPage(
                     history = history,
                     releasedEpisodes = releasedById,
@@ -491,11 +530,13 @@ fun LocalFirstApp(
                     },
                 )
             }
-            return
+            shellHandled = true
         }
         Screen.Builds -> {
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.fillMaxSize().stagePredictive()) {
+                Box(Modifier.fillMaxSize().stageHazeSource()) {
                 BuildChannelPage(onBack = { screen = Screen.Tabs })
+                }
                 if (!isTelevision()) DockOverlay(
                     tabs = tabs,
                     selectedId = if (tab == "store") "profile" else tab,
@@ -507,21 +548,22 @@ fun LocalFirstApp(
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
-            return
+            shellHandled = true
         }
         Screen.Providers -> {
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.fillMaxSize().stagePredictive()) {
                 AnifuseProvidersPage(
                     api = anifuseApi,
                     store = anifuseStore,
                     onBack = { screen = Screen.Tabs },
                 )
             }
-            return
+            shellHandled = true
         }
         else -> Unit
     }
 
+    if (!shellHandled) {
     @Composable
     fun PhoneTabs(modifier: Modifier) {
         val reducedTabs = prefersReducedMotion()
@@ -710,8 +752,18 @@ fun LocalFirstApp(
             )
         }
     }
-    Box(modifier = Modifier.fillMaxSize()) {
-        SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().stagePredictive()) {
+        SharedTransitionLayout(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (!isTelevision() && (screen is Screen.Tabs || screen is Screen.Detail)) {
+                        Modifier.stageHazeSource()
+                    } else {
+                        Modifier
+                    },
+                ),
+        ) {
             val shared = this
             AnimatedContent(
                 targetState = screen,
@@ -932,6 +984,50 @@ fun LocalFirstApp(
             var reportInFlight by remember(current.anime.id, current.episode) { mutableStateOf(false) }
             // Local frontier already moved for this episode, and AniList still needs the same count.
             var localMarked by remember(current.anime.id, current.episode) { mutableStateOf(false) }
+            val warmEpisode: suspend (Int) -> Unit = { episodeNumber ->
+                val hint = current.anime.streamTitleHint()
+                val existing = site.anikitty.app.data.servers.PlayableWarmCache.peek(
+                    anilistId = current.anime.id,
+                    episode = episodeNumber,
+                    audio = playerAudio,
+                )
+                val chosen = site.anikitty.app.data.servers.warmPlayable(
+                    existing = existing,
+                    resolve = {
+                        streamServers.resolveWithFailover(
+                            anilistId = current.anime.id,
+                            episode = episodeNumber,
+                            audio = playerAudio,
+                            titleHint = hint,
+                        ).sources
+                    },
+                )
+                if (chosen.isEmpty()) {
+                    site.anikitty.app.data.servers.PlayableWarmCache.drop(
+                        anilistId = current.anime.id,
+                        episode = episodeNumber,
+                        audio = playerAudio,
+                    )
+                } else {
+                    site.anikitty.app.data.servers.PlayableWarmCache.put(
+                        anilistId = current.anime.id,
+                        episode = episodeNumber,
+                        audio = playerAudio,
+                        sources = chosen,
+                    )
+                    site.anikitty.app.data.servers.StreamWarmPrefetch.touch(chosen.first())
+                    site.anikitty.app.data.servers.SourceBadgeCache.remember(
+                        context,
+                        current.anime.id,
+                        episodeNumber,
+                        chosen,
+                    )
+                    site.anikitty.app.data.servers.SubtitleLibrary.prefetch(
+                        current.anime.id,
+                        episodeNumber,
+                    )
+                }
+            }
             PlayerScreen(
                 title = current.anime.title,
                 episode = current.episode,
@@ -1063,40 +1159,33 @@ fun LocalFirstApp(
                     if (!hasNext || demo || site.anikitty.app.data.demo.DemoLibrary.find(current.anime.id) != null) {
                         null
                     } else {
-                        suspend {
-                            val next = current.episode + 1
-                            val existing = site.anikitty.app.data.servers.PlayableWarmCache.peek(
+                        suspend { warmEpisode(current.episode + 1) }
+                    }
+                },
+                onArmCredits = if (demo || site.anikitty.app.data.demo.DemoLibrary.find(current.anime.id) != null) {
+                    null
+                } else {
+                    { playingHost ->
+                        val released = current.anime.releasedEpisodeCount()
+                        val hasNext = released <= 0 || current.episode < released
+                        if (hasNext) warmEpisode(current.episode + 1)
+                        val raced = streamServers.resolveWithFailover(
+                            anilistId = current.anime.id,
+                            episode = current.episode,
+                            audio = playerAudio,
+                            titleHint = current.anime.streamTitleHint(),
+                        ).sources
+                        val standby = site.anikitty.app.data.servers.creditsStandby(raced, playingHost)
+                        val alive = site.anikitty.app.data.servers.PlayableWarmProbe.filterAlive(standby)
+                        if (alive.isNotEmpty()) {
+                            site.anikitty.app.data.servers.PlayableWarmCache.put(
                                 anilistId = current.anime.id,
-                                episode = next,
+                                episode = current.episode,
                                 audio = playerAudio,
+                                lane = site.anikitty.app.data.servers.PlayableWarmCache.LANE_STANDBY,
+                                sources = alive,
                             )
-                            val resolvedRaw = existing ?: streamServers.resolveWithFailover(
-                                anilistId = current.anime.id,
-                                episode = next,
-                                audio = playerAudio,
-                                titleHint = current.anime.streamTitleHint(),
-                            ).sources
-                            val resolved = site.anikitty.app.data.servers.PlayableWarmProbe
-                                .filterAlive(resolvedRaw)
-                                .ifEmpty { resolvedRaw }
-                            if (resolved.isNotEmpty()) {
-                                site.anikitty.app.data.servers.PlayableWarmCache.put(
-                                    anilistId = current.anime.id,
-                                    episode = next,
-                                    audio = playerAudio,
-                                    sources = resolved,
-                                )
-                            }
-                            site.anikitty.app.data.servers.SourceBadgeCache.remember(
-                                context,
-                                current.anime.id,
-                                next,
-                                resolved,
-                            )
-                            site.anikitty.app.data.servers.SubtitleLibrary.prefetch(
-                                current.anime.id,
-                                next,
-                            )
+                            site.anikitty.app.data.servers.StreamWarmPrefetch.touch(alive.first())
                         }
                     }
                 },
@@ -1266,6 +1355,8 @@ fun LocalFirstApp(
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
+    }
+    }
     }
 }
 

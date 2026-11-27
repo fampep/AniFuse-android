@@ -28,10 +28,11 @@ object PlayableWarmCache {
         episode: Int,
         audio: String,
         sources: List<PlayableSource>,
+        lane: String = LANE_NEXT,
         nowMs: Long = System.currentTimeMillis(),
     ) {
         if (anilistId <= 0 || episode <= 0 || sources.isEmpty()) return
-        val key = key(anilistId, episode, audio)
+        val key = key(anilistId, episode, audio, lane)
         synchronized(lock) {
             map[key] = Entry(sources = sources, savedAtMs = nowMs)
             while (map.size > MAX) {
@@ -45,10 +46,11 @@ object PlayableWarmCache {
         anilistId: Int,
         episode: Int,
         audio: String,
+        lane: String = LANE_NEXT,
         nowMs: Long = System.currentTimeMillis(),
     ): List<PlayableSource>? {
         if (anilistId <= 0 || episode <= 0) return null
-        val key = key(anilistId, episode, audio)
+        val key = key(anilistId, episode, audio, lane)
         synchronized(lock) {
             val entry = map[key] ?: return null
             if (nowMs - entry.savedAtMs > TTL_MS) {
@@ -64,10 +66,11 @@ object PlayableWarmCache {
         anilistId: Int,
         episode: Int,
         audio: String,
+        lane: String = LANE_NEXT,
         nowMs: Long = System.currentTimeMillis(),
     ): List<PlayableSource>? {
         if (anilistId <= 0 || episode <= 0) return null
-        val key = key(anilistId, episode, audio)
+        val key = key(anilistId, episode, audio, lane)
         synchronized(lock) {
             val entry = map.remove(key) ?: return null
             if (nowMs - entry.savedAtMs > TTL_MS) return null
@@ -75,12 +78,26 @@ object PlayableWarmCache {
         }
     }
 
+    fun drop(
+        anilistId: Int,
+        episode: Int,
+        audio: String,
+        lane: String = LANE_NEXT,
+    ) {
+        if (anilistId <= 0 || episode <= 0) return
+        synchronized(lock) { map.remove(key(anilistId, episode, audio, lane)) }
+    }
+
     fun clear() {
         synchronized(lock) { map.clear() }
     }
 
-    internal fun key(anilistId: Int, episode: Int, audio: String): String {
+    internal fun key(anilistId: Int, episode: Int, audio: String, lane: String = LANE_NEXT): String {
         val lang = audio.trim().lowercase().ifBlank { "sub" }
-        return "$anilistId:$episode:$lang"
+        val slot = lane.trim().lowercase().ifBlank { LANE_NEXT }
+        return "$anilistId:$episode:$lang:$slot"
     }
+
+    const val LANE_NEXT = "next"
+    const val LANE_STANDBY = "standby"
 }

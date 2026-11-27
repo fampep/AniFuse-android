@@ -185,23 +185,26 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         val list = _resolvers.value
         if (list.isEmpty()) error("No stream extensions installed")
         val preferredId = _selectedId.value
+        val down = downProviderNames()
         val ordered = sinkUnhealthy(
             ordered = buildList {
                 list.firstOrNull { it.server.id == preferredId }?.let { add(it) }
                 list.filterNot { it.server.id == preferredId }.forEach { add(it) }
             },
-            down = downProviderNames(),
+            down = down,
             id = { it.server.id },
             name = { it.server.name },
         )
         val errors = java.util.Collections.synchronizedList(ArrayList<String>())
-        // Known-down providers already sank; shorten the preferred head-start so
-        // healthy mirrors join the race almost immediately.
-        val headStartMs = if (downProviderNames().isNotEmpty()) {
-            RESOLVE_HEAD_START_WARM_MS
-        } else {
-            RESOLVE_HEAD_START_MS
-        }
+        val preferred = ordered.first()
+        val preferredCold = preferred.server.id.lowercase() in down ||
+            preferred.server.name.trim().lowercase() in down
+        // A known-dead favorite starts beside the healthy mirrors instead of
+        // making every episode wait out its head start.
+        val headStartMs = resolveHeadStartMs(
+            anyDown = down.isNotEmpty(),
+            preferredCold = preferredCold,
+        )
         val raced = raceHeadStart(
             count = ordered.size,
             parallel = 4,
@@ -311,7 +314,8 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         }
     }
 
-    private fun downProviderNames(): Set<String> = providerHealth.downNames()
+    private fun downProviderNames(): Set<String> =
+        providerHealth.downNames() + providerHealth.pulseDownKeys()
 
     /** Soft-block providers that just hard-failed so the next race skips them first. */
     private fun rememberProviderDown(resolver: StreamResolver, message: String?) {
@@ -325,6 +329,8 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
             "challenge" in msg ||
             "cloudflare" in msg
         if (!hard) return
+        val keys = listOf(resolver.server.id, resolver.server.name)
+        providerHealth.notePulse(keys, ok = false)
         val next = providerHealth.downNames() +
             resolver.server.id.lowercase() +
             resolver.server.name.trim().lowercase()
@@ -332,6 +338,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
     }
 
     private fun rememberProviderUp(resolver: StreamResolver) {
+        providerHealth.notePulse(listOf(resolver.server.id, resolver.server.name), ok = true)
         val down = providerHealth.downNames()
         if (down.isEmpty()) return
         val cleared = down -
@@ -342,11 +349,6 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
 
     private companion object {
         const val KEY_SELECTED = "selected_server_id"
-        /** Preferred resolver's head start before the next providers join. */
-        const val RESOLVE_HEAD_START_MS = 900L
-
-        /** Head start when the down-set already knows unhealthy hosts. */
-        const val RESOLVE_HEAD_START_WARM_MS = 350L
 
         /** Upper bound for one provider's resolve before that racer is dropped. */
         const val RESOLVE_TIMEOUT_MS = 7_500L

@@ -20,7 +20,8 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
+import androidx.activity.BackEventCompat
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.core.app.PictureInPictureModeChangedInfo
 import androidx.core.util.Consumer
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -177,6 +178,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -191,6 +193,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
@@ -215,6 +218,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import site.anikitty.app.AnikittyApp
+import site.anikitty.app.ui.components.STAGE_EDGE_LEFT
+import site.anikitty.app.ui.components.STAGE_EDGE_RIGHT
+import site.anikitty.app.ui.components.StageBackBridge
+import site.anikitty.app.ui.components.StageBackPose
+import site.anikitty.app.ui.components.stageBackPose
+import site.anikitty.app.ui.theme.prefersReducedMotion
 import site.anikitty.app.data.download.DOWNLOAD_USER_AGENT
 import site.anikitty.app.data.download.EpisodeDownloadEntity
 import site.anikitty.app.data.download.EpisodeDownloads
@@ -331,8 +340,10 @@ fun PlayerScreen(
     onDismiss: () -> Unit = onClose,
     onToggleWatched: ((Int) -> Unit)? = null,
     onNextEpisode: (() -> Unit)? = null,
-    /** Fire once past 72% so the next episode's CDN race is already warm. */
+    /** Fire once past 65% so the next episode's CDN race is already warm. */
     onWarmNextEpisode: (suspend () -> Unit)? = null,
+    /** Credits window: revalidate the next file and arm a standby host for this one. */
+    onArmCredits: (suspend (playingHost: String) -> Unit)? = null,
     onProgress: ((positionMs: Long, durationMs: Long, skip: SkipTimes) -> Unit)? = null,
     totalEpisodes: Int = 1,
     watchedThrough: Int = 0,
@@ -602,7 +613,35 @@ fun PlayerScreen(
         }
     }
 
-    BackHandler(onBack = { closePanelOrExit() })
+    val backBridge = remember { StageBackBridge() }
+    var playerBackPose by remember { mutableStateOf(StageBackPose.Rest) }
+    backBridge.slide = panel == PlayerMenuPage.None && !theater
+    backBridge.reduced = prefersReducedMotion()
+    backBridge.onPose = { playerBackPose = it }
+    backBridge.onCommit = { closePanelOrExit() }
+    backBridge.onHaptic = { KittyHaptics.perform(view, KittyHaptics.Kind.Confirm) }
+    PredictiveBackHandler { events ->
+        var edge = STAGE_EDGE_LEFT
+        try {
+            events.collect { event ->
+                edge = if (event.swipeEdge == BackEventCompat.EDGE_RIGHT) {
+                    STAGE_EDGE_RIGHT
+                } else {
+                    STAGE_EDGE_LEFT
+                }
+                val pose = if (backBridge.slide) {
+                    stageBackPose(event.progress, edge, backBridge.reduced)
+                } else {
+                    StageBackPose.Rest
+                }
+                backBridge.onPose(pose)
+            }
+            backBridge.onHaptic()
+            backBridge.onCommit()
+        } finally {
+            backBridge.onPose(StageBackPose.Rest)
+        }
+    }
 
     DisposableEffect(theater) {
         val previous = activity?.requestedOrientation
@@ -711,6 +750,9 @@ fun PlayerScreen(
             .setLoadControl(loadControl)
             .setTrackSelector(selector)
             .setBandwidthMeter(bandwidth)
+            .setAudioAttributes(movieAudioAttributes(), /* handleAudioFocus = */ true)
+            .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
             .apply {
                 videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
@@ -833,7 +875,16 @@ fun PlayerScreen(
         val bundle = playerBundle ?: return@LaunchedEffect
         bundle.pipeline.apply(playing)
         val start = resumeAtMs.coerceAtLeast(0L)
-        val itemBuilder = MediaItem.Builder().setUri(playing.url)
+        val itemBuilder = MediaItem.Builder()
+            .setUri(playing.url)
+            .setMediaId("$anilistId:$episode")
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(title)
+                    .setArtist(if (isMovie) "Movie" else "Episode $episode")
+                    .setDisplayTitle(if (isMovie) title else "$title · Episode $episode")
+                    .build(),
+            )
         hlsStreamKeys(if (playbackHlsOffline) playbackSaved?.hlsStreams else null)
             .takeIf { it.isNotEmpty() }
             ?.let(itemBuilder::setStreamKeys)
@@ -934,18 +985,47 @@ fun PlayerScreen(
         pick(episode - 1)
     }
 
+    SideEffect {
+        val wasSuppressed = PlaybackSessions.suppressed
+        PlaybackSessions.suppressed = isCasting
+        PlaybackSessions.onSkipNext = { goNextEpisode() }
+        PlaybackSessions.onSkipPrevious = { goPreviousEpisode() }
+        PlaybackSessions.canSkipNext = onNextEpisode != null && !nextTriggered
+        PlaybackSessions.canSkipPrevious = episode > 1 && onPickEpisode != null && !nextTriggered
+        if (wasSuppressed != isCasting) PlaybackSessions.refresh()
+    }
+
     var nearEndOffer by remember { mutableStateOf(false) }
     var shownSkip by remember { mutableStateOf<Pair<String, site.anikitty.app.data.skip.SkipInterval>?>(null) }
     var shelfMinutes by remember { mutableIntStateOf(-1) }
     var warmedNext by remember(anilistId, episode) { mutableStateOf(false) }
+    var creditsArmed by remember(anilistId, episode) { mutableStateOf(false) }
     val latestWarmNext by rememberUpdatedState(onWarmNextEpisode)
-    LaunchedEffect(positionMs, durationMs, warmedNext, onNextEpisode) {
-        if (!shouldWarmNextEpisode(positionMs, durationMs, onNextEpisode != null, warmedNext)) {
-            return@LaunchedEffect
+    val latestArmCredits by rememberUpdatedState(onArmCredits)
+    LaunchedEffect(positionMs, durationMs, warmedNext, creditsArmed, onNextEpisode, onArmCredits) {
+        when (
+            streamWarmAction(
+                positionMs = positionMs,
+                durationMs = durationMs,
+                hasNext = onNextEpisode != null,
+                nextWarmed = warmedNext,
+                creditsArmed = creditsArmed,
+            )
+        ) {
+            StreamWarmAction.None -> Unit
+            StreamWarmAction.ResolveNext -> {
+                warmedNext = true
+                val warm = latestWarmNext ?: return@LaunchedEffect
+                downloadScope.launch { runCatching { warm() } }
+            }
+            StreamWarmAction.ArmCredits -> {
+                creditsArmed = true
+                if (onNextEpisode != null) warmedNext = true
+                val arm = latestArmCredits ?: return@LaunchedEffect
+                val host = playbackHost(source?.url.orEmpty())
+                downloadScope.launch { runCatching { arm(host) } }
+            }
         }
-        warmedNext = true
-        val warm = latestWarmNext ?: return@LaunchedEffect
-        runCatching { warm() }
     }
     val showEndAutoplay = autoNext &&
         onNextEpisode != null &&
@@ -1078,9 +1158,28 @@ fun PlayerScreen(
             didSeekStart = false
             allowHistoryFallback = false
             downloadScope.launch {
-                val fresh = kotlinx.coroutines.withTimeoutOrNull(45_000) {
-                    runCatching { refresh() }.getOrNull().orEmpty()
-                }.orEmpty()
+                val standby = if (anilistId > 0) {
+                    site.anikitty.app.data.servers.PlayableWarmCache.take(
+                        anilistId = anilistId,
+                        episode = episode,
+                        audio = audio,
+                        lane = site.anikitty.app.data.servers.PlayableWarmCache.LANE_STANDBY,
+                    ).orEmpty()
+                } else {
+                    emptyList()
+                }
+                val standbyAlive = if (standby.isEmpty()) {
+                    emptyList()
+                } else {
+                    site.anikitty.app.data.servers.PlayableWarmProbe.filterAlive(standby)
+                }
+                val fresh = if (standbyAlive.isNotEmpty()) {
+                    standbyAlive
+                } else {
+                    kotlinx.coroutines.withTimeoutOrNull(45_000) {
+                        runCatching { refresh() }.getOrNull().orEmpty()
+                    }.orEmpty()
+                }
                 refreshingSources = false
                 if (hasNewPlayableUrls(playlist.map { it.url }, fresh.map { it.url })) {
                     playlist = fresh
@@ -1745,7 +1844,9 @@ fun PlayerScreen(
             }
         }
         activePlayer?.addListener(listener)
+        if (activePlayer != null) PlaybackSessions.hold(context, activePlayer)
         onDispose {
+            PlaybackSessions.release(context)
             val view = playerViewRef
             if (view != null && view.player === activePlayer) view.player = null
             activePlayer?.removeListener(listener)
@@ -4112,6 +4213,12 @@ fun PlayerScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .graphicsLayer {
+                translationX = size.width * playerBackPose.translationFraction
+                alpha = playerBackPose.alpha
+                scaleX = playerBackPose.scale
+                scaleY = playerBackPose.scale
+            }
             .offset { androidx.compose.ui.unit.IntOffset(0, dismissY.toInt()) }
             .background(Color(0xFF0B0C0E)),
     ) {

@@ -58,6 +58,66 @@ internal class AnifuseFeedCache(
         }
     }
 
+    /**
+     * Local success/failure marks. A remote health snapshot rewrites
+     * [DOWN_FILE]; these marks keep a just-failed provider sunk for [LOCAL_HOLD_MS].
+     */
+    fun notePulse(keys: Collection<String>, ok: Boolean) {
+        val stamped = now()
+        val drop = keys.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+        if (drop.isEmpty()) return
+        synchronized(pulseLock) {
+            val keep = readPulse().filter { stamped - it.atMs <= DOWN_MAX_AGE_MS && it.key !in drop }
+            val next = keep + drop.map { PulseMark(it, stamped, ok) }
+            writePulse(next)
+        }
+    }
+
+    fun pulseDownKeys(holdMs: Long = LOCAL_HOLD_MS): Set<String> = synchronized(pulseLock) {
+        val stamped = now()
+        val latest = HashMap<String, PulseMark>()
+        for (mark in readPulse()) {
+            val prev = latest[mark.key]
+            if (prev == null || mark.atMs >= prev.atMs) latest[mark.key] = mark
+        }
+        latest.values
+            .filter { !it.ok && stamped - it.atMs <= holdMs }
+            .map { it.key }
+            .toSet()
+    }
+
+    private fun readPulse(): List<PulseMark> {
+        val file = File(root, PULSE_FILE)
+        if (!file.isFile) return emptyList()
+        return try {
+            file.readLines().mapNotNull { line ->
+                val parts = line.split('\t')
+                if (parts.size < 3) return@mapNotNull null
+                val at = parts[1].toLongOrNull() ?: return@mapNotNull null
+                val key = parts[0].trim().lowercase()
+                if (key.isEmpty()) return@mapNotNull null
+                PulseMark(key, at, ok = parts[2] == "1")
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun writePulse(marks: List<PulseMark>) {
+        try {
+            root.mkdirs()
+            val body = marks.joinToString("\n") { mark ->
+                "${mark.key}\t${mark.atMs}\t${if (mark.ok) 1 else 0}"
+            }
+            File(root, PULSE_FILE).writeText(body)
+        } catch (_: Exception) {
+        }
+    }
+
+    private data class PulseMark(val key: String, val atMs: Long, val ok: Boolean)
+
+    private val pulseLock = Any()
+
     private fun file(name: String): File = File(root, safe(name))
 
     private fun safe(name: String): String =
@@ -65,7 +125,9 @@ internal class AnifuseFeedCache(
 
     companion object {
         const val DOWN_FILE = "provider-down.txt"
+        const val PULSE_FILE = "provider-pulse.txt"
         const val DOWN_MAX_AGE_MS = 30L * 60_000L
+        const val LOCAL_HOLD_MS = 3L * 60_000L
         const val STALE_FEED_MS = 6L * 60 * 60_000L
     }
 }

@@ -68,9 +68,16 @@ fun StageGlassDisc(
                 ambientColor = Color.Black.copy(alpha = 0.55f),
                 spotColor = Color.Black.copy(alpha = 0.40f),
             )
-            .clip(CircleShape)
-            .background(if (selected) Color.White else StageGlassFill)
-            .border(1.dp, if (selected) Color.White else StageGlassStroke, CircleShape)
+            .then(
+                if (selected) {
+                    Modifier
+                        .clip(CircleShape)
+                        .background(Color.White)
+                        .border(1.dp, Color.White, CircleShape)
+                } else {
+                    Modifier.stageFrosted(CircleShape)
+                },
+            )
             .spacePress(onClick),
         contentAlignment = Alignment.Center,
         content = content,
