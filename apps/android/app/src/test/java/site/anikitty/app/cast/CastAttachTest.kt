@@ -316,7 +316,21 @@ class CastAttachTest {
         assertEquals(90_000L, castPhoneResumeTarget(localMs = 0L, knownMs = 90_000L))
         assertNull(castPhoneResumeTarget(localMs = 90_000L, knownMs = 91_000L))
         assertNull(castPhoneResumeTarget(localMs = 0L, knownMs = 0L))
-        assertNull(castPhoneResumeTarget(localMs = 0L, knownMs = 800L))
+        assertNull(castPhoneResumeTarget(localMs = 0L, knownMs = 300L))
+        assertEquals(800L, castPhoneResumeTarget(localMs = 0L, knownMs = 800L))
+    }
+
+    @Test
+    fun earlyPhonePlaybackStillKeepsSavedCastResume() {
+        assertEquals(
+            90_000L,
+            castAttachPositionMs(
+                localPositionMs = 2_500L,
+                resumeAtMs = 90_000L,
+                startPositionMs = 0L,
+                allowHistoryFallback = true,
+            ),
+        )
     }
 
     @Test

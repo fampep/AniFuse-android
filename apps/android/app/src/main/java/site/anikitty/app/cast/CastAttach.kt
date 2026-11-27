@@ -195,8 +195,13 @@ internal fun castDisconnectResumeMs(
 internal fun castPhoneResumeTarget(localMs: Long, knownMs: Long): Long? {
     val local = localMs.coerceAtLeast(0L)
     val known = knownMs.coerceAtLeast(0L)
-    if (known <= 1_000L) return null
-    if (known <= local + 1_500L) return null
+    if (known <= 400L) return null
+    val ahead = known - local
+    if (ahead <= 0L) return null
+    // Near cold start, even ~0.8s on the TV is worth catching. Mid-episode,
+    // ignore sub-1.5s drift so the phone does not seek on every handback.
+    val slack = if (local < 5_000L) 200L else 1_500L
+    if (ahead <= slack) return null
     return known
 }
 
@@ -218,6 +223,8 @@ internal fun castAttachPositionMs(
     val history = if (allowHistoryFallback) startPositionMs.coerceAtLeast(0L) else 0L
     val saved = maxOf(resume, history)
     if (pendingResume && saved > 0L) return saved
-    if (local > 2_000L) return local
+    // Keep history for the first ~3s of phone playback so a slow Cast session
+    // still opens mid-episode instead of restarting from the cold start buffer.
+    if (local > 3_000L) return local
     return maxOf(local, saved)
 }

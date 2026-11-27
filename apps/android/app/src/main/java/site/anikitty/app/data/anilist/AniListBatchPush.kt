@@ -14,7 +14,8 @@ internal data class AniListBatchPushItem(
 )
 
 /** Chunk size that stays under AniList's complexity budget while cutting ~700ms×N waits. */
-internal const val ANILIST_PUSH_CHUNK = 6
+/** Alias batch size — one paced HTTP call covers this many progress rows. */
+internal const val ANILIST_PUSH_CHUNK = 10
 
 internal fun pendingPushChunks(
     count: Int,

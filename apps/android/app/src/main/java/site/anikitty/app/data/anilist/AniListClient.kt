@@ -56,6 +56,17 @@ class AniListClient(
         externalLinks { site url }
     """.trimIndent()
 
+    /**
+     * Sync-only payload. Full [mediaFields] on every MediaList row was megabytes
+     * of unused relations/trailers — this keeps pull fast and local-first.
+     */
+    private val mediaListFields = """
+        id
+        idMal
+        title { romaji english native }
+        coverImage { extraLarge large }
+    """.trimIndent()
+
     /** Richer payload for the title detail screen (episodes + relations). */
     private val mediaDetailFields = """
         $mediaFields
@@ -178,7 +189,7 @@ class AniListClient(
                     id
                     status
                     progress
-                    media { $mediaFields }
+                    media { $mediaListFields }
                   }
                 }
               }

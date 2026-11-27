@@ -3,6 +3,8 @@
 
 package site.anikitty.app.data.anilist
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import site.anikitty.app.data.local.PendingAniListPush
 import site.anikitty.app.data.local.PendingAniListPushDao
 import site.anikitty.app.data.local.WatchHistoryDao
@@ -22,13 +24,16 @@ class AniListSync(
         val username: String?,
     )
 
-    suspend fun pull(): Result {
-        drainPendingPushes()
+    suspend fun pull(): Result = coroutineScope {
         val token = auth.accessToken ?: error("AniList not linked")
+        // Drain queued progress while the slim MediaList is in flight. An empty
+        // queue returns immediately so the pull is not gated on a no-op.
+        val drainJob = async { drainPendingPushes() }
         val viewer = aniList.viewer(token) ?: error("Could not load AniList profile")
         auth.saveViewer(token, viewer)
 
         val entries = aniList.mediaListEntries(token, viewer.id)
+        drainJob.await()
         val now = System.currentTimeMillis()
         val entryIds = entries.map { it.media.id }.distinct()
         val existingById = if (entryIds.isEmpty()) {
@@ -52,7 +57,7 @@ class AniListSync(
             )
         }
         if (merged.isNotEmpty()) historyDao.upsertAll(merged)
-        return Result(imported = merged.size, username = viewer.name)
+        Result(imported = merged.size, username = viewer.name)
     }
 
     /**

@@ -67,20 +67,26 @@ internal fun SeekPreview(
                 .width(cardWidth),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            if (frame != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(cardHeight)
-                        .shadow(
-                            elevation = 18.dp,
-                            shape = frameShape,
-                            ambientColor = Color.Black.copy(alpha = 0.55f),
-                            spotColor = Color.Black.copy(alpha = 0.4f),
-                        )
-                        .clip(frameShape)
-                        .border(1.dp, Color.White.copy(alpha = 0.28f), frameShape),
-                ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(cardHeight)
+                    .shadow(
+                        elevation = 18.dp,
+                        shape = frameShape,
+                        ambientColor = Color.Black.copy(alpha = 0.55f),
+                        spotColor = Color.Black.copy(alpha = 0.4f),
+                    )
+                    .clip(frameShape)
+                    .background(Color(0xCC101012))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
+                        ),
+                    )
+                    .border(1.dp, Color.White.copy(alpha = 0.28f), frameShape),
+            ) {
+                if (frame != null) {
                     Image(
                         bitmap = frame.asImageBitmap(),
                         contentDescription = null,

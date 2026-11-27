@@ -2649,6 +2649,8 @@ private fun TitleDetailScreen(
                     playEpisode,
                     resolved.sources,
                 )
+                // Captions for this episode start before the player chrome mounts.
+                site.anikitty.app.data.servers.SubtitleLibrary.prefetch(detail.id, playEpisode)
                 onPlay(playEpisode, resolved.sources, detail)
                 status = if (resolved.usedFallback) {
                     "Playing via ${resolved.server.name}"
