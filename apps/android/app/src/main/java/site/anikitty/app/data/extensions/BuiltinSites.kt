@@ -12,7 +12,7 @@ internal fun builtinStoreListings(): List<StoreListing> = listOf(
     StoreListing(
         id = ANIVAULT_ID,
         name = "AniVault",
-        description = "AniVault's own sources. The file plays on this phone.",
+        description = "Every AniVault server. The file plays on this phone.",
         github = ANIVAULT_SITE,
         author = "anivault.tv",
         featured = true,
