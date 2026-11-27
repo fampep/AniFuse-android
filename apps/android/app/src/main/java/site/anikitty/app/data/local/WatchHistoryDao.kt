@@ -21,6 +21,9 @@ interface WatchHistoryDao {
     @Query("SELECT * FROM watch_history")
     suspend fun getAll(): List<WatchHistoryEntity>
 
+    @Query("SELECT * FROM watch_history WHERE anilistId IN (:ids)")
+    suspend fun getByIds(ids: List<Int>): List<WatchHistoryEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entry: WatchHistoryEntity)
 

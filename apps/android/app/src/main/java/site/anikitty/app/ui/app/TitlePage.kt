@@ -276,6 +276,7 @@ internal fun TitleStage(
     val related = remember(detail) { detail.relatedOutsideSeasons() }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(palette.page)) {
+        site.anikitty.app.ui.theme.KittyAtmosphere(modifier = Modifier.fillMaxSize())
         val bannerHeight = if (television) {
             (maxHeight * 0.42f).coerceIn(240.dp, 300.dp)
         } else {
