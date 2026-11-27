@@ -1370,18 +1370,24 @@ private fun PlayButton(
         return
     }
     val palette = LocalKittyPalette.current
+    val playShape = RoundedCornerShape(22.dp)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(KittyRadius.button))
+            .clip(playShape)
             .background(palette.accent)
-            .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(KittyRadius.button))
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
+                ),
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.22f), playShape)
             .spacePress(onClick = { if (!busy) onClick() }, grabFocus = isTelevision()),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(54.dp),
+                .height(58.dp),
             contentAlignment = Alignment.Center,
         ) {
             if (busy) {
@@ -2230,7 +2236,8 @@ private fun HeaderIcon(
         modifier = modifier
             .size(48.dp)
             .clip(CircleShape)
-            .background(if (onDark) Color.Black.copy(alpha = 0.45f) else palette.surface)
+            .background(if (onDark) Color(0xCC101010) else palette.surface)
+            .border(1.dp, if (onDark) Color(0xFF292929) else palette.hairline, CircleShape)
             .spacePress(onClick),
         contentAlignment = Alignment.Center,
     ) {

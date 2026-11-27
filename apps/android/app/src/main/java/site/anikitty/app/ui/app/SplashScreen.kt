@@ -12,11 +12,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -75,6 +78,7 @@ fun SplashScreen(onFinished: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(LocalKittyPalette.current.page)
+            .windowInsetsPadding(WindowInsets.statusBars)
             .drawBehind {
                 val radius = size.minDimension * (0.22f + 0.28f * progress)
                 drawCircle(
@@ -121,6 +125,14 @@ fun SplashScreen(onFinished: () -> Unit) {
                     alpha = progress.coerceIn(0f, 1f)
                 },
         ) {
+            Text(
+                text = "ANIFUSE",
+                color = ink.copy(alpha = 0.42f * fillAlphaAnim),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 3.2.sp,
+            )
+            Spacer(modifier = Modifier.height(10.dp))
             site.anikitty.app.ui.components.PrismMark(
                 modifier = Modifier.size(112.dp),
                 glow = true,
@@ -130,8 +142,8 @@ fun SplashScreen(onFinished: () -> Unit) {
                 Text(
                     text = "AniFuse",
                     style = MaterialTheme.typography.displayMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-1.5).sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = (-1.8).sp,
                         drawStyle = Stroke(
                             width = 2f,
                             join = StrokeJoin.Round,
@@ -143,8 +155,8 @@ fun SplashScreen(onFinished: () -> Unit) {
                 Text(
                     text = "AniFuse",
                     style = MaterialTheme.typography.displayMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-1.5).sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = (-1.8).sp,
                         brush = strokeBrush,
                         drawStyle = Stroke(
                             width = 3f,
@@ -158,8 +170,8 @@ fun SplashScreen(onFinished: () -> Unit) {
                 Text(
                     text = "AniFuse",
                     style = MaterialTheme.typography.displayMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-1.5).sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = (-1.8).sp,
                     ),
                     color = ink.copy(alpha = fillAlphaAnim),
                 )
@@ -173,10 +185,10 @@ fun SplashScreen(onFinished: () -> Unit) {
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "Lists. Streams. One glass home.",
+                text = "Artwork carries the colour. Chrome stays glass.",
                 color = ink.copy(alpha = 0.48f * fillAlphaAnim),
                 fontSize = 13.sp,
-                letterSpacing = 0.35.sp,
+                letterSpacing = 0.2.sp,
                 fontWeight = FontWeight.Medium,
             )
         }

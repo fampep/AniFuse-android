@@ -1031,6 +1031,29 @@ fun LocalFirstApp(
                         { openResolved(current.episode + 1, playerAudio) }
                     }
                 },
+                onWarmNextEpisode = run {
+                    val released = current.anime.releasedEpisodeCount()
+                    val hasNext = released <= 0 || current.episode < released
+                    if (!hasNext || demo || site.anikitty.app.data.demo.DemoLibrary.find(current.anime.id) != null) {
+                        null
+                    } else {
+                        suspend {
+                            val next = current.episode + 1
+                            val resolved = streamServers.resolveWithFailover(
+                                anilistId = current.anime.id,
+                                episode = next,
+                                audio = playerAudio,
+                                titleHint = current.anime.streamTitleHint(),
+                            ).sources
+                            site.anikitty.app.data.servers.SourceBadgeCache.remember(
+                                context,
+                                current.anime.id,
+                                next,
+                                resolved,
+                            )
+                        }
+                    }
+                },
                 totalEpisodes = current.anime.releasedEpisodeCount().coerceAtLeast(current.episode),
                 watchedThrough = watchedThrough,
                 audio = playerAudio,

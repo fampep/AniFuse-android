@@ -79,6 +79,7 @@ import site.anikitty.app.data.episodeCountLabel
 import site.anikitty.app.data.mediaFormatLabel
 import site.anikitty.app.data.watchedAgo
 import site.anikitty.app.ui.components.HeroBanner
+import site.anikitty.app.ui.components.StageGlassDisc
 import site.anikitty.app.ui.components.StageSlider
 import site.anikitty.app.ui.components.KittyImage
 import site.anikitty.app.ui.components.PrismMark
@@ -203,12 +204,7 @@ private fun HomeBarIcon(
     onClick: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .spacePress(onClick),
-        contentAlignment = Alignment.Center,
-    ) {
+    StageGlassDisc(onClick = onClick, size = 44.dp) {
         content()
     }
 }
@@ -619,12 +615,13 @@ private fun HomePosterCell(
                 .sharedPoster(anime.id)
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(10.dp)),
+                .clip(RoundedCornerShape(16.dp))
+                .border(1.dp, Color(0xFF292929), RoundedCornerShape(16.dp)),
         )
         Text(
             anime.title,
             color = palette.text,
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.SemiBold,
             fontSize = 12.sp,
             lineHeight = 15.sp,
             maxLines = 1,

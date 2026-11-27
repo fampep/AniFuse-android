@@ -395,19 +395,28 @@ fun MySpaceFeed(
                         "alpha" to "A–Z",
                     ).forEach { (id, label) ->
                         val selected = librarySort == id
-                        Text(
-                            label,
-                            color = if (selected) palette.onAccent else palette.text,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
                                 .defaultMinSize(minHeight = 48.dp)
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(if (selected) palette.accent else palette.surface)
-                                .border(1.dp, palette.hairline, RoundedCornerShape(999.dp))
                                 .spacePress { librarySort = id }
-                                .padding(horizontal = 14.dp, vertical = 8.dp),
-                        )
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                label,
+                                color = if (selected) palette.text else palette.muted,
+                                fontSize = 13.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .padding(top = 6.dp)
+                                    .height(2.dp)
+                                    .width(if (selected) 22.dp else 0.dp)
+                                    .clip(CircleShape)
+                                    .background(if (selected) Color.White else Color.Transparent),
+                            )
+                        }
                     }
                 }
             }

@@ -230,13 +230,22 @@ internal fun NotificationCenter(
             ) {
                 Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = palette.text)
             }
-            Text(
-                "Notifications",
-                color = palette.text,
-                fontWeight = FontWeight.Bold,
-                fontSize = 26.sp,
-                modifier = Modifier.weight(1f).padding(start = 4.dp),
-            )
+            Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
+                Text(
+                    "INBOX",
+                    color = palette.muted,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.8.sp,
+                )
+                Text(
+                    "Notifications",
+                    color = palette.text,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 28.sp,
+                    letterSpacing = (-0.6).sp,
+                )
+            }
         }
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),

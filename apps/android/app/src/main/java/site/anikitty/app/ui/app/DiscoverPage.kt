@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,6 +64,8 @@ import site.anikitty.app.data.anilist.AnimeSummary
 import site.anikitty.app.data.friendlyFailure
 import site.anikitty.app.ui.components.KittyBottomSheet
 import site.anikitty.app.ui.components.KittyChip
+import site.anikitty.app.ui.components.StageGlassDisc
+import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.icons.FluentuiSystemIconsCalendarClockFilled
 import site.anikitty.app.ui.icons.FluentuiSystemIconsStarFilled
 import site.anikitty.app.ui.theme.KittyRadius
@@ -291,12 +294,7 @@ fun DiscoverFeed(
             ) {
                 DISCOVER_CATEGORIES.forEach { name ->
                     val on = !applied.active() && category == name
-                    Text(
-                        name,
-                        color = if (on) palette.text else palette.muted,
-                        fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
-                        fontSize = 13.sp,
-                        lineHeight = 16.sp,
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .spacePress {
@@ -304,7 +302,24 @@ fun DiscoverFeed(
                                 if (applied.active()) apply(DiscoverFilter())
                             }
                             .padding(vertical = 10.dp),
-                    )
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .width(2.dp)
+                                .height(14.dp)
+                                .clip(RoundedCornerShape(1.dp))
+                                .background(if (on) Color.White else Color.Transparent),
+                        )
+                        Text(
+                            name,
+                            color = if (on) palette.text else palette.muted,
+                            fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+                            fontSize = 13.sp,
+                            lineHeight = 16.sp,
+                        )
+                    }
                 }
             }
             LazyColumn(
@@ -502,13 +517,7 @@ private fun FilterChipRow(
 @Composable
 private fun DiscoverIconButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     val palette = LocalKittyPalette.current
-    Box(
-        modifier = Modifier
-            .size(48.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .spacePress(onClick),
-        contentAlignment = Alignment.Center,
-    ) {
+    StageGlassDisc(onClick = onClick, size = 48.dp) {
         Icon(icon, contentDescription = label, tint = palette.text, modifier = Modifier.size(22.dp))
     }
 }
@@ -522,12 +531,10 @@ private fun DiscoverDoor(
     onClick: () -> Unit,
 ) {
     val palette = LocalKittyPalette.current
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(22.dp)
     Row(
         modifier = modifier
-            .clip(shape)
-            .background(palette.surface)
-            .border(1.dp, palette.hairline, shape)
+            .stageGlassPlate(shape = shape)
             .spacePress(onClick)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,

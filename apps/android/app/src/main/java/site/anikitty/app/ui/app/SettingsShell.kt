@@ -1283,12 +1283,12 @@ internal fun SettingsGroup(
     val palette = LocalKittyPalette.current
     Column(modifier = Modifier.padding(horizontal = 20.dp)) {
         Text(
-            title,
+            title.uppercase(),
             color = palette.muted,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.6.sp,
-            modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
+            letterSpacing = 1.6.sp,
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
         )
         val shape = RoundedCornerShape(site.anikitty.app.ui.theme.KittyRadius.lg)
         Column(
@@ -1379,25 +1379,27 @@ private fun ThemeModeChip(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalKittyPalette.current
+    val shape = RoundedCornerShape(18.dp)
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (selected) palette.text.copy(alpha = 0.08f) else Color.Transparent)
-            .border(
-                1.dp,
-                if (selected) palette.text.copy(alpha = 0.4f) else palette.hairline,
-                RoundedCornerShape(14.dp),
-            )
+            .clip(shape)
+            .background(if (selected) Color.White else Color(0xFF101010))
+            .border(1.dp, if (selected) Color.White else Color(0xFF292929), shape)
             .clickable(onClick = onClick)
-            .padding(12.dp),
+            .padding(14.dp),
     ) {
         Text(
             label,
-            color = palette.text,
+            color = if (selected) Color(0xFF080808) else palette.text,
             fontSize = 13.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
         )
-        Text(detail, color = palette.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp))
+        Text(
+            detail,
+            color = if (selected) Color(0xFF505050) else palette.muted,
+            fontSize = 11.sp,
+            modifier = Modifier.padding(top = 2.dp),
+        )
     }
 }
 

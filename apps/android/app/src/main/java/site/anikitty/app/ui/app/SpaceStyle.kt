@@ -92,7 +92,6 @@ fun ProfileMark(
     }
 }
 private val SpaceShape = RoundedCornerShape(22.dp)
-private val ChipShape = RoundedCornerShape(16.dp)
 
 /**
  * Press sinks the control, then a spring brings it back. Reduced motion stays still.
@@ -240,31 +239,30 @@ fun SpaceChip(
     onClick: () -> Unit,
 ) {
     val palette = LocalKittyPalette.current
-    val background by animateColorAsState(
-        if (selected) palette.accent else palette.surface,
-        tween(KittyMotion.duration(180)),
-        label = "chipBg",
-    )
-    val stroke by animateColorAsState(
-        if (selected) palette.accent else palette.hairline,
-        tween(KittyMotion.duration(180)),
-        label = "chipStroke",
-    )
     val text by animateColorAsState(
-        if (selected) palette.onAccent else palette.text,
+        if (selected) palette.text else palette.muted,
         tween(KittyMotion.duration(180)),
         label = "chipText",
     )
-    Text(
-        text = label,
-        color = text,
-        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .defaultMinSize(minHeight = 48.dp)
-            .clip(ChipShape)
-            .background(background)
-            .border(1.dp, stroke, ChipShape)
             .spacePress(onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-    )
+            .padding(horizontal = 6.dp, vertical = 6.dp),
+    ) {
+        Text(
+            text = label,
+            color = text,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            fontSize = 13.sp,
+        )
+        Box(
+            modifier = Modifier
+                .padding(top = 6.dp)
+                .size(width = if (selected) 22.dp else 0.dp, height = 2.dp)
+                .clip(CircleShape)
+                .background(if (selected) Color.White else Color.Transparent),
+        )
+    }
 }
