@@ -412,6 +412,8 @@ fun PlayerScreen(
     var showGestureHint by remember {
         mutableStateOf(gestureHintEligible && !playerPrefs.getBoolean("gesture_hint_seen", false))
     }
+    var unlockCoachShown by remember { mutableStateOf(false) }
+    var wasControlsLocked by remember { mutableStateOf(false) }
     var playbackSpeed by remember {
         mutableFloatStateOf(playerPrefs.getFloat("playback_speed", 1f).coerceIn(0.5f, 2f))
     }
@@ -426,6 +428,13 @@ fun PlayerScreen(
     var gestureHud by remember { mutableStateOf<GestureHud?>(null) }
     var gestureDragging by remember { mutableStateOf(false) }
     var controlsLocked by remember { mutableStateOf(false) }
+    LaunchedEffect(controlsLocked) {
+        if (wasControlsLocked && !controlsLocked && gestureHintEligible && !unlockCoachShown) {
+            showGestureHint = true
+            unlockCoachShown = true
+        }
+        wasControlsLocked = controlsLocked
+    }
     /** Signed seek HUD total — stacks on rapid double-taps (e.g. +20s). */
     var seekFlashMs by remember { mutableLongStateOf(0L) }
     var buffering by remember { mutableStateOf(false) }
@@ -465,10 +474,15 @@ fun PlayerScreen(
     var sleepNote by remember { mutableStateOf<String?>(null) }
 
     val source = playlist.getOrNull(sourceIndex)
-    // The source's own captions are the captions: whatever the provider
-    // reports is what plays. The subtitle library API is no longer used.
+    // Provider sidecars first; SubtitleLibrary.peek fills gaps so warm
+    // prefetches paint before a cold CDN listing arrives.
     var librarySubtitles by remember(anilistId, episode) {
-        mutableStateOf(source?.subtitles.orEmpty())
+        mutableStateOf(
+            mergeSubtitleTracks(
+                source?.subtitles.orEmpty(),
+                site.anikitty.app.data.servers.SubtitleLibrary.peek(anilistId, episode).orEmpty(),
+            ),
+        )
     }
     var captionsLoading by remember(anilistId, episode) { mutableStateOf(false) }
     val downloadDao = remember {
@@ -709,8 +723,33 @@ fun PlayerScreen(
     // The video is already playing. Captions arrive on their own and are added
     // without building a new player.
     LaunchedEffect(anilistId, episode, source?.url) {
-        librarySubtitles = source?.subtitles.orEmpty()
-        captionsLoading = false
+        val provider = source?.subtitles.orEmpty()
+        val peeked = site.anikitty.app.data.servers.SubtitleLibrary.peek(anilistId, episode).orEmpty()
+        librarySubtitles = mergeSubtitleTracks(provider, peeked)
+        if (librarySubtitles.isEmpty() && anilistId > 0 && episode > 0) {
+            captionsLoading = true
+            val fetched = runCatching {
+                site.anikitty.app.data.servers.SubtitleLibrary.tracks(anilistId, episode)
+            }.getOrDefault(emptyList())
+            librarySubtitles = mergeSubtitleTracks(provider, fetched)
+            captionsLoading = false
+        } else {
+            captionsLoading = false
+        }
+    }
+    // After a CDN failover, cap ABR briefly so the new host is not judged by
+    // the previous pipe's bitrate estimate.
+    LaunchedEffect(sourceIndex, trackSelector) {
+        val selector = trackSelector ?: return@LaunchedEffect
+        if (sourceIndex <= 0) return@LaunchedEffect
+        val previous = selector.parameters
+        selector.parameters = previous.buildUpon().setMaxVideoBitrate(1_600_000).build()
+        delay(3_500)
+        if (trackSelector === selector) {
+            selector.parameters = selector.parameters.buildUpon()
+                .setMaxVideoBitrate(Int.MAX_VALUE)
+                .build()
+        }
     }
     LaunchedEffect(player, librarySubtitles, source?.url) {
         val exo = player ?: return@LaunchedEffect
@@ -2239,7 +2278,11 @@ fun PlayerScreen(
         mutableStateOf(activity?.isInPictureInPictureMode == true)
     }
     LaunchedEffect(inPip, subStyle, playerViewRef) {
-        applyCaptionStyle(playerViewRef, subStyle, scale = if (inPip) 0.62f else 1f)
+        applyCaptionStyle(
+            playerViewRef,
+            if (inPip) pipCaptionStyle(subStyle) else subStyle,
+            scale = if (inPip) 0.72f else 1f,
+        )
     }
     DisposableEffect(activity) {
         val host = activity as? ComponentActivity
@@ -4698,6 +4741,15 @@ private fun applyTextSelection(
     selector.parameters = params.build()
 }
 
+/** PiP fights artwork less with a thicker outline and higher bottom pad. */
+private fun pipCaptionStyle(style: SubStyle): SubStyle = style.copy(
+    edgeType = CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+    bold = true,
+    bottomPad = (style.bottomPad + 0.06f).coerceIn(SUB_BOTTOM_MIN, SUB_BOTTOM_MAX),
+    bgMode = if (style.bgMode == SubBgMode.None) SubBgMode.Soft else style.bgMode,
+    bgAlpha = style.bgAlpha.coerceAtLeast(0.45f),
+)
+
 @OptIn(UnstableApi::class)
 private fun applyCaptionStyle(playerView: PlayerView?, style: SubStyle, scale: Float = 1f) {
     val view = playerView?.subtitleView ?: return
@@ -5198,12 +5250,11 @@ private fun PlayerGestureHint(
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit,
 ) {
+    val shape = RoundedCornerShape(20.dp)
     Column(
         modifier = modifier
             .padding(horizontal = 24.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color.Black.copy(alpha = 0.82f))
-            .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(16.dp))
+            .stageGlassPlate(shape = shape, elevated = true)
             .clickable(role = Role.Button, onClick = onDismiss)
             .padding(horizontal = 18.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
