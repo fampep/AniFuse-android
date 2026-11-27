@@ -15,16 +15,29 @@ class AniVaultPlaybackTest {
         assertEquals("Hd-1", buttons.first().server)
         assertEquals("anikoto_stream.php", buttons.first().endpoint)
         assertEquals("AnimeHeaven", buttons.first { it.server == null }.label)
-        assertEquals("Turbo", buttons.last().label)
+        assertEquals("WatchAnimeWorld", buttons.last().label)
+        assertEquals(
+            listOf("Hd-1", "Vidstream-2", "Hd-2", "Vidplay", "BYFMS", "AnimeHeaven"),
+            buttons.take(6).map { it.label },
+        )
         assertTrue(AniVaultServer.BUTTON_TIMEOUT_MS < RESOLVE_TIMEOUT_MS)
     }
 
     @Test
-    fun dubSkipsAnimeHeavenAndAsksForEnglish() {
+    fun dubKeepsEveryEnglishServerThenTheirHindiServers() {
         val buttons = anivaultButtons("dub")
         assertTrue(buttons.none { it.endpoint == "animeheaven_stream.php" })
         assertEquals("English", buttons.first { it.endpoint == "anizone_stream.php" }.server)
-        assertEquals("dub", buttons.first().audio)
+        assertEquals("PlayerXdub", buttons.last().server)
+        assertTrue(buttons.any { it.server == "Rubydub" })
+        assertTrue(buttons.any { it.endpoint == "watchanimeworld_stream.php" })
+    }
+
+    @Test
+    fun selectingAniVaultStaysOnAniVaultServers() {
+        val all = listOf(stub("anikoto"), stub("anivault"), stub("reanime"))
+        assertEquals(listOf("anivault"), playbackResolvers("anivault", all).map { it.server.id })
+        assertEquals(listOf("anikoto", "reanime"), playbackResolvers("anikoto", all).map { it.server.id })
     }
 
     @Test
@@ -81,5 +94,34 @@ class AniVaultPlaybackTest {
         assertEquals("https://www.anivault.co/", playable?.headers?.get("Referer"))
         assertNull(anivaultPlayable("""{"iframeOnly":true,"embedUrl":"https://embed.example/x"}""", "Hd-1", headers))
         assertNull(anivaultPlayable("""{"error":"Could not resolve anime"}""", "Hd-1", headers))
+    }
+
+    @Test
+    fun everyListedServerNameIsKept() {
+        val names = anivaultListedServers(
+            """{"server":"Hd-1","servers":["Vidstream-2",{"name":"Hd-1"},{"server":"Mega"}]}""",
+        )
+        assertEquals(listOf("Vidstream-2", "Hd-1", "Mega"), names)
+    }
+
+    @Test
+    fun filesStayInButtonOrderWithoutRepeatingAUrl() {
+        val first = PlayableSource(url = "https://cdn.example/a.m3u8", label = "Hd-1")
+        val again = PlayableSource(url = "https://cdn.example/a.m3u8", label = "Hd-1 again")
+        val second = PlayableSource(url = "https://cdn.example/b.m3u8", label = "Hd-2")
+        assertEquals(
+            listOf("Hd-1", "Hd-2"),
+            anivaultOrdered(listOf(4 to second, 0 to first, 1 to again)).map { it.label },
+        )
+    }
+
+    private fun stub(id: String) = object : StreamResolver {
+        override val server = StreamServer(id = id, name = id, description = "")
+        override suspend fun resolve(
+            anilistId: Int,
+            episode: Int,
+            audio: String,
+            titleHint: String?,
+        ): List<PlayableSource> = emptyList()
     }
 }

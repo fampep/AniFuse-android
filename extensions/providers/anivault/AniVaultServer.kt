@@ -3,13 +3,17 @@
 
 package site.anikitty.app.data.servers
 
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -19,10 +23,10 @@ import site.anikitty.app.data.skip.malIdFromTitleHint
 /**
  * On-device AniVault.
  *
- * Playback asks anivault.co for the same source buttons the site shows
- * (Hd-1, Vidstream-2, Hd-2, and the rest). The phone plays the file those
- * buttons return. It does not call the private scraper, and it does not
- * reuse the other resolvers on this phone.
+ * Playback asks anivault.co for every server button the site has.
+ * Each answer is kept, in the site's order, so the player can move to the
+ * next AniVault server. Other sites are not used. Their key stays on their
+ * server; the phone only calls the public buttons.
  */
 class AniVaultServer(
     private val cache: ResolveCache? = null,
@@ -37,7 +41,7 @@ class AniVaultServer(
     override val server = StreamServer(
         id = ID,
         name = "AniVault",
-        description = "AniVault's own sources. The file plays on this phone.",
+        description = "Every AniVault server. The file plays on this phone.",
         iconUrl = "https://www.google.com/s2/favicons?domain=anivault.tv&sz=128",
         siteUrl = SITE,
     )
@@ -53,32 +57,38 @@ class AniVaultServer(
         val shortId = findShortId(anilistId, titleHint)
         val buttons = anivaultButtons(audio)
         val avoid = coroutineContext[AvoidPlaybackHost]?.host
-        val sameHost = AtomicReference<PlayableSource?>(null)
-        val raced = raceHeadStart(
-            count = buttons.size,
-            parallel = buttons.size,
-            headStartMs = 0L,
-            timeoutMs = BUTTON_TIMEOUT_MS,
-        ) { index ->
-            val button = buttons[index]
-            val file = try {
-                read(anivaultStreamUrl(API, button, shortId, episode))
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                null
-            } ?: return@raceHeadStart null
-            val source = anivaultPlayable(file, button.label, playbackHeaders()) ?: return@raceHeadStart null
-            val accepted = sourcesAvoidingHost(listOf(source), avoid)
-            if (accepted.isNotEmpty()) {
-                accepted.first()
-            } else {
-                sameHost.compareAndSet(null, source)
-                null
+        val hits = CopyOnWriteArrayList<Pair<Int, PlayableSource>>()
+        val asked = ConcurrentHashMap.newKeySet<String>()
+        buttons.forEach { asked += anivaultAskKey(it) }
+        coroutineScope {
+            val pending = CopyOnWriteArrayList(buttons.mapIndexed { index, button -> index to button })
+            var wave = 0
+            while (pending.isNotEmpty() && wave < 3) {
+                wave += 1
+                val batch = pending.toList()
+                pending.clear()
+                batch.map { (order, button) ->
+                    async {
+                        val body = try {
+                            read(anivaultStreamUrl(API, button, shortId, episode))
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            null
+                        } ?: return@async
+                        anivaultPlayable(body, button.label, playbackHeaders())?.let { hits += order to it }
+                        anivaultListedServers(body).forEach { name ->
+                            val extra = button.copy(server = name, label = name)
+                            if (asked.add(anivaultAskKey(extra))) pending += (order + 1_000) to extra
+                        }
+                    }
+                }.awaitAll()
             }
         }
-        val chosen = raced?.second ?: sameHost.get() ?: error("AniVault could not find this episode")
-        namedByServer(listOf(chosen), server.name)
+        val ordered = anivaultOrdered(hits)
+        val accepted = sourcesAvoidingHost(ordered, avoid).ifEmpty { ordered }
+        if (accepted.isEmpty()) error("AniVault could not find this episode")
+        return@withContext namedByServer(accepted, server.name)
     }
 
     private fun findShortId(anilistId: Int, titleHint: String?): String {
@@ -106,7 +116,13 @@ class AniVaultServer(
     private fun read(url: String): String? {
         val request = Request.Builder().url(url).get()
         siteHeaders().forEach { (name, value) -> request.header(name, value) }
-        val response = runCatching { http.newCall(request.build()).execute() }.getOrNull() ?: return null
+        val response = try {
+            http.newCall(request.build()).execute()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return null
+        }
         response.use {
             if (it.code !in 200..299) return null
             return it.body?.string()?.takeIf { body -> body.isNotBlank() }
@@ -153,8 +169,29 @@ internal data class AniVaultButton(
 /** Sub, dub, and Hindi buttons, in the order the site renders them. */
 internal fun anivaultButtons(audio: String): List<AniVaultButton> = when {
     audio.equals("hindi", ignoreCase = true) -> ANIVAULT_HINDI
-    audio.equals("dub", ignoreCase = true) -> ANIVAULT_DUB
+    audio.equals("dub", ignoreCase = true) -> ANIVAULT_DUB + ANIVAULT_HINDI
     else -> ANIVAULT_SUB
+}
+
+internal fun anivaultAskKey(button: AniVaultButton): String =
+    "${button.endpoint}\u0000${button.audio}\u0000${button.server.orEmpty().trim().lowercase()}"
+
+/** Keep every file AniVault returned, in the order their buttons are drawn. */
+internal fun anivaultOrdered(hits: List<Pair<Int, PlayableSource>>): List<PlayableSource> {
+    val seen = HashSet<String>()
+    return hits.sortedBy { it.first }.map { it.second }.filter { seen.add(it.url) }
+}
+
+/**
+ * AniVault is the only racer when it is selected, so playback stays on
+ * their servers. Otherwise it stays out and the chosen site runs alone.
+ */
+internal fun playbackResolvers(selectedId: String, resolvers: List<StreamResolver>): List<StreamResolver> {
+    if (selectedId == AniVaultServer.ID) {
+        val vault = resolvers.filter { it.server.id == AniVaultServer.ID }
+        return if (vault.isEmpty()) resolvers else vault
+    }
+    return resolvers.filter { it.server.id != AniVaultServer.ID }
 }
 
 internal fun anivaultStreamUrl(origin: String, button: AniVaultButton, shortId: String, episode: Int): String {
@@ -194,6 +231,25 @@ internal fun anivaultSearchShortId(body: String, titles: List<String>): String? 
         if (names.any { it in wanted }) return shortId
     }
     return null
+}
+
+/** Server names AniVault listed on this answer, strings or `{name}` objects. */
+internal fun anivaultListedServers(body: String): List<String> {
+    val root = runCatching { JSONObject(body) }.getOrNull() ?: return emptyList()
+    val rows = root.optJSONArray("servers") ?: return emptyList()
+    val names = LinkedHashSet<String>()
+    for (index in 0 until rows.length()) {
+        when (val item = rows.opt(index)) {
+            is String -> item.trim().takeIf { it.isNotEmpty() }?.let(names::add)
+            is JSONObject -> {
+                val name = item.optString("name").ifBlank { item.optString("server") }.trim()
+                if (name.isNotEmpty()) names += name
+            }
+        }
+    }
+    val current = root.optString("server").trim()
+    if (current.isNotEmpty()) names += current
+    return names.toList()
 }
 
 /** Direct file from one AniVault button. Embed-only answers are skipped. */
@@ -237,6 +293,7 @@ private val ANIVAULT_SUB = listOf(
     AniVaultButton("animenosub_stream.php", "Sub - Omega", "Omega", "sub"),
     AniVaultButton("animenosub_stream.php", "Sub - Nova", "Nova", "sub"),
     AniVaultButton("animenosub_stream.php", "Sub - Turbo", "Turbo", "sub"),
+    AniVaultButton("watchanimeworld_stream.php", null, "WatchAnimeWorld", "sub"),
 )
 
 private val ANIVAULT_DUB = listOf(
@@ -251,6 +308,7 @@ private val ANIVAULT_DUB = listOf(
     AniVaultButton("animenosub_stream.php", "Dub - Omega", "Omega", "dub"),
     AniVaultButton("animenosub_stream.php", "Dub - Nova", "Nova", "dub"),
     AniVaultButton("animenosub_stream.php", "Dub - Turbo", "Turbo", "dub"),
+    AniVaultButton("watchanimeworld_stream.php", null, "WatchAnimeWorld", "dub"),
 )
 
 private val ANIVAULT_HINDI = listOf(
@@ -258,4 +316,10 @@ private val ANIVAULT_HINDI = listOf(
     AniVaultButton("desidub_stream.php", "Abyssdub", "Abyss", "dub"),
     AniVaultButton("desidub_stream.php", "VMolydub", "VMoly", "dub"),
     AniVaultButton("desidub_stream.php", "Mirrordub", "Mirror", "dub"),
+    AniVaultButton("desidub_stream.php", "Rubydub", "Ruby", "dub"),
+    AniVaultButton("desidub_stream.php", "VMoly (Muse)dub", "VMoly (Muse)", "dub"),
+    AniVaultButton("desidub_stream.php", "Mirror (Muse)dub", "Mirror (Muse)", "dub"),
+    AniVaultButton("desidub_stream.php", "Abyss (Muse)dub", "Abyss (Muse)", "dub"),
+    AniVaultButton("desidub_stream.php", "FileMoondub", "FileMoon", "dub"),
+    AniVaultButton("desidub_stream.php", "PlayerXdub", "PlayerX", "dub"),
 )
