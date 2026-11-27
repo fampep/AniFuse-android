@@ -14,7 +14,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -60,43 +63,53 @@ class AniVaultServer(
         val lead = AniVaultLead.preferred(anilistId, audio)
         val avoid = coroutineContext[AvoidPlaybackHost]?.host
         val heavenLead = lead.isNullOrBlank() || lead.startsWith("animeheaven_stream.php")
-        val (heaven, device, remote) = coroutineScope {
-            val heavenJob = async {
-                if (audio.equals("dub", true) || audio.equals("hindi", true)) return@async emptyList()
-                if (warm && !heavenLead) return@async emptyList()
-                try {
-                    anivaultHeavenFiles(http, anivaultTitles(titleHint), episode)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    emptyList()
+        val hits = CopyOnWriteArrayList<Pair<Int, PlayableSource>>()
+        coroutineScope {
+            val jobs = listOf(
+                launch {
+                    if (audio.equals("dub", true) || audio.equals("hindi", true)) return@launch
+                    if (warm && !heavenLead) return@launch
+                    try {
+                        anivaultHeavenFiles(http, anivaultTitles(titleHint), episode)
+                            .forEach { hits += 0 to it }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                    }
+                },
+                launch {
+                    try {
+                        hits += deviceFiles(anilistId, episode, audio, titleHint, lead, warm)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                    }
+                },
+                launch {
+                    if (warm && heavenLead) return@launch
+                    try {
+                        hits += remoteFiles(anilistId, episode, audio, titleHint, lead, warm)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                    }
+                },
+            )
+            // Return as soon as any path has a file. Hung peers must not burn
+            // the outer budget and cancel files Heaven or anivault.co already found.
+            withTimeoutOrNull(RESOLVE_BUDGET_MS - 750L) {
+                while (hits.isEmpty() && jobs.any { it.isActive }) delay(20)
+                if (hits.isNotEmpty()) {
+                    withTimeoutOrNull(FAILOVER_GRACE_MS) {
+                        while (jobs.any { it.isActive }) delay(20)
+                    }
+                } else {
+                    while (jobs.any { it.isActive }) delay(20)
                 }
             }
-            val deviceJob = async {
-                try {
-                    deviceFiles(anilistId, episode, audio, titleHint, lead, warm)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    emptyList()
-                }
-            }
-            val remoteJob = async {
-                if (warm && heavenLead) return@async emptyList()
-                try {
-                    remoteFiles(anilistId, episode, audio, titleHint, lead, warm)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    emptyList()
-                }
-            }
-            Triple(heavenJob.await(), deviceJob.await(), remoteJob.await())
+            jobs.forEach { it.cancel() }
         }
-        val ordered = anivaultLeadSources(
-            anivaultOrdered(heaven.map { 0 to it } + device + remote),
-            lead,
-        )
+        val ordered = anivaultLeadSources(anivaultOrdered(hits.toList()), lead)
         val accepted = sourcesAvoidingHost(ordered, avoid).ifEmpty { ordered }
         if (accepted.isEmpty()) error("AniVault could not find this episode")
         return@withContext namedByServer(accepted, server.name)
@@ -117,25 +130,41 @@ class AniVaultServer(
         if (jobs.isEmpty()) return emptyList()
         val hits = CopyOnWriteArrayList<Pair<Int, PlayableSource>>()
         coroutineScope {
-            jobs.map { (peerId, order, button) ->
-                async {
-                    val peer = available[peerId] ?: return@async
+            val peerJobs = jobs.map { (peerId, order, button) ->
+                launch {
+                    val peer = available[peerId] ?: return@launch
                     val mode = button.audio.ifBlank { audio }
-                    val raw = try {
-                        peer.resolve(anilistId, episode, mode, titleHint)
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        emptyList()
-                    }
-                    if (raw.isEmpty()) return@async
-                    hits += (order + 1) to anivaultDeviceSource(raw.first(), button)
-                    if (warm) return@async
-                    raw.drop(1).zip(anivaultDeviceExtras(buttons, peerId, order)).forEach { (source, extra) ->
+                    val raw = withTimeoutOrNull(PEER_TIMEOUT_MS) {
+                        try {
+                            peer.resolve(anilistId, episode, mode, titleHint)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+                    }.orEmpty()
+                    if (raw.isEmpty()) return@launch
+                    val slot = anivaultDeviceSlot(buttons, peerId, button)
+                    val chosen = anivaultDevicePick(raw, slot) ?: return@launch
+                    hits += (order + 1) to anivaultDeviceSource(chosen, button)
+                    if (warm) return@launch
+                    val remaining = raw.filterIndexed { index, _ -> index != slot }
+                    remaining.zip(anivaultDeviceExtras(buttons, peerId, order)).forEach { (source, extra) ->
                         hits += (extra.first + 1) to anivaultDeviceSource(source, extra.second)
                     }
                 }
-            }.awaitAll()
+            }
+            withTimeoutOrNull(PEER_TIMEOUT_MS + 250L) {
+                while (hits.isEmpty() && peerJobs.any { it.isActive }) delay(20)
+                if (hits.isNotEmpty()) {
+                    withTimeoutOrNull(FAILOVER_GRACE_MS) {
+                        while (peerJobs.any { it.isActive }) delay(20)
+                    }
+                } else {
+                    while (peerJobs.any { it.isActive }) delay(20)
+                }
+            }
+            peerJobs.forEach { it.cancel() }
         }
         return hits.toList()
     }
@@ -244,6 +273,10 @@ class AniVaultServer(
         const val RESOLVE_BUDGET_MS = 16_000L
         const val STREAM_TIMEOUT_MS = 12_000L
         const val LOOKUP_TIMEOUT_MS = 2_500L
+        /** One origin scraper. A hung peer must not hold files already found. */
+        const val PEER_TIMEOUT_MS = 8_000L
+        /** Extra window for failover servers after the first file lands. */
+        const val FAILOVER_GRACE_MS = 2_500L
         /** Kept so older checks still see a budget inside the playback cap. */
         const val BUTTON_TIMEOUT_MS = RESOLVE_TIMEOUT_MS - 500L
         private const val USER_AGENT =

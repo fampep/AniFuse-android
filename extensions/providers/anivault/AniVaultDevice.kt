@@ -51,6 +51,26 @@ internal fun anivaultDeviceExtras(
         index to button
     }
 
+/**
+ * Index of this AniVault button among buttons that share [peerId].
+ * Hd-1 is 0, Vidstream-2 is 1, so a warm next episode can ask for the same slot.
+ */
+internal fun anivaultDeviceSlot(
+    buttons: List<AniVaultButton>,
+    peerId: String,
+    button: AniVaultButton,
+): Int {
+    val key = anivaultAskKey(button)
+    return buttons
+        .filter { anivaultDevicePeerId(it.endpoint) == peerId }
+        .indexOfFirst { anivaultAskKey(it) == key }
+        .coerceAtLeast(0)
+}
+
+/** Prefer the peer file in [slot]; fall back to the first file when that slot is missing. */
+internal fun anivaultDevicePick(raw: List<PlayableSource>, slot: Int): PlayableSource? =
+    raw.getOrNull(slot) ?: raw.firstOrNull()
+
 /** Stamp a peer file as the AniVault button that asked for it. */
 internal fun anivaultDeviceSource(raw: PlayableSource, button: AniVaultButton): PlayableSource =
     raw.copy(

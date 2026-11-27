@@ -92,6 +92,17 @@ class AniVaultPlaybackTest {
             listOf(1 to dub.first { it.label == "Vidstream-2" }),
             anivaultDeviceExtras(dub, "anikoto", skipIndex = 0),
         )
+        val vid = dub.first { it.label == "Vidstream-2" }
+        assertEquals(1, anivaultDeviceSlot(dub, "anikoto", vid))
+        assertEquals(0, anivaultDeviceSlot(dub, "anikoto", dub.first { it.label == "Hd-1" }))
+        val peerFiles = listOf(
+            PlayableSource(url = "https://cdn.example/hd1.m3u8", label = "A"),
+            PlayableSource(url = "https://cdn.example/vid2.m3u8", label = "B"),
+        )
+        assertEquals("https://cdn.example/vid2.m3u8", anivaultDevicePick(peerFiles, 1)?.url)
+        assertEquals("https://cdn.example/hd1.m3u8", anivaultDevicePick(peerFiles, 9)?.url)
+        assertTrue(AniVaultServer.PEER_TIMEOUT_MS < AniVaultServer.RESOLVE_BUDGET_MS)
+        assertTrue(AniVaultServer.FAILOVER_GRACE_MS < AniVaultServer.PEER_TIMEOUT_MS)
     }
 
     @Test
