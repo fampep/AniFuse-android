@@ -85,17 +85,18 @@ private fun dockColors(): DockColors {
         DockColors(
             fill = StageGlassFill,
             stroke = StageGlassStroke,
-            selected = Color.White,
+            // Translucent selected fill — not a solid white paint chip.
+            selected = Color.White.copy(alpha = 0.18f),
             idle = Color(0xFF8A8A8A),
-            ink = Color(0xFF080808),
+            ink = Color.White,
         )
     } else {
         DockColors(
             fill = Color.White.copy(alpha = 0.96f),
             stroke = palette.hairline,
-            selected = palette.accent,
+            selected = palette.accent.copy(alpha = 0.22f),
             idle = palette.muted,
-            ink = palette.onAccent,
+            ink = palette.text,
         )
     }
 }
@@ -160,7 +161,8 @@ fun KittyBottomNav(
                         .fillMaxHeight()
                         .padding(horizontal = 2.dp)
                         .clip(RoundedCornerShape(22.dp))
-                        .background(dock.selected),
+                        .background(dock.selected)
+                        .border(0.5.dp, Color.White.copy(alpha = 0.28f), RoundedCornerShape(22.dp)),
                 )
             }
             Row(

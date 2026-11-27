@@ -331,43 +331,21 @@ fun ExtensionStoreFeed(
             }
         }
 
-        item(key = "how", contentType = "how") {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .stageGlassPlate(shape = RoundedCornerShape(22.dp))
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-            ) {
-                Text(
-                    "How extensions work",
-                    color = palette.text,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
-                )
-                Text(
-                    "AniList is the catalog. Live sites on this phone race for the file. A miss stays soft — only unreachable sources cool out of the race.",
-                    color = palette.muted,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
-        }
-
         if (liveDock.isNotEmpty()) {
             item(key = "live-dock", contentType = "dock") {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         "Race dock",
                         color = palette.text,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 22.sp,
+                        letterSpacing = (-0.6).sp,
                     )
                     Text(
-                        "${liveDock.size} live · tap to lead the next play",
+                        "${liveDock.size} live on this phone · tap to lead",
                         color = palette.muted,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
                     )
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -409,13 +387,13 @@ fun ExtensionStoreFeed(
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                                     fontSize = 12.sp,
                                 )
-                                if (cold) {
+                                if (cold && !selected) {
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        "COLD",
+                                        "·",
                                         color = palette.faint,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 9.sp,
+                                        fontSize = 11.sp,
                                     )
                                 } else if (selected) {
                                     Spacer(modifier = Modifier.width(6.dp))

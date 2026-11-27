@@ -10,16 +10,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
+import java.util.concurrent.atomic.AtomicInteger
 
 /** One resolver in the playback race. An inner race must finish inside this. */
 internal const val RESOLVE_TIMEOUT_MS = 7_500L
 
 /**
- * The preferred resolver starts immediately. The next ones join after
- * [headStartMs] so a dead host does not hold the episode for its full timeout.
+ * The preferred resolver starts immediately. The next ones in the first window
+ * join after [headStartMs] so a dead host does not hold the episode for its
+ * full timeout. When a racer misses, the next unused index starts immediately —
+ * a sliding window, not a serial tail — so provider #5+ still race in parallel.
  * A null result is a miss. The first non-null value wins and the rest stop.
- * Indexes past [parallel] run only after that first window, so a caller inside
- * [RESOLVE_TIMEOUT_MS] must set [parallel] to [count] or the rest never start.
  */
 internal suspend fun <T> raceHeadStart(
     count: Int,
@@ -31,39 +32,47 @@ internal suspend fun <T> raceHeadStart(
     if (count <= 0) return@coroutineScope null
     val window = parallel.coerceAtLeast(1).coerceAtMost(count)
     val winner = CompletableDeferred<Pair<Int, T>>()
-    val jobs = (0 until window).map { index ->
+    val nextTail = AtomicInteger(window)
+    val active = AtomicInteger(0)
+
+    fun launchRacer(index: Int, initialDelayMs: Long) {
+        active.incrementAndGet()
         launch {
-            if (index > 0 && headStartMs > 0) delay(headStartMs)
-            if (winner.isCompleted) return@launch
-            val value = try {
-                withTimeoutOrNull(timeoutMs) { block(index) }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                null
+            try {
+                if (initialDelayMs > 0L) delay(initialDelayMs)
+                if (winner.isCompleted) return@launch
+                val value = try {
+                    withTimeoutOrNull(timeoutMs) { block(index) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null
+                }
+                if (value != null && !winner.isCompleted) {
+                    winner.complete(index to value)
+                    return@launch
+                }
+                if (!winner.isCompleted) {
+                    val next = nextTail.getAndIncrement()
+                    if (next < count) launchRacer(next, initialDelayMs = 0L)
+                }
+            } finally {
+                active.decrementAndGet()
             }
-            if (value != null && !winner.isCompleted) winner.complete(index to value)
         }
     }
+
+    for (index in 0 until window) {
+        launchRacer(index, initialDelayMs = if (index > 0) headStartMs else 0L)
+    }
     yield()
-    val raced = withTimeoutOrNull(headStartMs + timeoutMs + 250L) {
-        // Wait until someone wins, but do not hang if every racer misses.
-        while (!winner.isCompleted && jobs.any { it.isActive }) {
+    // Sliding window: at most a few timeout waves after the head-start stagger.
+    val waves = ((count + window - 1) / window).coerceIn(1, 4)
+    val absolute = headStartMs + timeoutMs * waves + 500L
+    withTimeoutOrNull(absolute) {
+        while (!winner.isCompleted && active.get() > 0) {
             delay(20)
         }
         if (winner.isCompleted) winner.await() else null
     }
-    jobs.forEach { it.cancel() }
-    if (raced != null) return@coroutineScope raced
-    for (index in window until count) {
-        val value = try {
-            withTimeoutOrNull(timeoutMs) { block(index) }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            null
-        }
-        if (value != null) return@coroutineScope index to value
-    }
-    null
 }

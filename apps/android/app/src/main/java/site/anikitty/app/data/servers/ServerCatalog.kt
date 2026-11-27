@@ -192,34 +192,40 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         titleHint: String? = null,
         onAttempt: ((serverName: String, index: Int, total: Int) -> Unit)? = null,
         avoidHost: String? = null,
-        @Suppress("UNUSED_PARAMETER") warmLead: Boolean = false,
+        warmLead: Boolean = false,
     ): ResolveFailoverResult {
         val list = _resolvers.value
         if (list.isEmpty()) error("No stream extensions installed")
         val preferredId = _selectedId.value
         val down = downProviderNames()
-        val ordered = sinkUnhealthy(
-            ordered = buildList {
-                list.firstOrNull { it.server.id == preferredId }?.let { add(it) }
-                list.filterNot { it.server.id == preferredId }.forEach { add(it) }
-            },
+        val baseOrder = buildList {
+            list.firstOrNull { it.server.id == preferredId }?.let { add(it) }
+            list.filterNot { it.server.id == preferredId }.forEach { add(it) }
+        }
+        val sunk = sinkUnhealthy(
+            ordered = baseOrder,
             down = down,
             id = { it.server.id },
             name = { it.server.name },
         )
+        // Preferred stays first. Everyone else is ordered by recent CDN health so
+        // the parallel window burns on hosts that just played.
+        val ordered = preferHealthyHosts(sunk) { resolver ->
+            PlaybackHostHealth.score(playableHost(resolver.server.siteUrl.orEmpty()))
+        }
         val errors = java.util.Collections.synchronizedList(ArrayList<String>())
         val preferred = ordered.first()
         val preferredCold = preferred.server.id.lowercase() in down ||
             preferred.server.name.trim().lowercase() in down
-        // A known-dead favorite starts beside the healthy mirrors instead of
-        // making every episode wait out its head start.
+        // Warm next-ep leads open the full pack with no head-start delay.
         val headStartMs = resolveHeadStartMs(
             anyDown = down.isNotEmpty(),
             preferredCold = preferredCold,
+            warmLead = warmLead,
         )
         val raced = raceHeadStart(
             count = ordered.size,
-            parallel = 4,
+            parallel = resolveParallel(ordered.size, warmLead),
             headStartMs = headStartMs,
             timeoutMs = RESOLVE_TIMEOUT_MS,
         ) { index ->
@@ -237,8 +243,8 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
             when {
                 sources.isNullOrEmpty() -> {
                     if (sources != null) {
+                        // Soft miss — do not pulse the provider down for one empty title.
                         errors += "${resolver.server.name}: empty sources"
-                        rememberProviderDown(resolver, "empty sources")
                     }
                     null
                 }

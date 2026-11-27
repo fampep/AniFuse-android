@@ -66,6 +66,12 @@ object PipAutoEnter {
     var allowed: Boolean = false
         private set
 
+    @Volatile
+    private var lastWidth: Int = 0
+
+    @Volatile
+    private var lastHeight: Int = 0
+
     fun update(
         activity: Activity,
         allowed: Boolean,
@@ -76,6 +82,10 @@ object PipAutoEnter {
         val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             activity.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
         this.allowed = allowed && supported
+        if (videoWidth > 0 && videoHeight > 0) {
+            lastWidth = videoWidth
+            lastHeight = videoHeight
+        }
         if (!supported) return
         runCatching {
             activity.setPictureInPictureParams(
@@ -109,7 +119,7 @@ object PipAutoEnter {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return
         if (!allowed || activity.isInPictureInPictureMode) return
         val params = PictureInPictureParams.Builder()
-            .setAspectRatio(Rational(16, 9))
+            .setAspectRatio(pipAspect(lastWidth, lastHeight))
             .setActions(pipActions(activity))
             .build()
         runCatching { activity.enterPictureInPictureMode(params) }

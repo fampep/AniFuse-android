@@ -8,7 +8,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import site.anikitty.app.data.servers.resolveHeadStartMs
+import site.anikitty.app.data.servers.resolveParallel
 import site.anikitty.app.data.servers.sinkUnhealthy
+import site.anikitty.app.data.servers.preferHealthyHosts
 import java.io.File
 
 class AnifuseFeedCacheTest {
@@ -99,5 +101,8 @@ class AnifuseFeedCacheTest {
         assertEquals(900L, resolveHeadStartMs(anyDown = false, preferredCold = false))
         assertEquals(350L, resolveHeadStartMs(anyDown = true, preferredCold = false))
         assertEquals(0L, resolveHeadStartMs(anyDown = true, preferredCold = true))
+        assertEquals(0L, resolveHeadStartMs(anyDown = false, preferredCold = false, warmLead = true))
+        assertEquals(4, resolveParallel(count = 12, warmLead = false))
+        assertEquals(12, resolveParallel(count = 12, warmLead = true))
     }
 }

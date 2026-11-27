@@ -10,10 +10,10 @@ internal const val SHADOW_FRESH_MS = 8L * 60L * 1000L
 internal const val SHADOW_ARM_DELAY_MS = 400L
 
 /** Stall budget once a different host is already probed and prefetched. */
-internal const val SHADOW_STALL_MS = 4_500L
+internal const val SHADOW_STALL_MS = 2_400L
 
-/** Stall budget when nothing warm exists yet. Matches the previous hard wait. */
-internal const val COLD_STALL_MS = 8_000L
+/** Stall budget when nothing warm exists yet — cut from 8s so cold failover feels instant. */
+internal const val COLD_STALL_MS = 4_500L
 
 internal enum class ShadowArm { Hold, Arm }
 

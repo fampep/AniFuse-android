@@ -23,7 +23,7 @@ class ProviderFailureTest {
         assertTrue(isHardProviderFailure("AniRex could not be reached."))
         assertTrue(isHardProviderFailure("This source is blocked by the site. Try another source."))
         assertTrue(isHardProviderFailure("timeout waiting for CDN"))
-        assertTrue(isHardProviderFailure("empty sources"))
+        assertFalse(isHardProviderFailure("empty sources"))
         assertTrue(isHardProviderFailure("HTTP 403 from mirror"))
         assertTrue(isHardProviderFailure("cloudflare challenge"))
     }

@@ -753,10 +753,10 @@ fun PlayerScreen(
         // and minBufferMs >= bufferForPlaybackMs. Violating that crashes on open.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 3_200,
+                /* minBufferMs = */ 2_400,
                 /* maxBufferMs = */ 55_000,
-                /* bufferForPlaybackMs = */ 500,
-                /* bufferForPlaybackAfterRebufferMs = */ 2_200,
+                /* bufferForPlaybackMs = */ 400,
+                /* bufferForPlaybackAfterRebufferMs = */ 1_200,
             )
             .setBackBuffer(36_000, true)
             .build()
@@ -852,13 +852,13 @@ fun PlayerScreen(
         if (configs.isEmpty()) return@LaunchedEffect
         val already = current.localConfiguration?.subtitleConfigurations.orEmpty()
         if (already.map { it.uri } == configs.map { it.uri }) return@LaunchedEffect
-        // Replacing the item drops the buffered segments. While the stream is
-        // still coming up, that would restart the wait the viewer is already in.
+        // Wait for READY once so caption attach cannot fight the first buffer.
         var guard = 0
-        while (guard < 40 && exo.playbackState == Player.STATE_BUFFERING && !exo.isPlaying) {
-            delay(250)
+        while (guard < 48 && exo.playbackState != Player.STATE_READY && exo.playbackState != Player.STATE_ENDED) {
+            delay(125)
             guard++
         }
+        if (exo.playbackState == Player.STATE_IDLE) return@LaunchedEffect
         val resume = exo.playWhenReady
         val playing = source?.let { sourceForPlayback(it, playbackSaved) }
         if (playing != null) playerBundle?.pipeline?.apply(playing)

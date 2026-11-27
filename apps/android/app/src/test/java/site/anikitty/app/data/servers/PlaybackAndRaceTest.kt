@@ -65,6 +65,39 @@ class PlaybackAndRaceTest {
     }
 
     @Test
+    fun slidingWindowStillReachesPastTheFirstPack() = runBlocking {
+        val winner = raceHeadStart(
+            count = 6,
+            parallel = 2,
+            headStartMs = 5L,
+            timeoutMs = 80L,
+        ) { index ->
+            when (index) {
+                0, 1, 2, 3, 4 -> {
+                    delay(40)
+                    null
+                }
+                else -> "tail"
+            }
+        }
+        assertEquals(5, winner?.first)
+        assertEquals("tail", winner?.second)
+    }
+
+    @Test
+    fun healthyHostsLeadAfterThePreferred() {
+        val ranked = preferHealthyHosts(listOf("pick", "dead", "fast", "unknown")) { name ->
+            when (name) {
+                "fast" -> 900
+                "unknown" -> 0
+                "dead" -> -1000
+                else -> 0
+            }
+        }
+        assertEquals(listOf("pick", "fast", "unknown", "dead"), ranked)
+    }
+
+    @Test
     fun aPartialFileAsksForTheRemainder() {
         val fresh = progressiveResume(0L)
         assertNull(fresh.rangeHeader)

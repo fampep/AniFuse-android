@@ -31,7 +31,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -87,12 +86,10 @@ import site.anikitty.app.ui.components.StageSlider
 import site.anikitty.app.ui.components.KittyImage
 import site.anikitty.app.ui.components.PrismMark
 import site.anikitty.app.ui.components.sharedPoster
-import site.anikitty.app.ui.components.KittyBadge
 import site.anikitty.app.ui.components.KittySectionHeading
 import site.anikitty.app.ui.theme.KittyHaptics
 import site.anikitty.app.ui.theme.KittyRadius
 import site.anikitty.app.ui.theme.KittySpace
-import site.anikitty.app.ui.theme.LocalDemoMode
 import site.anikitty.app.ui.theme.LocalKittyPalette
 import site.anikitty.app.ui.theme.kittyFloatingChrome
 
@@ -136,46 +133,28 @@ internal fun HomeBar(
                 modifier = Modifier.padding(top = 2.dp),
             )
         }
-        if (LocalDemoMode.current) {
-            KittyBadge(
-                label = "Demo",
-                onDark = palette.dark,
-                modifier = Modifier.padding(end = 8.dp),
-            )
-        }
-        HomeBarIcon(onClick = onOpenSearch) {
-            Icon(
-                FluentuiSystemIconsSearchSparkleOutline,
-                contentDescription = "Search",
-                tint = ink,
-                modifier = Modifier.size(24.dp),
-            )
-        }
-        HomeBarIcon(onClick = onOpenNotifications) {
-            Icon(
-                FluentuiSystemIconsAlertOutline,
-                contentDescription = "Notifications",
-                tint = ink,
-                modifier = Modifier.size(22.dp),
-            )
-        }
-        // Compact glass capsule: shuffle + refresh live here so the bar stays clean.
+        // Brand + one glass cluster. Shuffle/refresh live on pull — not chrome noise.
         Row(
             modifier = Modifier
-                .padding(start = 2.dp)
                 .stageFrosted(RoundedCornerShape(999.dp))
                 .padding(horizontal = 4.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (onShuffle != null) {
-                HomeBarIcon(onClick = onShuffle) {
-                    Icon(
-                        Icons.Outlined.Shuffle,
-                        contentDescription = "Random anime",
-                        tint = ink,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
+            HomeBarIcon(onClick = onOpenSearch) {
+                Icon(
+                    FluentuiSystemIconsSearchSparkleOutline,
+                    contentDescription = "Search",
+                    tint = ink,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            HomeBarIcon(onClick = onOpenNotifications) {
+                Icon(
+                    FluentuiSystemIconsAlertOutline,
+                    contentDescription = "Notifications",
+                    tint = ink,
+                    modifier = Modifier.size(20.dp),
+                )
             }
             HomeBarIcon(onClick = onRefresh) {
                 if (refreshBusy) {
