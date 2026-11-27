@@ -53,7 +53,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
     val installer = ExtensionInstaller(extensions)
     val storeClient = ExtensionStoreClient()
 
-    private val bundled: List<StreamResolver> = listOf(
+    private val siteResolvers: List<StreamResolver> = listOf(
         AnikotoServer(cache = resolveCache, crypto = megaPlayCrypto),
         GotakuServer(cache = resolveCache),
         ReanimeServer(cache = resolveCache),
@@ -70,6 +70,8 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         AnigatoServer(cache = resolveCache),
         AniHostsServer(cache = resolveCache),
     )
+    private val bundled: List<StreamResolver> =
+        siteResolvers + AniVaultServer(peers = { _resolvers.value })
 
     /** Bundled site ids — live scrapers that ship with the APK. */
     val bundledSiteIds: Set<String> = bundled.map { it.server.id }.toSet()
@@ -187,7 +189,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         onAttempt: ((serverName: String, index: Int, total: Int) -> Unit)? = null,
         avoidHost: String? = null,
     ): ResolveFailoverResult {
-        val list = _resolvers.value
+        val list = playbackResolvers(_selectedId.value, _resolvers.value)
         if (list.isEmpty()) error("No stream extensions installed")
         val preferredId = _selectedId.value
         val down = downProviderNames()
@@ -219,7 +221,14 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
             val resolver = ordered[index]
             onAttempt?.invoke(resolver.server.name, index, ordered.size)
             val sources = try {
-                resolver.resolve(anilistId, episode, audio, titleHint)
+                val blocked = avoidHost?.trim()?.takeIf { it.isNotEmpty() }
+                if (blocked == null) {
+                    resolver.resolve(anilistId, episode, audio, titleHint)
+                } else {
+                    withContext(AvoidPlaybackHost(blocked)) {
+                        resolver.resolve(anilistId, episode, audio, titleHint)
+                    }
+                }
             } catch (err: Exception) {
                 if (err is CancellationException) throw err
                 val msg = err.message?.takeIf { it.isNotBlank() } ?: err::class.java.simpleName
@@ -362,9 +371,6 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
 
     private companion object {
         const val KEY_SELECTED = "selected_server_id"
-
-        /** Upper bound for one provider's resolve before that racer is dropped. */
-        const val RESOLVE_TIMEOUT_MS = 7_500L
 
         /** Default live site when nothing else is selected. */
         const val DEFAULT_SITE_ID = "anikoto"
