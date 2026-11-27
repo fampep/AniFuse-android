@@ -7,22 +7,36 @@ import org.json.JSONArray
 import org.json.JSONObject
 import site.anikitty.app.data.anilist.AnimeSummary
 import java.io.File
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Title to AniList id for the latest-episode row. This file is not the
- * SharedPreferences catalog cache, so a cold Home does not spend its 80
- * slots on one search per episode.
+ * Title to AniList id for the latest-episode row. Memory is the source of truth;
+ * disk flushes are debounced so a burst of Home latest cards never rewrite the
+ * whole JSON on every put.
  */
 internal class TitleResolveStore(
     private val file: File,
     private val now: () -> Long = { System.currentTimeMillis() },
     private val ttlMs: Long = 14L * 24 * 60 * 60 * 1000,
+    private val flushDelayMs: Long = 450L,
 ) {
     private val lock = Any()
+    private val rows = LinkedHashMap<String, Stored>()
+    private var loaded = false
+    private val scheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "title-resolve-flush").apply { isDaemon = true }
+    }
+    private val pendingFlush = AtomicReference<ScheduledFuture<*>?>(null)
 
     fun get(key: String): AnimeSummary? {
         if (key.isBlank()) return null
-        val row = synchronized(lock) { read()[key] } ?: return null
+        val row = synchronized(lock) {
+            ensureLoaded()
+            rows[key]
+        } ?: return null
         if (now() - row.savedAt > ttlMs) return null
         return row.toSummary()
     }
@@ -30,7 +44,7 @@ internal class TitleResolveStore(
     fun put(key: String, anime: AnimeSummary) {
         if (key.isBlank() || anime.id <= 0) return
         synchronized(lock) {
-            val rows = read()
+            ensureLoaded()
             rows[key] = Stored(
                 id = anime.id,
                 title = anime.title,
@@ -42,8 +56,41 @@ internal class TitleResolveStore(
                 score = anime.averageScore,
                 savedAt = now(),
             )
-            write(rows)
+            while (rows.size > 400) {
+                val oldest = rows.keys.firstOrNull() ?: break
+                rows.remove(oldest)
+            }
         }
+        scheduleFlush()
+    }
+
+    /** Force a synchronous write — tests and process shutdown. */
+    fun flushNow() {
+        pendingFlush.getAndSet(null)?.cancel(false)
+        val snapshot = synchronized(lock) {
+            ensureLoaded()
+            LinkedHashMap(rows)
+        }
+        write(snapshot)
+    }
+
+    private fun scheduleFlush() {
+        pendingFlush.getAndSet(
+            scheduler.schedule(
+                {
+                    val snapshot = synchronized(lock) { LinkedHashMap(rows) }
+                    write(snapshot)
+                },
+                flushDelayMs,
+                TimeUnit.MILLISECONDS,
+            ),
+        )?.cancel(false)
+    }
+
+    private fun ensureLoaded() {
+        if (loaded) return
+        loaded = true
+        rows.putAll(read())
     }
 
     private fun read(): LinkedHashMap<String, Stored> {
@@ -100,7 +147,12 @@ internal class TitleResolveStore(
         }
         try {
             file.parentFile?.mkdirs()
-            file.writeText(JSONObject().put("entries", arr).toString())
+            val tmp = File(file.parentFile, "${file.name}.tmp")
+            tmp.writeText(JSONObject().put("entries", arr).toString())
+            if (!tmp.renameTo(file)) {
+                file.writeText(JSONObject().put("entries", arr).toString())
+                tmp.delete()
+            }
         } catch (_: Exception) {
         }
     }

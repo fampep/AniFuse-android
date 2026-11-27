@@ -251,6 +251,23 @@ class AniListClient(
         }.getOrDefault(false)
     }
 
+    /**
+     * One paced HTTP call for up to [ANILIST_PUSH_CHUNK] pending progress rows.
+     * Returns the mediaIds AniList accepted.
+     */
+    suspend fun saveProgressBatch(
+        accessToken: String,
+        items: List<AniListBatchPushItem>,
+    ): Set<Int> = withContext(Dispatchers.IO) {
+        if (items.isEmpty()) return@withContext emptySet()
+        val payload = JSONObject().put("query", buildSaveProgressBatchMutation(items)).toString()
+        runCatching {
+            val body = execute(payload, accessToken, background = true)
+            val okIndexes = parseSaveProgressBatchSuccess(body, expected = items.size)
+            okIndexes.mapNotNullTo(LinkedHashSet()) { index -> items.getOrNull(index)?.mediaId }
+        }.getOrDefault(emptySet())
+    }
+
     /** Update list status and/or score without touching episode progress. Score is 0–100. */
     suspend fun saveList(
         accessToken: String,

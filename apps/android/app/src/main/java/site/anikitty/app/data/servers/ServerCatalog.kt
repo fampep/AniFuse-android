@@ -195,10 +195,17 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
             name = { it.server.name },
         )
         val errors = java.util.Collections.synchronizedList(ArrayList<String>())
+        // Known-down providers already sank; shorten the preferred head-start so
+        // healthy mirrors join the race almost immediately.
+        val headStartMs = if (downProviderNames().isNotEmpty()) {
+            RESOLVE_HEAD_START_WARM_MS
+        } else {
+            RESOLVE_HEAD_START_MS
+        }
         val raced = raceHeadStart(
             count = ordered.size,
             parallel = 4,
-            headStartMs = RESOLVE_HEAD_START_MS,
+            headStartMs = headStartMs,
             timeoutMs = RESOLVE_TIMEOUT_MS,
         ) { index ->
             val resolver = ordered[index]
@@ -337,6 +344,9 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         const val KEY_SELECTED = "selected_server_id"
         /** Preferred resolver's head start before the next providers join. */
         const val RESOLVE_HEAD_START_MS = 900L
+
+        /** Head start when the down-set already knows unhealthy hosts. */
+        const val RESOLVE_HEAD_START_WARM_MS = 350L
 
         /** Upper bound for one provider's resolve before that racer is dropped. */
         const val RESOLVE_TIMEOUT_MS = 7_500L

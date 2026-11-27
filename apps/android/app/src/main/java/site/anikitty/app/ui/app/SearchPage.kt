@@ -4,6 +4,10 @@
 package site.anikitty.app.ui.app
 
 import android.content.Context
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -419,13 +423,19 @@ fun SearchFeed(
                         )
                     }
                 }
-                gridItems(gridItems, key = { it.id }, contentType = { "poster" }) { anime ->
+                gridItems(gridItems, key = { it.id }, contentType = { if (asGrid) "poster" else "row" }) { anime ->
                     val open = {
                         scope.launch { historyDao.touchFromCatalog(anime) }
                         onOpen(anime)
                     }
-                    if (asGrid) SearchPoster(anime, listMarks[anime.id], open)
-                    else SearchListRow(anime, listMarks[anime.id], open)
+                    AnimatedContent(
+                        targetState = asGrid,
+                        transitionSpec = { fadeIn() togetherWith fadeOut() },
+                        label = "searchCell",
+                    ) { grid ->
+                        if (grid) SearchPoster(anime, listMarks[anime.id], open)
+                        else SearchListRow(anime, listMarks[anime.id], open)
+                    }
                 }
                 if (error != null && items.isNotEmpty() && !loading) {
                     item(span = { GridItemSpan(maxLineSpan) }) {

@@ -2965,14 +2965,7 @@ fun PlayerScreen(
         ) {
             Row(
                 modifier = Modifier
-                    .shadow(
-                        elevation = 12.dp,
-                        shape = RoundedCornerShape(999.dp),
-                        ambientColor = Color.Black.copy(alpha = 0.4f),
-                        spotColor = Color.Black.copy(alpha = 0.3f),
-                    )
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(Color.White)
+                    .stageGlassPlate(shape = RoundedCornerShape(999.dp), elevated = true)
                     .clearAndSetSemantics {
                         contentDescription = "Playing at double speed"
                         liveRegion = LiveRegionMode.Polite
@@ -2983,13 +2976,13 @@ fun PlayerScreen(
                 Icon(
                     Icons.Outlined.PlayCircle,
                     contentDescription = null,
-                    tint = Color.Black,
+                    tint = Color.White,
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     "2× speed",
-                    color = Color.Black,
+                    color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
                     letterSpacing = 0.2.sp,
@@ -3009,20 +3002,7 @@ fun PlayerScreen(
             val flashShape = RoundedCornerShape(20.dp)
             Column(
                 modifier = Modifier
-                    .shadow(
-                        elevation = 16.dp,
-                        shape = flashShape,
-                        ambientColor = Color.Black.copy(alpha = 0.5f),
-                        spotColor = Color.Black.copy(alpha = 0.35f),
-                    )
-                    .clip(flashShape)
-                    .background(Color(0xCC101012))
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
-                        ),
-                    )
-                    .border(1.dp, Color.White.copy(alpha = 0.28f), flashShape)
+                    .stageGlassPlate(shape = flashShape, elevated = true)
                     .clearAndSetSemantics {
                         contentDescription = seekFlashDescription(seekFlashMs)
                         liveRegion = LiveRegionMode.Polite
