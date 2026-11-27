@@ -1846,7 +1846,7 @@ fun PlayerScreen(
         activePlayer?.addListener(listener)
         if (activePlayer != null) PlaybackSessions.hold(context, activePlayer)
         onDispose {
-            PlaybackSessions.release(context)
+            PlaybackSessions.release(context, activePlayer)
             val view = playerViewRef
             if (view != null && view.player === activePlayer) view.player = null
             activePlayer?.removeListener(listener)
