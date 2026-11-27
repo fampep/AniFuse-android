@@ -79,7 +79,7 @@ class AniVaultServer(
                 },
                 launch {
                     try {
-                        hits += deviceFiles(anilistId, episode, audio, titleHint, lead, warm)
+                        deviceFiles(anilistId, episode, audio, titleHint, lead, warm, hits)
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
@@ -88,7 +88,7 @@ class AniVaultServer(
                 launch {
                     if (warm && heavenLead) return@launch
                     try {
-                        hits += remoteFiles(anilistId, episode, audio, titleHint, lead, warm)
+                        remoteFiles(anilistId, episode, audio, titleHint, lead, warm, hits)
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
@@ -122,17 +122,18 @@ class AniVaultServer(
         titleHint: String?,
         lead: String?,
         warm: Boolean,
-    ): List<Pair<Int, PlayableSource>> {
+        sink: CopyOnWriteArrayList<Pair<Int, PlayableSource>>,
+    ) {
         val available = peers().filter { it.server.id != ID }.associateBy { it.server.id }
-        if (available.isEmpty()) return emptyList()
-        val buttons = anivaultLeadFirst(anivaultButtons(audio), lead)
+        if (available.isEmpty()) return
+        val siteOrder = anivaultButtons(audio)
+        val buttons = anivaultLeadFirst(siteOrder, lead)
         val jobs = anivaultDeviceJobs(buttons, lead, warm)
-        if (jobs.isEmpty()) return emptyList()
-        val hits = CopyOnWriteArrayList<Pair<Int, PlayableSource>>()
+        if (jobs.isEmpty()) return
         coroutineScope {
-            val peerJobs = jobs.map { (peerId, order, button) ->
-                launch {
-                    val peer = available[peerId] ?: return@launch
+            jobs.map { (peerId, order, button) ->
+                async {
+                    val peer = available[peerId] ?: return@async
                     val mode = button.audio.ifBlank { audio }
                     val raw = withTimeoutOrNull(PEER_TIMEOUT_MS) {
                         try {
@@ -143,30 +144,19 @@ class AniVaultServer(
                             emptyList()
                         }
                     }.orEmpty()
-                    if (raw.isEmpty()) return@launch
-                    val slot = anivaultDeviceSlot(buttons, peerId, button)
-                    val chosen = anivaultDevicePick(raw, slot) ?: return@launch
-                    hits += (order + 1) to anivaultDeviceSource(chosen, button)
-                    if (warm) return@launch
+                    if (raw.isEmpty()) return@async
+                    // Slot uses site draw order, not lead-first order, so Vidstream-2 stays slot 1.
+                    val slot = anivaultDeviceSlot(siteOrder, peerId, button)
+                    val chosen = anivaultDevicePick(raw, slot) ?: return@async
+                    sink += (order + 1) to anivaultDeviceSource(chosen, button)
+                    if (warm) return@async
                     val remaining = raw.filterIndexed { index, _ -> index != slot }
-                    remaining.zip(anivaultDeviceExtras(buttons, peerId, order)).forEach { (source, extra) ->
-                        hits += (extra.first + 1) to anivaultDeviceSource(source, extra.second)
+                    remaining.zip(anivaultDeviceExtras(siteOrder, peerId, siteOrder.indexOf(button).coerceAtLeast(0))).forEach { (source, extra) ->
+                        sink += (extra.first + 1) to anivaultDeviceSource(source, extra.second)
                     }
                 }
-            }
-            withTimeoutOrNull(PEER_TIMEOUT_MS + 250L) {
-                while (hits.isEmpty() && peerJobs.any { it.isActive }) delay(20)
-                if (hits.isNotEmpty()) {
-                    withTimeoutOrNull(FAILOVER_GRACE_MS) {
-                        while (peerJobs.any { it.isActive }) delay(20)
-                    }
-                } else {
-                    while (peerJobs.any { it.isActive }) delay(20)
-                }
-            }
-            peerJobs.forEach { it.cancel() }
+            }.awaitAll()
         }
-        return hits.toList()
     }
 
     private suspend fun remoteFiles(
@@ -176,11 +166,11 @@ class AniVaultServer(
         titleHint: String?,
         lead: String?,
         warm: Boolean,
-    ): List<Pair<Int, PlayableSource>> {
-        val shortId = findShortId(anilistId, titleHint) ?: return emptyList()
+        sink: CopyOnWriteArrayList<Pair<Int, PlayableSource>>,
+    ) {
+        val shortId = findShortId(anilistId, titleHint) ?: return
         val known = anivaultLeadFirst(anivaultButtons(audio), lead)
-        val buttons = if (warm) known.filter { anivaultAskKey(it) == lead }.ifEmpty { return emptyList() } else known
-        val hits = CopyOnWriteArrayList<Pair<Int, PlayableSource>>()
+        val buttons = if (warm) known.filter { anivaultAskKey(it) == lead }.ifEmpty { return } else known
         val asked = ConcurrentHashMap.newKeySet<String>()
         buttons.forEach { asked += anivaultAskKey(it) }
         coroutineScope {
@@ -199,7 +189,7 @@ class AniVaultServer(
                             button.label,
                             playbackHeaders(),
                             leadKey = anivaultAskKey(button),
-                        )?.let { hits += (order + 1) to it }
+                        )?.let { sink += (order + 1) to it }
                         if (warm) return@async
                         anivaultListedServers(body).forEach { name ->
                             val extra = button.copy(server = name, label = name)
@@ -209,7 +199,6 @@ class AniVaultServer(
                 }.awaitAll()
             }
         }
-        return hits.toList()
     }
 
     private fun findShortId(anilistId: Int, titleHint: String?): String? {

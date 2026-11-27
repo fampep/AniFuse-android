@@ -95,6 +95,11 @@ class AniVaultPlaybackTest {
         val vid = dub.first { it.label == "Vidstream-2" }
         assertEquals(1, anivaultDeviceSlot(dub, "anikoto", vid))
         assertEquals(0, anivaultDeviceSlot(dub, "anikoto", dub.first { it.label == "Hd-1" }))
+        // Lead-first order would wrongly make Vidstream-2 slot 0; warm must use site order.
+        val leadFirst = anivaultLeadFirst(dub, anivaultAskKey(vid))
+        assertEquals("Vidstream-2", leadFirst.first().label)
+        assertEquals(0, anivaultDeviceSlot(leadFirst, "anikoto", vid))
+        assertEquals(1, anivaultDeviceSlot(dub, "anikoto", vid))
         val peerFiles = listOf(
             PlayableSource(url = "https://cdn.example/hd1.m3u8", label = "A"),
             PlayableSource(url = "https://cdn.example/vid2.m3u8", label = "B"),
