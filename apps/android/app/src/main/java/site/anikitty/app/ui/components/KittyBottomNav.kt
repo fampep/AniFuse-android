@@ -171,6 +171,13 @@ fun KittyBottomNav(
                         .offset(x = tabWidth * slide)
                         .width(tabWidth)
                         .fillMaxHeight()
+                        .padding(horizontal = 2.dp)
+                        .shadow(
+                            elevation = 10.dp,
+                            shape = RoundedCornerShape(22.dp),
+                            ambientColor = Color.White.copy(alpha = 0.18f),
+                            spotColor = Color.White.copy(alpha = 0.12f),
+                        )
                         .clip(RoundedCornerShape(22.dp))
                         .background(dock.selected),
                 )

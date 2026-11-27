@@ -819,16 +819,13 @@ private fun SearchFilterChip(text: String, selected: Boolean, onClick: () -> Uni
 
 @Composable
 private fun HeaderDisc(onClick: () -> Unit, selected: Boolean = false, content: @Composable () -> Unit) {
-    val palette = LocalKittyPalette.current
-    Box(
-        modifier = Modifier
-            .size(48.dp)
-            .clip(CircleShape)
-            .background(if (selected) palette.text.copy(alpha = 0.16f) else palette.text.copy(alpha = 0.05f))
-            .border(1.dp, palette.text.copy(alpha = if (selected) 0.35f else 0.08f), CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) { content() }
+    site.anikitty.app.ui.components.StageGlassDisc(
+        onClick = onClick,
+        size = 48.dp,
+        selected = selected,
+    ) {
+        content()
+    }
 }
 
 @Composable
@@ -852,7 +849,8 @@ private fun SearchPoster(anime: AnimeSummary, badge: String?, onClick: () -> Uni
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(3.dp)),
+                .clip(RoundedCornerShape(16.dp))
+                .border(1.dp, Color(0xFF292929), RoundedCornerShape(16.dp)),
         )
         Spacer(Modifier.height(6.dp))
         Text(

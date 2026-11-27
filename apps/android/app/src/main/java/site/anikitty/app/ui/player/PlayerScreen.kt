@@ -330,6 +330,8 @@ fun PlayerScreen(
     onDismiss: () -> Unit = onClose,
     onToggleWatched: ((Int) -> Unit)? = null,
     onNextEpisode: (() -> Unit)? = null,
+    /** Fire once past 72% so the next episode's CDN race is already warm. */
+    onWarmNextEpisode: (suspend () -> Unit)? = null,
     onProgress: ((positionMs: Long, durationMs: Long, skip: SkipTimes) -> Unit)? = null,
     totalEpisodes: Int = 1,
     watchedThrough: Int = 0,
@@ -895,6 +897,16 @@ fun PlayerScreen(
     var nearEndOffer by remember { mutableStateOf(false) }
     var shownSkip by remember { mutableStateOf<Pair<String, site.anikitty.app.data.skip.SkipInterval>?>(null) }
     var shelfMinutes by remember { mutableIntStateOf(-1) }
+    var warmedNext by remember(anilistId, episode) { mutableStateOf(false) }
+    val latestWarmNext by rememberUpdatedState(onWarmNextEpisode)
+    LaunchedEffect(positionMs, durationMs, warmedNext, onNextEpisode) {
+        if (!shouldWarmNextEpisode(positionMs, durationMs, onNextEpisode != null, warmedNext)) {
+            return@LaunchedEffect
+        }
+        warmedNext = true
+        val warm = latestWarmNext ?: return@LaunchedEffect
+        runCatching { warm() }
+    }
     val showEndAutoplay = autoNext &&
         onNextEpisode != null &&
         playbackEnded &&

@@ -3,6 +3,10 @@
 
 package site.anikitty.app.ui.components
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -21,10 +25,12 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -35,6 +41,7 @@ import site.anikitty.app.ui.theme.KittyElevation
 import site.anikitty.app.ui.theme.KittyRadius
 import site.anikitty.app.ui.theme.KittySpace
 import site.anikitty.app.ui.theme.LocalKittyPalette
+import site.anikitty.app.ui.theme.prefersReducedMotion
 
 /** Flat page plate. Use [KittyCard] when the block should read as a raised group. */
 @Composable
@@ -76,16 +83,30 @@ fun KittyChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val fill = if (selected) Color.White else Color(0xFF151515)
+    val reduced = prefersReducedMotion()
+    val fill = if (selected) Color.White else Color(0xFF101010)
     val ink = if (selected) Color(0xFF080808) else Color(0xFFA1A1A1)
     val shape = RoundedCornerShape(KittyRadius.pill)
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1.04f else 1f,
+        animationSpec = if (reduced) {
+            snap()
+        } else {
+            spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
+        },
+        label = "chipScale",
+    )
     Text(
         label,
         color = ink,
-        fontWeight = FontWeight.Medium,
+        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
         fontSize = 12.sp,
         modifier = modifier
             .defaultMinSize(minHeight = 48.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(shape)
             .background(fill)
             .border(1.dp, if (selected) Color.White else Color(0xFF292929), shape)
@@ -102,18 +123,19 @@ fun KittyBadge(
     onDark: Boolean = true,
 ) {
     val ink = if (onDark) Color.White else Color.Black
-    val plate = if (onDark) Color.Black.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.9f)
-    val shape = RoundedCornerShape(KittyRadius.sm)
+    val plate = if (onDark) Color(0xCC101010) else Color.White.copy(alpha = 0.92f)
+    val shape = RoundedCornerShape(999.dp)
     Text(
         label,
         color = ink,
         fontSize = 10.sp,
         fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.4.sp,
         maxLines = 1,
         modifier = modifier
             .background(plate, shape)
-            .border(0.5.dp, ink.copy(alpha = 0.28f), shape)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .border(1.dp, ink.copy(alpha = 0.22f), shape)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
     )
 }
 
@@ -177,22 +199,29 @@ fun KittyBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheet,
-        containerColor = Color(0xFF151515),
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = Color(0xFF101010),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         contentColor = palette.text,
         tonalElevation = KittyElevation.sheet,
         dragHandle = {
             Box(
                 modifier = Modifier
                     .padding(vertical = KittySpace.sm)
-                    .size(width = 36.dp, height = 4.dp)
+                    .size(width = 42.dp, height = 4.dp)
                     .clip(RoundedCornerShape(KittyRadius.pill))
-                    .background(palette.text.copy(alpha = 0.28f)),
+                    .background(Color.White.copy(alpha = 0.28f)),
             )
         },
     ) {
         Column(modifier = Modifier.padding(horizontal = KittySpace.md, vertical = KittySpace.sm)) {
-            Text(title, color = palette.text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            Text(
+                "PANEL",
+                color = palette.muted,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 11.sp,
+                letterSpacing = 1.6.sp,
+            )
+            Text(title, color = palette.text, fontWeight = FontWeight.Black, fontSize = 22.sp, letterSpacing = (-0.4).sp)
             androidx.compose.foundation.layout.Spacer(Modifier.size(KittySpace.sm))
             content()
             androidx.compose.foundation.layout.Spacer(Modifier.size(KittySpace.lg))
