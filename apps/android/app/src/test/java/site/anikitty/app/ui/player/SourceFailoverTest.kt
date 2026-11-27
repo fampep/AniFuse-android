@@ -46,6 +46,19 @@ class SourceFailoverTest {
     }
 
     @Test
+    fun deadHostIsSkippedForADifferentCdn() {
+        val urls = listOf(
+            "https://cdn-a.example/a.m3u8",
+            "https://user:token@cdn-a.example:443/b.m3u8?sig=1",
+            "https://cdn-b.example/c.m3u8",
+        )
+        assertEquals("cdn-a.example", playbackHost(urls[0]))
+        assertEquals("cdn-a.example", playbackHost(urls[1]))
+        assertEquals(2, nextHealthySource(urls, 0, setOf("cdn-a.example")))
+        assertEquals(null, nextHealthySource(urls, 2, setOf("cdn-b.example")))
+    }
+
+    @Test
     fun freshResolveMustChangeTheUrls() {
         assertEquals(false, hasNewPlayableUrls(listOf("https://cdn/a"), listOf("https://cdn/a")))
         assertEquals(false, hasNewPlayableUrls(listOf("https://cdn/a"), emptyList()))

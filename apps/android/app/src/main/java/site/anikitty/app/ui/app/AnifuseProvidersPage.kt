@@ -5,7 +5,6 @@ package site.anikitty.app.ui.app
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,7 +27,6 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,6 +51,9 @@ import site.anikitty.app.data.anifuse.AnifuseApiStore
 import site.anikitty.app.data.anifuse.AnifuseHealth
 import site.anikitty.app.data.anifuse.AnifuseProvider
 import site.anikitty.app.data.friendlyFailure
+import site.anikitty.app.ui.components.StageGlassDisc
+import site.anikitty.app.ui.components.StageProgressBar
+import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.KittyAccent
 import site.anikitty.app.ui.theme.KittyFaint
 import site.anikitty.app.ui.theme.KittyMuted
@@ -120,10 +121,15 @@ fun AnifuseProvidersPage(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = palette.text)
+                StageGlassDisc(onClick = onBack, size = 40.dp) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                        tint = palette.text,
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
                     Text("AniFuse API", color = palette.text, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                     Text(
                         endpoint,
@@ -140,8 +146,13 @@ fun AnifuseProvidersPage(
                         modifier = Modifier.size(22.dp).padding(end = 6.dp),
                     )
                 } else {
-                    IconButton(onClick = { reload(force = true) }) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = "Refresh providers", tint = palette.text)
+                    StageGlassDisc(onClick = { reload(force = true) }, size = 40.dp) {
+                        Icon(
+                            Icons.Rounded.Refresh,
+                            contentDescription = "Refresh providers",
+                            tint = palette.text,
+                            modifier = Modifier.size(20.dp),
+                        )
                     }
                 }
             }
@@ -213,9 +224,7 @@ private fun HealthCard(health: AnifuseHealth?, providerCount: Int, demo: Boolean
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(palette.surface)
-            .border(1.dp, palette.hairline, RoundedCornerShape(16.dp))
+            .stageGlassPlate(shape = RoundedCornerShape(18.dp), elevated = true)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -240,8 +249,7 @@ private fun HealthCard(health: AnifuseHealth?, providerCount: Int, demo: Boolean
                     color = palette.muted,
                     fontSize = 11.sp,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .border(1.dp, palette.hairline, RoundedCornerShape(999.dp))
+                        .stageGlassPlate(shape = RoundedCornerShape(999.dp))
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 )
             }
@@ -275,9 +283,7 @@ private fun ProviderRow(provider: AnifuseProvider) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(palette.surface)
-            .border(1.dp, palette.hairline, RoundedCornerShape(16.dp))
+            .stageGlassPlate(shape = RoundedCornerShape(16.dp))
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -305,23 +311,12 @@ private fun ProviderRow(provider: AnifuseProvider) {
                 fontWeight = FontWeight.SemiBold,
             )
         }
-        // Success-rate bar.
         val rate = provider.ratePercent
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(4.dp)
-                .clip(CircleShape)
-                .background(palette.text.copy(alpha = 0.08f)),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(rate / 100f)
-                    .height(4.dp)
-                    .clip(CircleShape)
-                    .background(statusColor),
-            )
-        }
+        StageProgressBar(
+            fraction = (rate / 100f).coerceIn(0f, 1f),
+            modifier = Modifier.fillMaxWidth(),
+            barHeight = 4.dp,
+        )
         Row {
             Text(
                 "${rate}% success · ${provider.attempts} attempts",

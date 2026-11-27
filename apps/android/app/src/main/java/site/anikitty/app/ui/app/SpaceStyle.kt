@@ -91,8 +91,7 @@ fun ProfileMark(
         }
     }
 }
-private val SpaceShape = RoundedCornerShape(12.dp)
-private val ChipShape = RoundedCornerShape(16.dp)
+private val SpaceShape = RoundedCornerShape(22.dp)
 
 /**
  * Press sinks the control, then a spring brings it back. Reduced motion stays still.
@@ -165,48 +164,36 @@ fun SpacePageHeader(
             .padding(horizontal = 20.dp, vertical = 8.dp),
     ) {
         if (onBack != null) {
-            Row(
+            Box(
                 modifier = Modifier
-                    .defaultMinSize(minHeight = 48.dp)
-                    .padding(bottom = 4.dp)
+                    .padding(bottom = 12.dp)
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(palette.surface)
+                    .border(1.dp, palette.hairline, CircleShape)
                     .spacePress(onBack),
-                verticalAlignment = Alignment.CenterVertically,
+                contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     Icons.AutoMirrored.Rounded.ArrowBack,
                     contentDescription = "Back",
                     tint = palette.text,
-                    modifier = Modifier.size(22.dp),
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    "Back",
-                    color = palette.muted,
-                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            site.anikitty.app.ui.components.KittyFace(
-                modifier = Modifier
-                    .padding(end = 10.dp)
-                    .size(36.dp),
-                contentDescription = null,
-            )
-            Text(
+        Text(
             text = title,
-            style = MaterialTheme.typography.headlineMedium.copy(
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = (-0.5).sp,
-            ),
             color = palette.text,
-            )
-        }
+            fontWeight = FontWeight.Black,
+            fontSize = 34.sp,
+            letterSpacing = (-1.1).sp,
+        )
         Text(
             text = subtitle,
             style = MaterialTheme.typography.bodySmall,
             color = palette.muted,
-            modifier = Modifier.padding(top = 2.dp),
+            modifier = Modifier.padding(top = 4.dp),
         )
     }
 }
@@ -252,31 +239,30 @@ fun SpaceChip(
     onClick: () -> Unit,
 ) {
     val palette = LocalKittyPalette.current
-    val background by animateColorAsState(
-        if (selected) palette.accent else palette.surface,
-        tween(KittyMotion.duration(180)),
-        label = "chipBg",
-    )
-    val stroke by animateColorAsState(
-        if (selected) palette.accent else palette.hairline,
-        tween(KittyMotion.duration(180)),
-        label = "chipStroke",
-    )
     val text by animateColorAsState(
-        if (selected) palette.onAccent else palette.text,
+        if (selected) palette.text else palette.muted,
         tween(KittyMotion.duration(180)),
         label = "chipText",
     )
-    Text(
-        text = label,
-        color = text,
-        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .defaultMinSize(minHeight = 48.dp)
-            .clip(ChipShape)
-            .background(background)
-            .border(1.dp, stroke, ChipShape)
             .spacePress(onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-    )
+            .padding(horizontal = 6.dp, vertical = 6.dp),
+    ) {
+        Text(
+            text = label,
+            color = text,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            fontSize = 13.sp,
+        )
+        Box(
+            modifier = Modifier
+                .padding(top = 6.dp)
+                .size(width = if (selected) 22.dp else 0.dp, height = 2.dp)
+                .clip(CircleShape)
+                .background(if (selected) Color.White else Color.Transparent),
+        )
+    }
 }

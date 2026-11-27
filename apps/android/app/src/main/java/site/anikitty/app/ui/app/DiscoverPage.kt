@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.safeDrawing
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Search
@@ -45,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,6 +64,8 @@ import site.anikitty.app.data.anilist.AnimeSummary
 import site.anikitty.app.data.friendlyFailure
 import site.anikitty.app.ui.components.KittyBottomSheet
 import site.anikitty.app.ui.components.KittyChip
+import site.anikitty.app.ui.components.StageGlassDisc
+import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.icons.FluentuiSystemIconsCalendarClockFilled
 import site.anikitty.app.ui.icons.FluentuiSystemIconsStarFilled
 import site.anikitty.app.ui.theme.KittyRadius
@@ -246,121 +251,147 @@ fun DiscoverFeed(
     val grid = (if (applied.active()) filtered else categoryItems).distinctBy { it.id }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-    val columns = posterColumns(maxWidth)
-    LazyColumn(
+    val columns = posterColumns((maxWidth - 112.dp).coerceAtLeast(160.dp))
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(kittyPageBrush(LookState.look != "amoled"))
             .windowInsetsPadding(
                 WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
             ),
-        contentPadding = PaddingValues(bottom = bottomInset),
     ) {
-        item {
-            Row(
-                modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 16.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Discover",
-                        color = palette.text,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 28.sp,
-                    )
-                    Text(
-                        "Find your next show",
-                        color = palette.muted,
-                        fontSize = 13.sp,
-                    )
-                }
-                DiscoverIconButton(Icons.Outlined.Search, "Search", onOpenSearch)
-                DiscoverIconButton(Icons.Outlined.Tune, "Filters", { sheet = true })
+        Row(
+            modifier = Modifier.padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "CATALOG",
+                    color = palette.muted,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.8.sp,
+                )
+                Text(
+                    "Discover",
+                    color = palette.text,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 32.sp,
+                    letterSpacing = (-0.8).sp,
+                )
             }
+            DiscoverIconButton(Icons.Outlined.Search, "Search", onOpenSearch)
+            DiscoverIconButton(Icons.Outlined.Tune, "Filters", { sheet = true })
         }
-        item {
-            Row(
+        Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Column(
                 modifier = Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    .width(112.dp)
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = 12.dp, end = 8.dp, bottom = bottomInset),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 DISCOVER_CATEGORIES.forEach { name ->
-                    KittyChip(
-                        label = name,
-                        selected = !applied.active() && category == name,
-                        onClick = {
-                            category = name
-                            if (applied.active()) apply(DiscoverFilter())
-                        },
-                    )
-                }
-            }
-        }
-        if (loading && trending.isEmpty()) {
-            item { ShimmerBox(modifier = Modifier.fillMaxWidth().padding(16.dp).height(96.dp)) }
-            item { ShimmerBox(modifier = Modifier.fillMaxWidth().padding(16.dp).height(220.dp)) }
-            return@LazyColumn
-        }
-        if (error != null && trending.isEmpty()) {
-            item {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text(error ?: "Couldn't load the catalog", color = palette.text, fontSize = 14.sp)
-                    OutlinedButton(onClick = { reload() }) {
-                        Text("Try again", color = palette.text)
+                    val on = !applied.active() && category == name
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .spacePress {
+                                category = name
+                                if (applied.active()) apply(DiscoverFilter())
+                            }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .width(2.dp)
+                                .height(14.dp)
+                                .clip(RoundedCornerShape(1.dp))
+                                .background(if (on) Color.White else Color.Transparent),
+                        )
+                        Text(
+                            name,
+                            color = if (on) palette.text else palette.muted,
+                            fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+                            fontSize = 13.sp,
+                            lineHeight = 16.sp,
+                        )
                     }
                 }
             }
-            return@LazyColumn
-        }
-        item {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                contentPadding = PaddingValues(bottom = bottomInset),
             ) {
-                DiscoverDoor(
-                    icon = FluentuiSystemIconsCalendarClockFilled,
-                    title = "Airing schedule",
-                    subtitle = "Next 5 days",
-                    modifier = Modifier.weight(1f),
-                    onClick = onOpenSchedule,
-                )
-                DiscoverDoor(
-                    icon = FluentuiSystemIconsStarFilled,
-                    title = "Surprise me",
-                    subtitle = "Random pick",
-                    modifier = Modifier.weight(1f),
-                    onClick = { if (pool.isNotEmpty()) onOpenRandom(pool.random()) },
-                )
-            }
-        }
-        item {
-            Text(
-                if (applied.active()) "Filtered" else category,
-                color = palette.text,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 20.sp,
-                modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 8.dp),
-            )
-        }
-        if (filtering) {
-            item { ShimmerBox(modifier = Modifier.fillMaxWidth().padding(16.dp).height(180.dp)) }
-        } else if (grid.isEmpty()) {
-            item {
-                Text(
-                    if (applied.active()) "Nothing matches these filters." else "Nothing in $category right now.",
-                    color = palette.muted,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                )
-            }
-        } else {
-            grid.chunked(columns).forEach { row ->
-                item(key = "grid-${row.first().id}", contentType = "poster-row") {
-                    HomePosterLine(row = row, columns = columns, onOpen = onOpen)
+                if (loading && trending.isEmpty()) {
+                    item { ShimmerBox(modifier = Modifier.fillMaxWidth().padding(16.dp).height(96.dp)) }
+                    item { ShimmerBox(modifier = Modifier.fillMaxWidth().padding(16.dp).height(220.dp)) }
+                    return@LazyColumn
+                }
+                if (error != null && trending.isEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text(error ?: "Couldn't load the catalog", color = palette.text, fontSize = 14.sp)
+                            OutlinedButton(onClick = { reload() }) {
+                                Text("Try again", color = palette.text)
+                            }
+                        }
+                    }
+                    return@LazyColumn
+                }
+                item {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        DiscoverDoor(
+                            icon = FluentuiSystemIconsCalendarClockFilled,
+                            title = "Airing schedule",
+                            subtitle = "Next 5 days",
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = onOpenSchedule,
+                        )
+                        DiscoverDoor(
+                            icon = FluentuiSystemIconsStarFilled,
+                            title = "Surprise me",
+                            subtitle = "Random pick",
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { if (pool.isNotEmpty()) onOpenRandom(pool.random()) },
+                        )
+                    }
+                }
+                item {
+                    Text(
+                        if (applied.active()) "Filtered" else category,
+                        color = palette.text,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 20.sp,
+                        modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 8.dp),
+                    )
+                }
+                if (filtering) {
+                    item { ShimmerBox(modifier = Modifier.fillMaxWidth().padding(16.dp).height(180.dp)) }
+                } else if (grid.isEmpty()) {
+                    item {
+                        Text(
+                            if (applied.active()) "Nothing matches these filters." else "Nothing in $category right now.",
+                            color = palette.muted,
+                            fontSize = 14.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                    }
+                } else {
+                    grid.chunked(columns).forEach { row ->
+                        item(key = "grid-${row.first().id}", contentType = "poster-row") {
+                            HomePosterLine(row = row, columns = columns, onOpen = onOpen)
+                        }
+                    }
                 }
             }
         }
@@ -486,13 +517,7 @@ private fun FilterChipRow(
 @Composable
 private fun DiscoverIconButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     val palette = LocalKittyPalette.current
-    Box(
-        modifier = Modifier
-            .size(48.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .spacePress(onClick),
-        contentAlignment = Alignment.Center,
-    ) {
+    StageGlassDisc(onClick = onClick, size = 48.dp) {
         Icon(icon, contentDescription = label, tint = palette.text, modifier = Modifier.size(22.dp))
     }
 }
@@ -506,12 +531,10 @@ private fun DiscoverDoor(
     onClick: () -> Unit,
 ) {
     val palette = LocalKittyPalette.current
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(22.dp)
     Row(
         modifier = modifier
-            .clip(shape)
-            .background(palette.surface)
-            .border(1.dp, palette.hairline, shape)
+            .stageGlassPlate(shape = shape)
             .spacePress(onClick)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,

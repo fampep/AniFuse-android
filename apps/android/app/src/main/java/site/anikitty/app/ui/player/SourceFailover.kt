@@ -40,6 +40,32 @@ internal fun hasNewPlayableUrls(current: Collection<String>, next: Collection<St
     return next.toSet() != current.toSet()
 }
 
+/** Host of a playable URL, lowercased, without port or userinfo. */
+internal fun playbackHost(url: String): String {
+    val afterScheme = url.substringAfter("://", url)
+    return afterScheme
+        .substringBefore("/")
+        .substringBefore("?")
+        .substringAfter("@")
+        .substringBefore(":")
+        .lowercase()
+}
+
+/**
+ * Next source whose host has not already failed this episode.
+ * When every later host is marked dead, the immediate neighbor is still
+ * returned so playback does not stop with an untried URL left in the list.
+ */
+internal fun nextHealthySource(urls: List<String>, fromIndex: Int, deadHosts: Set<String>): Int? {
+    val start = fromIndex + 1
+    if (start !in urls.indices) return null
+    for (index in start until urls.size) {
+        val host = playbackHost(urls[index])
+        if (host.isEmpty() || host !in deadHosts) return index
+    }
+    return start
+}
+
 /**
  * What a playback error is allowed to do.
  * A dead CDN moves on. A decoder glitch after the file was already playing does not.

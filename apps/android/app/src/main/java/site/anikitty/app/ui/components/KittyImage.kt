@@ -42,7 +42,9 @@ fun KittyImage(
         model = ImageRequest.Builder(context)
             .data(url)
             .size(widthPx, heightPx)
-            .crossfade(180)
+            // Short crossfade keeps shelves snappy; hardware bitmaps cut decode jank.
+            .crossfade(120)
+            .allowHardware(true)
             .memoryCacheKey(coverCacheKey(url, widthPx, heightPx))
             .diskCacheKey(coverCacheKey(url, widthPx, heightPx))
             .build(),

@@ -46,20 +46,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import site.anikitty.app.data.airingLabel
 import site.anikitty.app.data.friendlyFailure
 import site.anikitty.app.data.anilist.AiringSlot
 import site.anikitty.app.data.anilist.AniListClient
 import site.anikitty.app.data.anilist.AnimeSummary
 import site.anikitty.app.ui.components.KittyEmptyState
+import site.anikitty.app.ui.components.KittyImage
 import site.anikitty.app.ui.components.KittyShimmerBox
+import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.LocalKittyPalette
 import site.anikitty.app.ui.theme.prefersReducedMotion
 import java.text.SimpleDateFormat
@@ -116,34 +118,11 @@ fun ScheduleFeed(
             .background(palette.page)
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (showBack) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = palette.text)
-                }
-            } else {
-                Spacer(modifier = Modifier.width(8.dp))
-            }
-            Column(modifier = Modifier.padding(start = 8.dp)) {
-                Text(
-                    "Schedule",
-                    color = palette.text,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = (-0.4).sp,
-                )
-                Text(
-                    "The next five days",
-                    color = palette.muted,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-        }
+        SpacePageHeader(
+            title = "Schedule",
+            subtitle = "The next five days",
+            onBack = if (showBack) onBack else null,
+        )
         if (followedEpisodes.isNotEmpty()) {
             Row(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
@@ -177,14 +156,14 @@ fun ScheduleFeed(
                         .weight(1f)
                         .defaultMinSize(minHeight = 48.dp)
                         .spacePress { selected = index }
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (on) palette.text else palette.surface)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (on) Color(0xFF101010) else Color.Transparent)
                         .border(
-                            0.5.dp,
-                            if (on) palette.text else palette.hairline,
-                            RoundedCornerShape(12.dp),
+                            1.dp,
+                            if (on) Color(0xFF292929) else Color.Transparent,
+                            RoundedCornerShape(16.dp),
                         )
-                        .padding(vertical = 6.dp),
+                        .padding(vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
@@ -195,15 +174,24 @@ fun ScheduleFeed(
                                 .orEmpty()
                                 .uppercase(Locale.getDefault())
                         },
-                        color = if (on) palette.page else palette.muted,
+                        color = if (on) palette.text else palette.muted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.6.sp,
                     )
                     Text(
                         day.get(Calendar.DAY_OF_MONTH).toString(),
-                        color = if (on) palette.page else palette.text,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
+                        color = if (on) palette.text else palette.muted,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 16.sp,
+                    )
+                    Box(
+                        modifier = Modifier
+                            .padding(top = 6.dp)
+                            .height(2.dp)
+                            .width(if (on) 18.dp else 0.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(if (on) Color.White else Color.Transparent),
                     )
                 }
             }
@@ -341,25 +329,25 @@ private fun ScheduleRow(
     listLabel: String?,
     onOpen: (AnimeSummary, Int) -> Unit,
 ) {
+    val shape = RoundedCornerShape(16.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .spacePress { onOpen(slot.anime, slot.episode) }
-            .clip(RoundedCornerShape(12.dp))
-            .background(LocalKittyPalette.current.surface)
-            .border(0.5.dp, LocalKittyPalette.current.hairline, RoundedCornerShape(12.dp))
+            .stageGlassPlate(shape = shape, elevated = false)
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AsyncImage(
-            model = slot.anime.coverImageUrl,
+        KittyImage(
+            url = slot.anime.coverImageUrl,
             contentDescription = null,
+            widthPx = 144,
+            heightPx = 204,
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .width(48.dp)
                 .height(68.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(LocalKittyPalette.current.hairline),
+                .clip(RoundedCornerShape(10.dp)),
         )
         Spacer(modifier = Modifier.width(12.dp))
         val now = System.currentTimeMillis() / 1000L

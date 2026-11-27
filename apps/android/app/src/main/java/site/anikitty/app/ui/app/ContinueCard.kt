@@ -69,12 +69,15 @@ import site.anikitty.app.data.tmdb.transparentLogo
 import site.anikitty.app.ui.components.KittyImage
 import site.anikitty.app.ui.components.KittyMenu
 import site.anikitty.app.ui.components.KittyMenuEntry
+import site.anikitty.app.ui.components.StageProgressBar
+import site.anikitty.app.ui.components.stageGlassPlate
+import site.anikitty.app.ui.theme.KittyAtmosphere
 import site.anikitty.app.ui.theme.KittyRadius
 import site.anikitty.app.ui.theme.KittySpace
 import site.anikitty.app.ui.theme.LocalKittyPalette
 import site.anikitty.app.ui.theme.ShimmerBox
 
-private val ContinueCardWidth = 248.dp
+private val ContinueCardWidth = 268.dp
 
 @Composable
 fun ContinueWatchRow(
@@ -152,12 +155,13 @@ fun ContinueAllPage(
     val queue = remember(history, hidden, releasedEpisodes) {
         continueQueue(history, hidden, releasedEpisodes)
     }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(palette.page)
-            .windowInsetsPadding(WindowInsets.statusBars),
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        KittyAtmosphere()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars),
+        ) {
         SpacePageHeader(
             title = "Continue watching",
             subtitle = if (queue.isEmpty()) "Nothing in progress" else "Most recent first",
@@ -194,6 +198,7 @@ fun ContinueAllPage(
                 }
             }
         }
+        }
     }
 }
 
@@ -214,7 +219,7 @@ fun ContinueWatchCard(
     val shown = cue ?: libraryCue(entry)
     val palette = LocalKittyPalette.current
     val context = LocalContext.current
-    val shape = RoundedCornerShape(KittyRadius.md)
+    val shape = RoundedCornerShape(22.dp)
     var frame by remember(entry.anilistId, shown.episode) { mutableStateOf<EpisodeFrame?>(null) }
     var menu by remember(entry.anilistId) { mutableStateOf(false) }
     LaunchedEffect(entry.anilistId, shown.episode) {
@@ -269,8 +274,7 @@ fun ContinueWatchCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
-                .clip(shape)
-                .background(Color(0xFF141416)),
+                .stageGlassPlate(shape = shape, elevated = true),
         ) {
             if (image.isNullOrBlank()) {
                 // Poster still missing — ink plate with EP mark, not a stuck shimmer.
@@ -329,21 +333,21 @@ fun ContinueWatchCard(
                     .padding(horizontal = 8.dp, vertical = 3.dp)
                     .clearAndSetSemantics { },
             )
-            // Amber play disc, Mizuki style.
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(KittySpace.sm)
-                    .size(40.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
-                    .background(palette.accent),
+                    .background(Color.White)
+                    .border(1.dp, Color.White.copy(alpha = 0.28f), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     Icons.Filled.PlayArrow,
                     contentDescription = null,
-                    tint = palette.onAccent,
-                    modifier = Modifier.size(22.dp),
+                    tint = Color(0xFF080808),
+                    modifier = Modifier.size(24.dp),
                 )
             }
             Box(
@@ -376,23 +380,14 @@ fun ContinueWatchCard(
                         .clearAndSetSemantics { },
                 )
             }
-            Box(
+            StageProgressBar(
+                fraction = shown.progress,
+                barHeight = 4.dp,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .height(3.dp)
-                    .background(Color(0xFF2C2C2C)),
-            ) {
-                if (shown.progress > 0f) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .fillMaxWidth(shown.progress.coerceIn(0f, 1f))
-                            .clip(RoundedCornerShape(topEnd = 2.dp, bottomEnd = 2.dp))
-                            .background(Color.White),
-                    )
-                }
-            }
+                    .padding(horizontal = 0.dp),
+            )
         }
         Spacer(modifier = Modifier.height(KittySpace.sm))
         Text(

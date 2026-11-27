@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -153,19 +152,26 @@ internal fun NextEpisodePrompt(
         }
     }
     val countdown = if (ended) secondsLeft else remainSec
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(20.dp)
     Column(
         modifier = modifier
             .widthIn(max = 360.dp)
-            .shadow(20.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.55f))
-            .clip(shape)
-            .background(Color(0xF0101012))
-            .background(
-                androidx.compose.ui.graphics.Brush.verticalGradient(
-                    listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
-                ),
+            .then(
+                Modifier
+                    .shadow(22.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.60f))
+                    .clip(shape)
+                    .background(site.anikitty.app.ui.components.StageGlassFill)
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            listOf(
+                                site.anikitty.app.ui.components.StageGlassSheen,
+                                Color.Transparent,
+                            ),
+                        ),
+                    )
+                    .border(1.dp, Color.White.copy(alpha = 0.16f), shape)
+                    .border(1.dp, site.anikitty.app.ui.components.StageGlassStroke, shape),
             )
-            .border(1.dp, Color.White.copy(alpha = 0.18f), shape)
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -205,20 +211,11 @@ internal fun NextEpisodePrompt(
             val span = if (ended) AUTOPLAY_COUNTDOWN_SEC else (NEAR_END_THRESHOLD_MS / 1000L).toInt()
             val fraction = (countdown.toFloat() / span.coerceAtLeast(1)).coerceIn(0f, 1f)
             Spacer(modifier = Modifier.height(10.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(3.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(Color.White.copy(alpha = 0.12f)),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth(fraction)
-                        .background(Color.White),
-                )
-            }
+            site.anikitty.app.ui.components.StageProgressBar(
+                fraction = fraction,
+                modifier = Modifier.fillMaxWidth(),
+                barHeight = 3.dp,
+            )
         }
         Spacer(modifier = Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

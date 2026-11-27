@@ -476,7 +476,22 @@ fun SearchFeed(
                 modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Search", color = palette.text, fontWeight = FontWeight.Bold, fontSize = 28.sp, modifier = Modifier.weight(1f))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "FIND",
+                        color = palette.muted,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 11.sp,
+                        letterSpacing = 1.8.sp,
+                    )
+                    Text(
+                        "Search",
+                        color = palette.text,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 32.sp,
+                        letterSpacing = (-0.8).sp,
+                    )
+                }
                 HeaderDisc(onClick = { asGrid = !asGrid }) {
                     Icon(
                         if (asGrid) Icons.AutoMirrored.Filled.ViewList else Icons.Filled.GridView,
@@ -509,15 +524,15 @@ fun SearchFeed(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
-                    .height(48.dp)
+                    .height(56.dp)
                     .semantics { contentDescription = "Search titles" },
                 decorationBox = { inner ->
                     Row(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xFF151515))
-                            .border(1.dp, Color(0xFF292929), RoundedCornerShape(16.dp))
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(Color(0xFF101010))
+                            .border(1.dp, Color(0xFF292929), RoundedCornerShape(22.dp))
                             .padding(horizontal = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -804,16 +819,13 @@ private fun SearchFilterChip(text: String, selected: Boolean, onClick: () -> Uni
 
 @Composable
 private fun HeaderDisc(onClick: () -> Unit, selected: Boolean = false, content: @Composable () -> Unit) {
-    val palette = LocalKittyPalette.current
-    Box(
-        modifier = Modifier
-            .size(48.dp)
-            .clip(CircleShape)
-            .background(if (selected) palette.text.copy(alpha = 0.16f) else palette.text.copy(alpha = 0.05f))
-            .border(1.dp, palette.text.copy(alpha = if (selected) 0.35f else 0.08f), CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) { content() }
+    site.anikitty.app.ui.components.StageGlassDisc(
+        onClick = onClick,
+        size = 48.dp,
+        selected = selected,
+    ) {
+        content()
+    }
 }
 
 @Composable
@@ -837,7 +849,8 @@ private fun SearchPoster(anime: AnimeSummary, badge: String?, onClick: () -> Uni
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(3.dp)),
+                .clip(RoundedCornerShape(16.dp))
+                .border(1.dp, Color(0xFF292929), RoundedCornerShape(16.dp)),
         )
         Spacer(Modifier.height(6.dp))
         Text(

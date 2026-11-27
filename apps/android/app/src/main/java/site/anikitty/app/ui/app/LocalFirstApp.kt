@@ -831,12 +831,35 @@ fun LocalFirstApp(
                                 usedFallback = false,
                             )
                         } else {
-                            streamServers.resolveWithFailover(
+                            val warmed = site.anikitty.app.data.servers.PlayableWarmCache.take(
                                 anilistId = current.anime.id,
                                 episode = nextEpisode,
                                 audio = nextAudio,
-                                titleHint = current.anime.streamTitleHint(),
                             )
+                            if (warmed != null) {
+                                val warmServer = runCatching {
+                                    streamServers.selectedResolver().server
+                                }.getOrElse {
+                                    site.anikitty.app.data.servers.StreamServer(
+                                        id = "warm-cache",
+                                        name = warmed.firstOrNull()?.serverName ?: "Warm",
+                                        description = "Prefetched next episode",
+                                    )
+                                }
+                                site.anikitty.app.data.servers.ResolveFailoverResult(
+                                    sources = warmed,
+                                    server = warmServer,
+                                    usedFallback = false,
+                                    attempted = listOf("warm-cache: ok"),
+                                )
+                            } else {
+                                streamServers.resolveWithFailover(
+                                    anilistId = current.anime.id,
+                                    episode = nextEpisode,
+                                    audio = nextAudio,
+                                    titleHint = current.anime.streamTitleHint(),
+                                )
+                            }
                         }
                         ensureActive()
                         if (languageToSave(failed = false) == null) return@launch
@@ -1029,6 +1052,45 @@ fun LocalFirstApp(
                     val hasNext = released <= 0 || current.episode < released
                     if (!hasNext) null else {
                         { openResolved(current.episode + 1, playerAudio) }
+                    }
+                },
+                onWarmNextEpisode = run {
+                    val released = current.anime.releasedEpisodeCount()
+                    val hasNext = released <= 0 || current.episode < released
+                    if (!hasNext || demo || site.anikitty.app.data.demo.DemoLibrary.find(current.anime.id) != null) {
+                        null
+                    } else {
+                        suspend {
+                            val next = current.episode + 1
+                            val existing = site.anikitty.app.data.servers.PlayableWarmCache.peek(
+                                anilistId = current.anime.id,
+                                episode = next,
+                                audio = playerAudio,
+                            )
+                            val resolved = existing ?: streamServers.resolveWithFailover(
+                                anilistId = current.anime.id,
+                                episode = next,
+                                audio = playerAudio,
+                                titleHint = current.anime.streamTitleHint(),
+                            ).sources.also { sources ->
+                                site.anikitty.app.data.servers.PlayableWarmCache.put(
+                                    anilistId = current.anime.id,
+                                    episode = next,
+                                    audio = playerAudio,
+                                    sources = sources,
+                                )
+                            }
+                            site.anikitty.app.data.servers.SourceBadgeCache.remember(
+                                context,
+                                current.anime.id,
+                                next,
+                                resolved,
+                            )
+                            site.anikitty.app.data.servers.SubtitleLibrary.prefetch(
+                                current.anime.id,
+                                next,
+                            )
+                        }
                     }
                 },
                 totalEpisodes = current.anime.releasedEpisodeCount().coerceAtLeast(current.episode),
@@ -1255,6 +1317,7 @@ private fun HomeFeed(
     onOpenBuilds: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    if (!demo) HomeShelfMemory.hydrate(context.filesDir)
     val warmShelves = !demo && HomeShelfMemory.trending.isNotEmpty()
     var loading by remember { mutableStateOf(!warmShelves) }
     var refreshing by remember { mutableStateOf(false) }
@@ -1435,6 +1498,7 @@ private fun HomeFeed(
                     seasonal = s.await()
                     topTen = seasonTop.await().ifEmpty { trending }.take(10)
                     popular = p.await()
+                    HomeShelfMemory.bind(context.filesDir)
                     HomeShelfMemory.save(trending, seasonal, popular, topTen)
                     prefetchCovers(context, trending + seasonal + topTen + popular)
                 }

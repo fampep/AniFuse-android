@@ -145,26 +145,34 @@ fun KittyEmptyState(
     onAction: (() -> Unit)? = null,
 ) {
     val palette = LocalKittyPalette.current
+    val shape = RoundedCornerShape(24.dp)
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(palette.surface)
-            .border(0.5.dp, palette.hairline, RoundedCornerShape(12.dp))
-            .padding(horizontal = 18.dp, vertical = 26.dp),
+            .stageGlassPlate(shape = shape, elevated = true)
+            .padding(horizontal = 22.dp, vertical = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        Text(
+            "EMPTY",
+            color = palette.faint,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 11.sp,
+            letterSpacing = 2.sp,
+        )
+        Spacer(modifier = Modifier.height(10.dp))
         KittyFace(
-            modifier = Modifier.size(72.dp),
+            modifier = Modifier.size(64.dp),
             waving = true,
             contentDescription = null,
         )
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(14.dp))
         Text(
             title,
             color = palette.text,
-            fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Black,
+            fontSize = 20.sp,
+            letterSpacing = (-0.4).sp,
             textAlign = TextAlign.Center,
         )
         Spacer(modifier = Modifier.height(6.dp))
@@ -175,17 +183,17 @@ fun KittyEmptyState(
             textAlign = TextAlign.Center,
         )
         if (!actionLabel.isNullOrBlank() && onAction != null) {
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = onAction,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = palette.accent,
                     contentColor = palette.onAccent,
                 ),
-                shape = RoundedCornerShape(16.dp),
-                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+                shape = RoundedCornerShape(18.dp),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
             ) {
-                Text(actionLabel, fontWeight = FontWeight.SemiBold, color = palette.onAccent)
+                Text(actionLabel, fontWeight = FontWeight.Bold, color = palette.onAccent)
             }
         }
     }
@@ -240,17 +248,17 @@ fun KittySectionHeading(
         Box(
             modifier = Modifier
                 .padding(end = 10.dp)
-                .size(width = 3.dp, height = 18.dp)
+                .size(width = 3.dp, height = 22.dp)
                 .clip(RoundedCornerShape(2.dp))
                 .background(Color.White),
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 title,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Black,
                 color = LocalKittyPalette.current.text,
-                letterSpacing = (-0.4).sp,
+                letterSpacing = (-0.6).sp,
             )
             if (!subtitle.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(2.dp))
@@ -269,7 +277,8 @@ fun KittySectionHeading(
                     .spacePress(onMore)
                     .clearAndSetSemantics { contentDescription = "See all $title" }
                     .clip(RoundedCornerShape(999.dp))
-                    .background(Color.White.copy(alpha = 0.07f))
+                    .background(Color(0xFF101010))
+                    .border(1.dp, Color(0xFF292929), RoundedCornerShape(999.dp))
                     .padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

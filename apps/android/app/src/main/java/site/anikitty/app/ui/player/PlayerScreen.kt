@@ -330,6 +330,8 @@ fun PlayerScreen(
     onDismiss: () -> Unit = onClose,
     onToggleWatched: ((Int) -> Unit)? = null,
     onNextEpisode: (() -> Unit)? = null,
+    /** Fire once past 72% so the next episode's CDN race is already warm. */
+    onWarmNextEpisode: (suspend () -> Unit)? = null,
     onProgress: ((positionMs: Long, durationMs: Long, skip: SkipTimes) -> Unit)? = null,
     totalEpisodes: Int = 1,
     watchedThrough: Int = 0,
@@ -365,6 +367,8 @@ fun PlayerScreen(
     var playAttempt by remember { mutableIntStateOf(0) }
     var playlist by remember(sources) { mutableStateOf(sources) }
     var sourceIndex by remember(playlist, playAttempt) { mutableIntStateOf(0) }
+    /** Hosts that already failed this episode. The next failover skips them. */
+    var deadHosts by remember(anilistId, episode) { mutableStateOf(emptySet<String>()) }
     var retriedSource by remember(sourceIndex, playlist) { mutableStateOf(false) }
     var skipTimes by remember { mutableStateOf(SkipTimes()) }
     var didSeekStart by remember { mutableStateOf(false) }
@@ -652,12 +656,12 @@ fun PlayerScreen(
         // and minBufferMs >= bufferForPlaybackMs. Violating that crashes on open.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 3_500,
-                /* maxBufferMs = */ 60_000,
-                /* bufferForPlaybackMs = */ 800,
-                /* bufferForPlaybackAfterRebufferMs = */ 2_500,
+                /* minBufferMs = */ 3_200,
+                /* maxBufferMs = */ 55_000,
+                /* bufferForPlaybackMs = */ 500,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_200,
             )
-            .setBackBuffer(40_000, true)
+            .setBackBuffer(36_000, true)
             .build()
         val metrics = context.resources.displayMetrics
         val seedBitrate = context.getSharedPreferences("anikitty_player", 0)
@@ -668,10 +672,10 @@ fun PlayerScreen(
             .build()
         // Flagship ABR: climb on healthy pipe, dump rungs the second stalls hit.
         val adaptive = AdaptiveTrackSelection.Factory(
-            /* minDurationForQualityIncreaseMs = */ 6_000,
-            /* maxDurationForQualityDecreaseMs = */ 3_200,
-            /* minDurationToRetainAfterDiscardMs = */ 16_000,
-            /* bandwidthFraction = */ 0.74f,
+            /* minDurationForQualityIncreaseMs = */ 5_500,
+            /* maxDurationForQualityDecreaseMs = */ 2_800,
+            /* minDurationToRetainAfterDiscardMs = */ 14_000,
+            /* bandwidthFraction = */ 0.78f,
         )
         val selector = DefaultTrackSelector(context, adaptive).apply {
             // Device locale is the default preference. A Danish phone then keeps
@@ -893,6 +897,16 @@ fun PlayerScreen(
     var nearEndOffer by remember { mutableStateOf(false) }
     var shownSkip by remember { mutableStateOf<Pair<String, site.anikitty.app.data.skip.SkipInterval>?>(null) }
     var shelfMinutes by remember { mutableIntStateOf(-1) }
+    var warmedNext by remember(anilistId, episode) { mutableStateOf(false) }
+    val latestWarmNext by rememberUpdatedState(onWarmNextEpisode)
+    LaunchedEffect(positionMs, durationMs, warmedNext, onNextEpisode) {
+        if (!shouldWarmNextEpisode(positionMs, durationMs, onNextEpisode != null, warmedNext)) {
+            return@LaunchedEffect
+        }
+        warmedNext = true
+        val warm = latestWarmNext ?: return@LaunchedEffect
+        runCatching { warm() }
+    }
     val showEndAutoplay = autoNext &&
         onNextEpisode != null &&
         playbackEnded &&
@@ -1041,6 +1055,15 @@ fun PlayerScreen(
         if (fromCast) handEpisodeBackToPhone(message, receiverStillPlaying = false)
     }
 
+    fun nextIndexSkippingDead(fromCast: Boolean): Int? {
+        val urls = if (fromCast) latestSources.map { it.url } else playlist.map { it.url }
+        val index = if (fromCast) latestSourceIndex else sourceIndex
+        val host = urls.getOrNull(index)?.let(::playbackHost).orEmpty()
+        val blocked = if (host.isEmpty()) deadHosts else deadHosts + host
+        if (host.isNotEmpty() && blocked != deadHosts) deadHosts = blocked
+        return nextHealthySource(urls, index, blocked)
+    }
+
     fun failCastSource(message: String, liveMs: Long) {
         val currentUrl = latestSources.getOrNull(latestSourceIndex)?.url
         if (currentUrl != null && castFailUrl[0] == currentUrl) return
@@ -1053,13 +1076,14 @@ fun PlayerScreen(
             historyMs = latestStartPositionMs,
             allowHistory = latestAllowHistory,
         )
-        if (decision.nextIndex != null) {
+        val next = nextIndexSkippingDead(fromCast = true)
+        if (next != null) {
             resumeAtMs = decision.resumeMs
             positionMs = decision.resumeMs
             playhead.ms = decision.resumeMs
             didSeekStart = false
             allowHistoryFallback = false
-            sourceIndex = decision.nextIndex
+            sourceIndex = next
             return
         }
         recoverExhausted(message, decision.resumeMs, fromCast = true)
@@ -1103,12 +1127,13 @@ fun PlayerScreen(
                 if (fromCast) {
                     failCastSource(message, liveMs)
                 } else if (decision.nextIndex != null) {
+                    val next = nextIndexSkippingDead(fromCast = false) ?: decision.nextIndex
                     resumeAtMs = decision.resumeMs
                     positionMs = decision.resumeMs
                     playhead.ms = decision.resumeMs
                     didSeekStart = false
                     allowHistoryFallback = false
-                    sourceIndex = decision.nextIndex
+                    sourceIndex = next
                 } else {
                     recoverExhausted(message, decision.resumeMs, fromCast = false)
                 }
@@ -1827,12 +1852,13 @@ fun PlayerScreen(
                                 allowHistory = allowHistoryFallback,
                             )
                             if (decision.nextIndex != null) {
+                                val next = nextIndexSkippingDead(fromCast = false) ?: decision.nextIndex
                                 resumeAtMs = decision.resumeMs
                                 positionMs = decision.resumeMs
                                 playhead.ms = decision.resumeMs
                                 didSeekStart = false
                                 allowHistoryFallback = false
-                                sourceIndex = decision.nextIndex
+                                sourceIndex = next
                             }
                         }
                     } else {

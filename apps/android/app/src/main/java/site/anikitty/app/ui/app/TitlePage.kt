@@ -112,6 +112,7 @@ import site.anikitty.app.ui.components.EpisodeCardRow
 import site.anikitty.app.ui.components.EpisodeCardSkeletonRow
 import site.anikitty.app.ui.components.EpisodeSlide
 import site.anikitty.app.ui.components.HeroBanner
+import site.anikitty.app.ui.components.StageSlider
 import site.anikitty.app.ui.components.enrichEpisodeSlides
 import site.anikitty.app.ui.components.rememberDockScroll
 import site.anikitty.app.ui.components.KittyBottomSheet
@@ -296,28 +297,51 @@ internal fun TitleStage(
                     val pickedBackdrop = gallery.getOrNull(backdropIndex.coerceIn(0, (gallery.size - 1).coerceAtLeast(0)))
                     val localArt = detail.bannerImageUrl?.startsWith("android.resource://") == true ||
                         detail.coverImageUrl?.startsWith("android.resource://") == true
-                    HeroBanner(
-                        anilistId = detail.id,
-                        bannerUrl = pickedBackdrop ?: if (localArt) detail.coverImageUrl else detail.bannerImageUrl,
-                        coverUrl = detail.coverImageUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        alignment = Alignment.TopCenter,
-                        title = detail.title,
-                        year = detail.seasonYear,
-                        movie = movie,
-                        locked = pickedBackdrop != null,
-                        modifier = posterModifier
-                            .matchParentSize()
-                            .graphicsLayer {
-                                val drift = if (reduced || listState.firstVisibleItemIndex > 0) {
-                                    0f
-                                } else {
-                                    listState.firstVisibleItemScrollOffset * 0.28f
-                                }
-                                translationY = drift
-                            },
-                    )
+                    val drift = Modifier.graphicsLayer {
+                        translationY = if (reduced || listState.firstVisibleItemIndex > 0) {
+                            0f
+                        } else {
+                            listState.firstVisibleItemScrollOffset * 0.28f
+                        }
+                    }
+                    if (!television && gallery.size > 1) {
+                        StageSlider(
+                            pageCount = gallery.size,
+                            selected = backdropIndex.coerceIn(0, gallery.lastIndex),
+                            showIndex = true,
+                            indexInset = 28.dp,
+                            onPageSettled = { backdropIndex = it },
+                            modifier = posterModifier.matchParentSize().then(drift),
+                        ) { page ->
+                            HeroBanner(
+                                anilistId = detail.id,
+                                bannerUrl = gallery[page],
+                                coverUrl = detail.coverImageUrl,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                alignment = Alignment.TopCenter,
+                                title = detail.title,
+                                year = detail.seasonYear,
+                                movie = movie,
+                                locked = true,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    } else {
+                        HeroBanner(
+                            anilistId = detail.id,
+                            bannerUrl = pickedBackdrop ?: if (localArt) detail.coverImageUrl else detail.bannerImageUrl,
+                            coverUrl = detail.coverImageUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            alignment = Alignment.TopCenter,
+                            title = detail.title,
+                            year = detail.seasonYear,
+                            movie = movie,
+                            locked = pickedBackdrop != null,
+                            modifier = posterModifier.matchParentSize().then(drift),
+                        )
+                    }
                     if (television) {
                         Box(
                             modifier = Modifier
@@ -346,24 +370,37 @@ internal fun TitleStage(
                     )
                     Column(
                         modifier = Modifier
-                            .align(if (television) Alignment.BottomStart else Alignment.BottomCenter)
+                            .align(Alignment.BottomStart)
                             .padding(horizontal = if (television) 48.dp else KittySpace.md)
-                            .padding(bottom = if (television) 28.dp else 16.dp)
+                            .padding(bottom = if (television) 28.dp else 20.dp)
                             .fillMaxWidth(if (television) 0.5f else 1f),
-                        horizontalAlignment = if (television) Alignment.Start else Alignment.CenterHorizontally,
+                        horizontalAlignment = Alignment.Start,
                     ) {
                         if (!television && !detail.coverImageUrl.isNullOrBlank()) {
-                            AsyncImage(
-                                model = detail.coverImageUrl,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .padding(bottom = 12.dp)
-                                    .width(148.dp)
-                                    .height(214.dp)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .border(1.dp, Color(0xFF292929), RoundedCornerShape(16.dp)),
-                            )
+                            Row(
+                                verticalAlignment = Alignment.Bottom,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                modifier = Modifier.padding(bottom = 8.dp),
+                            ) {
+                                AsyncImage(
+                                    model = detail.coverImageUrl,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .width(92.dp)
+                                        .height(132.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .border(1.dp, Color(0xFF292929), RoundedCornerShape(16.dp)),
+                                )
+                                Text(
+                                    "DETAILS",
+                                    color = Color(0xFFA1A1A1),
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 11.sp,
+                                    letterSpacing = 1.6.sp,
+                                    modifier = Modifier.padding(bottom = 6.dp),
+                                )
+                            }
                         }
                         val logo = transparentLogo(art?.logoUrl)
                         if (logo != null) {
@@ -386,7 +423,7 @@ internal fun TitleStage(
                                 letterSpacing = if (television) (-0.3).sp else (-0.6).sp,
                                 maxLines = if (television) 2 else 3,
                                 overflow = TextOverflow.Ellipsis,
-                                textAlign = if (television) TextAlign.Start else TextAlign.Center,
+                                textAlign = TextAlign.Start,
                                 modifier = Modifier.fillMaxWidth(),
                                 style = TextStyle(
                                     shadow = Shadow(Color.Black, Offset(0f, 2f), 18f),
@@ -403,7 +440,7 @@ internal fun TitleStage(
                                 fontSize = 13.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                textAlign = if (television) TextAlign.Start else TextAlign.Center,
+                                textAlign = TextAlign.Start,
                                 modifier = Modifier
                                     .padding(top = 4.dp)
                                     .fillMaxWidth(),
@@ -1333,18 +1370,24 @@ private fun PlayButton(
         return
     }
     val palette = LocalKittyPalette.current
+    val playShape = RoundedCornerShape(22.dp)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(KittyRadius.button))
+            .clip(playShape)
             .background(palette.accent)
-            .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(KittyRadius.button))
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
+                ),
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.22f), playShape)
             .spacePress(onClick = { if (!busy) onClick() }, grabFocus = isTelevision()),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(54.dp),
+                .height(58.dp),
             contentAlignment = Alignment.Center,
         ) {
             if (busy) {
@@ -2193,7 +2236,8 @@ private fun HeaderIcon(
         modifier = modifier
             .size(48.dp)
             .clip(CircleShape)
-            .background(if (onDark) Color.Black.copy(alpha = 0.45f) else palette.surface)
+            .background(if (onDark) Color(0xCC101010) else palette.surface)
+            .border(1.dp, if (onDark) Color(0xFF292929) else palette.hairline, CircleShape)
             .spacePress(onClick),
         contentAlignment = Alignment.Center,
     ) {
