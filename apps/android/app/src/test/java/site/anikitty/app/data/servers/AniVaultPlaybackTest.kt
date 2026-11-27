@@ -10,6 +10,36 @@ import org.junit.Test
 
 class AniVaultPlaybackTest {
     @Test
+    fun animeHeavenPrefersTheExactTitleAndFindsEpisodeOne() {
+        val search = """
+            <a class='ac' href='/anime.php?hgj3i'><div class='fastname'>Frieren: Beyond Journey&#039;s End Season 2</div></a>
+            <a class='ac' href='/anime.php?ak2gr'><div class='fastname'>Frieren: Beyond Journey&#039;s End</div></a>
+        """.trimIndent()
+        val pick = anivaultHeavenPick(anivaultHeavenSearch(search), "Frieren: Beyond Journey's End")
+        assertEquals("ak2gr", pick?.id)
+        assertEquals(100, pick?.score)
+        val page = """
+            <a class='c' onclick='gatea( "cd9a4996ea3e27887d22a26e6ce3113f")' href='gate.php'>
+            <div class='watch2 bc'>1</div></a>
+            <a class='c' onclick='gatea( "b9e57993a80d8ed82019db23e8e7764c")' href='gate.php'>
+            <div class='watch2 bc'>2</div></a>
+        """.trimIndent()
+        assertEquals("cd9a4996ea3e27887d22a26e6ce3113f", anivaultHeavenEpisodeKey(page, 1))
+        val gate = "<source src='https://ax.animeheaven.me/video.mp4?token' type='video/mp4'>"
+        assertEquals("https://ax.animeheaven.me/video.mp4?token", anivaultHeavenMp4s(gate).single())
+    }
+
+    @Test
+    fun aWarmAsksOnlyTheServerThatPlayed() {
+        val buttons = anivaultButtons("sub")
+        val lead = anivaultAskKey(buttons.first { it.server == "Hd-2" })
+        val only = anivaultLeadFirst(buttons, lead).filter { anivaultAskKey(it) == lead }
+        assertEquals(listOf("Hd-2"), only.map { it.server })
+        assertTrue(AniVaultServer.RESOLVE_BUDGET_MS > RESOLVE_TIMEOUT_MS)
+        assertTrue(AniVaultServer.LOOKUP_TIMEOUT_MS < AniVaultServer.STREAM_TIMEOUT_MS)
+    }
+
+    @Test
     fun subButtonsFollowTheSiteOrder() {
         val buttons = anivaultButtons("sub")
         assertEquals("Hd-1", buttons.first().server)

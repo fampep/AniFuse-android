@@ -1008,6 +1008,7 @@ fun LocalFirstApp(
                             episode = episodeNumber,
                             audio = playerAudio,
                             titleHint = hint,
+                            warmLead = true,
                         ).sources
                     },
                 )

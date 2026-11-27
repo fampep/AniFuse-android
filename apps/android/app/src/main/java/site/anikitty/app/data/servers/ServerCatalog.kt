@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 import site.anikitty.app.data.anifuse.AnifuseApiStore
 import site.anikitty.app.data.anifuse.AnifuseFeedCache
 import site.anikitty.app.data.extensions.ExtensionInstaller
@@ -190,6 +192,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         titleHint: String? = null,
         onAttempt: ((serverName: String, index: Int, total: Int) -> Unit)? = null,
         avoidHost: String? = null,
+        warmLead: Boolean = false,
     ): ResolveFailoverResult {
         val list = playbackResolvers(_selectedId.value, _resolvers.value)
         if (list.isEmpty()) error("No stream extensions installed")
@@ -214,20 +217,28 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
             anyDown = down.isNotEmpty(),
             preferredCold = preferredCold,
         )
+        val budgetMs = if (ordered.singleOrNull()?.server?.id == AniVaultServer.ID) {
+            AniVaultServer.RESOLVE_BUDGET_MS
+        } else {
+            RESOLVE_TIMEOUT_MS
+        }
         val raced = raceHeadStart(
             count = ordered.size,
             parallel = 4,
             headStartMs = headStartMs,
-            timeoutMs = RESOLVE_TIMEOUT_MS,
+            timeoutMs = budgetMs,
         ) { index ->
             val resolver = ordered[index]
             onAttempt?.invoke(resolver.server.name, index, ordered.size)
             val sources = try {
                 val blocked = avoidHost?.trim()?.takeIf { it.isNotEmpty() }
-                if (blocked == null) {
+                var extra: CoroutineContext = EmptyCoroutineContext
+                if (blocked != null) extra += AvoidPlaybackHost(blocked)
+                if (warmLead) extra += AniVaultWarm()
+                if (extra == EmptyCoroutineContext) {
                     resolver.resolve(anilistId, episode, audio, titleHint)
                 } else {
-                    withContext(AvoidPlaybackHost(blocked)) {
+                    withContext(extra) {
                         resolver.resolve(anilistId, episode, audio, titleHint)
                     }
                 }
