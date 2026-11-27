@@ -31,6 +31,15 @@ internal const val PLAYBACK_STATE_BUFFERING = 2
 internal const val PLAYBACK_STATE_READY = 3
 
 /**
+ * An episode change composes the next player before the previous one leaves.
+ * Only the screen that still owns the session may detach it.
+ */
+internal fun shouldDetachSession(held: Any?, leaving: Any?): Boolean {
+    if (leaving != null && held != null && held !== leaving) return false
+    return true
+}
+
+/**
  * Lock-screen and Bluetooth controls may bind. Other apps must not read the CDN URL.
  */
 internal fun sessionTrusted(

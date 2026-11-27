@@ -16,7 +16,9 @@ import androidx.media3.common.Player
 /**
  * The activity owns the player. The service owns the session and the
  * foreground notification. A generation counter drops a stop that would
- * otherwise kill a session that was reattached for the next episode.
+ * otherwise kill a session reattached for the next episode. [release] also
+ * ignores a player that no longer owns the session, so the outgoing episode
+ * cannot detach the incoming one.
  */
 internal object PlaybackSessions {
     @Volatile var suppressed: Boolean = false
@@ -44,7 +46,8 @@ internal object PlaybackSessions {
         }
     }
 
-    fun release(context: Context) {
+    fun release(context: Context, leaving: Player? = null) {
+        if (!shouldDetachSession(player, leaving)) return
         generation += 1
         val gen = generation
         player = null

@@ -199,10 +199,8 @@ fun KittyBottomNav(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
                                 onClick = {
-                                    if (!selected) {
-                                        KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
-                                        onSelect(tab.id)
-                                    }
+                                    if (!selected) KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
+                                    onSelect(tab.id)
                                 },
                             )
                             .graphicsLayer {

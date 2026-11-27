@@ -57,6 +57,16 @@ class PlaybackSessionPolicyTest {
     }
 
     @Test
+    fun aSuccessorPlayerKeepsTheSessionWhenThePreviousScreenLeaves() {
+        val current = Any()
+        val previous = Any()
+        assertFalse(shouldDetachSession(held = current, leaving = previous))
+        assertTrue(shouldDetachSession(held = current, leaving = current))
+        assertTrue(shouldDetachSession(held = current, leaving = null))
+        assertTrue(shouldDetachSession(held = null, leaving = previous))
+    }
+
+    @Test
     fun onlySystemAndThisAppMayBindTheSession() {
         assertTrue(sessionTrusted("site.anikitty.app", "site.anikitty.app", notificationController = false))
         assertTrue(sessionTrusted("com.example.other", "site.anikitty.app", notificationController = true))
