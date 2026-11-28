@@ -15,6 +15,13 @@ class AniListBatchPushTest {
         assertEquals(listOf(0 until 4), pendingPushChunks(4, chunkSize = 6))
         assertEquals(listOf(0 until 6, 6 until 10), pendingPushChunks(10, chunkSize = 6))
         assertEquals(14, ANILIST_PUSH_CHUNK)
+        assertEquals(22, ANILIST_PUSH_CHUNK_INTERACTIVE)
+        assertEquals(14, aniListPushChunkSize(interactive = false))
+        assertEquals(22, aniListPushChunkSize(interactive = true))
+        assertEquals(
+            listOf(0 until 22, 22 until 30),
+            pendingPushChunks(30, chunkSize = aniListPushChunkSize(interactive = true)),
+        )
     }
 
     @Test

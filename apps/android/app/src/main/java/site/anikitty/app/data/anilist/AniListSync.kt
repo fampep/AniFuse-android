@@ -103,7 +103,7 @@ class AniListSync(
         val rows = pendingPushesForDrain(pendingPushes.all()) { it.updatedAtEpochMs }
         if (rows.isEmpty()) return 0
         var sent = 0
-        for (range in pendingPushChunks(rows.size)) {
+        for (range in pendingPushChunks(rows.size, chunkSize = aniListPushChunkSize(interactive))) {
             val chunk = rows.subList(range.first, range.last + 1)
             val startedAt = System.currentTimeMillis()
             val items = chunk.map { row ->

@@ -17,6 +17,16 @@ internal data class AniListBatchPushItem(
 /** Alias batch size — one paced HTTP call covers this many progress rows. */
 internal const val ANILIST_PUSH_CHUNK = 14
 
+/**
+ * Interactive Sync can push a wider alias batch — foreground traffic already
+ * owns the pacer, so fewer paced round-trips matter more than complexity headroom.
+ */
+internal const val ANILIST_PUSH_CHUNK_INTERACTIVE = 22
+
+/** Background drain stays conservative; Sync / foreground uses the wider batch. */
+internal fun aniListPushChunkSize(interactive: Boolean): Int =
+    if (interactive) ANILIST_PUSH_CHUNK_INTERACTIVE else ANILIST_PUSH_CHUNK
+
 internal fun pendingPushChunks(
     count: Int,
     chunkSize: Int = ANILIST_PUSH_CHUNK,

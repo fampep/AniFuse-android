@@ -1141,7 +1141,9 @@ fun PlayerScreen(
                 captionsWarmedNext = true
                 if (anilistId <= 0) return@LaunchedEffect
                 downloadScope.launch {
+                    // Next + next+1 so a binge autoplay is never caption-dark twice.
                     runCatching { SubtitleLibrary.prefetch(anilistId, episode + 1) }
+                    runCatching { SubtitleLibrary.prefetch(anilistId, episode + 2) }
                 }
             }
             StreamWarmAction.ResolveNext -> {
