@@ -87,10 +87,11 @@ class HostHealthProbeTest {
     }
 
     @Test
-    fun probeWaveSeedsAffinityCdnsAheadOfHealthyTail() {
+    fun probeWaveKeepsHealthyAheadOfAffinitySeeds() {
         val healthy = listOf("cdn.hold", "cdn.tail")
+        // Live HOLD marks keep LEAD/ms badges fresh; affinity fills leftovers.
         assertEquals(
-            listOf("cdn.lead", "play.anien.top", "cdn.hold"),
+            listOf("cdn.lead", "cdn.hold", "cdn.tail"),
             hostsForProbeWave(
                 healthy,
                 preferredHost = "cdn.lead",
@@ -117,6 +118,16 @@ class HostHealthProbeTest {
                 preferredHost = "cdn.live",
                 seedHosts = listOf("play.anien.top", "cdn.affinity"),
                 limit = 4,
+            ),
+        )
+        // Six affinity seeds must not starve two healthy playlist CDNs.
+        assertEquals(
+            listOf("cdn.live", "cdn.hold", "cdn.tail", "seed.a", "seed.b", "seed.c"),
+            hostsForProbeWave(
+                healthy,
+                preferredHost = "cdn.live",
+                seedHosts = listOf("seed.a", "seed.b", "seed.c", "seed.d", "seed.e", "seed.f"),
+                limit = 6,
             ),
         )
         // Invalid hostnames never steal a slot.

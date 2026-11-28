@@ -76,8 +76,10 @@ internal data class HostProbeHit(
 
 /**
  * Probe budget: preferred CDN first (even when not yet in the healthy ledger),
- * then affinity/warm seeds, then freshest healthy marks. Sunk marks must not
- * steal slots — callers pass healthyOnly hosts.
+ * then freshest healthy marks (live Sources / Race-dock LEAD), then
+ * affinity/warm seeds fill leftover slots. Seeds ahead of healthy used to
+ * starve playlist RTT refreshes on the Quality sheet after a binge night.
+ * Sunk marks must not steal slots — callers pass healthyOnly hosts.
  */
 internal fun hostsForProbeWave(
     healthyHostsNewestFirst: List<String>,
@@ -95,11 +97,11 @@ internal fun hostsForProbeWave(
     }
     return buildList {
         if (preferred != null) add(preferred)
-        for (seed in seeds) {
-            if (seed !in this) add(seed)
-        }
         for (host in healthy) {
             if (host !in this) add(host)
+        }
+        for (seed in seeds) {
+            if (seed !in this) add(seed)
         }
     }.take(limit.coerceAtLeast(0))
 }

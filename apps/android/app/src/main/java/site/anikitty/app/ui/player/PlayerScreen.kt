@@ -545,8 +545,8 @@ fun PlayerScreen(
         if (panel != PlayerMenuPage.Quality) return@LaunchedEffect
         // Keep Sources RTT live while the glass sheet is open — LEAD / STANDBY
         // badges must not freeze on the open-frame snapshot. Affinity seeds
-        // re-warm CDNs that expired from HOLD so the first Race wave matches
-        // the dock chip / post-resolve stamp path.
+        // fill leftover probe slots after healthy marks so binge CDNs re-warm
+        // without starving playlist hosts still inside HOLD.
         hostHealthTick++
         while (true) {
             HostHealthProbe.kickRemembered(
