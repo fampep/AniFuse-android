@@ -68,3 +68,15 @@ internal fun glassCaptionSelectionAfterTap(
     "auto" -> true to "auto"
     else -> true to id
 }
+
+/**
+ * Placeholder chips while the library fetch is in flight — glass plane, not
+ * a bare gray "Loading subtitles…" string.
+ */
+internal fun glassCaptionsLoadingChipOptions(): List<Pair<String, String>> = listOf(
+    "cc-warm" to "CC · WARM",
+    "cc-slot-a" to "····",
+    "cc-slot-b" to "····",
+)
+
+internal fun glassCaptionsLoadingLabel(): String = "Warming captions"

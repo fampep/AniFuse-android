@@ -68,11 +68,16 @@ internal fun subtitleAttachMediaIdentityDrifted(
     return want != live
 }
 
-/** Soft-replace when live, hard-reload when still idle, or no-op on drift. */
+/**
+ * Soft-replace when live, hard-reload when still idle, re-arm when CDN
+ * failover drifted the MediaItem under us, or no-op when unchanged.
+ */
 internal enum class SubtitleAttachAction {
     None,
     SoftReplace,
     HardReload,
+    /** Live URI changed — retry attach against the new item once. */
+    ReArm,
 }
 
 /**
@@ -92,7 +97,7 @@ internal fun subtitleAttachAction(
 ): SubtitleAttachAction {
     if (!liveItemPresent) return SubtitleAttachAction.None
     if (subtitleAttachMediaIdentityDrifted(expectedUri, liveUri)) {
-        return SubtitleAttachAction.None
+        return SubtitleAttachAction.ReArm
     }
     if (subtitleConfigsUnchanged(existingUris, nextUris)) {
         return SubtitleAttachAction.None
@@ -102,6 +107,27 @@ internal fun subtitleAttachAction(
         mediaItemCount > itemIndex
     return if (soft) SubtitleAttachAction.SoftReplace else SubtitleAttachAction.HardReload
 }
+
+/** One CDN failover re-arm — more would loop on a flapping edge. */
+internal const val SUBTITLE_ATTACH_MAX_REARMS = 1
+
+/**
+ * Theater CC phase — parallel to [AbrFailoverPhase] so cold attach is visible.
+ */
+internal enum class SubtitleAttachPhase { Idle, Fetch, Soft, Bake, Ready }
+
+internal fun subtitleAttachStatusPill(phase: SubtitleAttachPhase): String? = when (phase) {
+    SubtitleAttachPhase.Fetch -> "CC · WARM"
+    SubtitleAttachPhase.Soft, SubtitleAttachPhase.Bake -> "CC · LIVE"
+    SubtitleAttachPhase.Idle, SubtitleAttachPhase.Ready -> null
+}
+
+internal fun subtitleAttachPhaseAfterAction(action: SubtitleAttachAction): SubtitleAttachPhase? =
+    when (action) {
+        SubtitleAttachAction.SoftReplace -> SubtitleAttachPhase.Soft
+        SubtitleAttachAction.HardReload -> SubtitleAttachPhase.Bake
+        SubtitleAttachAction.None, SubtitleAttachAction.ReArm -> null
+    }
 
 /** 33ms × 36 ≈ 1.2s ceiling — attach as soon as Media3 leaves IDLE. */
 internal const val SUBTITLE_ATTACH_POLL_MS = 33L

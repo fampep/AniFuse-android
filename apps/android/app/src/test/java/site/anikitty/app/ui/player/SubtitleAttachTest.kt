@@ -64,10 +64,11 @@ class SubtitleAttachTest {
     }
 
     @Test
-    fun attachActionSkipsDriftAndChoosesSoftOrHard() {
+    fun attachActionRearmsOnDriftAndChoosesSoftOrHard() {
         val next = listOf("https://lib.example/a.vtt")
+        // CDN failover under us — re-arm against the live URI once.
         assertEquals(
-            SubtitleAttachAction.None,
+            SubtitleAttachAction.ReArm,
             subtitleAttachAction(
                 expectedUri = "https://cdn-a.example/ep.m3u8",
                 liveUri = "https://cdn-b.example/ep.m3u8",
@@ -142,6 +143,25 @@ class SubtitleAttachTest {
         assertEquals(provider, captionsAfterPeek(provider, peeked = null))
         val filled = captionsAfterPeek(provider, listOf(track("https://lib.example/b.vtt", "es")))
         assertEquals(2, filled.size)
+    }
+
+    @Test
+    fun statusPillTracksColdAttachPhases() {
+        assertEquals("CC · WARM", subtitleAttachStatusPill(SubtitleAttachPhase.Fetch))
+        assertEquals("CC · LIVE", subtitleAttachStatusPill(SubtitleAttachPhase.Soft))
+        assertEquals("CC · LIVE", subtitleAttachStatusPill(SubtitleAttachPhase.Bake))
+        assertEquals(null, subtitleAttachStatusPill(SubtitleAttachPhase.Idle))
+        assertEquals(null, subtitleAttachStatusPill(SubtitleAttachPhase.Ready))
+        assertEquals(
+            SubtitleAttachPhase.Soft,
+            subtitleAttachPhaseAfterAction(SubtitleAttachAction.SoftReplace),
+        )
+        assertEquals(
+            SubtitleAttachPhase.Bake,
+            subtitleAttachPhaseAfterAction(SubtitleAttachAction.HardReload),
+        )
+        assertEquals(null, subtitleAttachPhaseAfterAction(SubtitleAttachAction.ReArm))
+        assertTrue(SUBTITLE_ATTACH_MAX_REARMS >= 1)
     }
 
     private fun track(url: String, lang: String) = SubtitleTrack(
