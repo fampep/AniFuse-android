@@ -17,11 +17,12 @@ internal fun isHardProviderFailure(message: String?): Boolean {
     if ("needs a title" in msg) return false
     if ("only has subbed" in msg) return false
     if ("only plays this on their site" in msg) return false
+    // Empty sources / same-host misses are soft — one title gap must not sink
+    // the provider for the next episode.
     return "could not be reached" in msg ||
         "blocked" in msg ||
         "timeout" in msg ||
         "timed out" in msg ||
-        "empty sources" in msg ||
         " 403" in " $msg" ||
         "http 403" in msg ||
         " 503" in " $msg" ||

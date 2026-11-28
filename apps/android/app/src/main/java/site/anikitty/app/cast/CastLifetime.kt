@@ -86,6 +86,82 @@ internal enum class CastJoin { Load, Adopt }
 internal fun castJoin(casting: Boolean, loadInFlight: Boolean, sameItem: Boolean): CastJoin =
     if (sameItem && (casting || loadInFlight)) CastJoin.Adopt else CastJoin.Load
 
+/**
+ * An aborted follow-up load must not wipe the settled episode still on the TV.
+ * Only the ticket that actually started playback may release yield / playingItem.
+ * [mediaCommitted] means CastPlayer already took the new item — previous episode
+ * is gone, so keep is false.
+ */
+internal fun castKeepPlayingAfterDrop(
+    settledTicket: Int,
+    abortedTicket: Int,
+    playingItem: CastItemKey?,
+    mediaCommitted: Boolean = false,
+): Boolean = !mediaCommitted &&
+    playingItem != null &&
+    settledTicket != 0 &&
+    settledTicket != abortedTicket
+
+/** Join/adopt keys off loadedItem — restore the settled episode after a keep. */
+internal fun castLoadedAfterKeep(
+    keep: Boolean,
+    playingItem: CastItemKey?,
+): CastItemKey? = if (keep) playingItem else null
+
+/** Late keep-path publish must not overwrite a newer load's relay allowlist. */
+internal fun castRelayRestoreMayPublish(
+    restoreEpoch: Int,
+    currentEpoch: Int,
+    expectedSettled: Int,
+    settledTicket: Int,
+    activeLoadTicket: Int,
+    hasPlayingItem: Boolean,
+): Boolean = restoreEpoch == currentEpoch &&
+    expectedSettled != 0 &&
+    expectedSettled == settledTicket &&
+    activeLoadTicket == 0 &&
+    hasPlayingItem
+
+/** Check before prepare — cancelled epochs must not mutate the live relay. */
+internal fun castRelayRestoreMayPrepare(
+    restoreEpoch: Int,
+    currentEpoch: Int,
+    expectedSettled: Int,
+    settledTicket: Int,
+    activeLoadTicket: Int,
+    closed: Boolean,
+): Boolean = !closed &&
+    castRelayRestoreMayPublish(
+        restoreEpoch = restoreEpoch,
+        currentEpoch = currentEpoch,
+        expectedSettled = expectedSettled,
+        settledTicket = settledTicket,
+        activeLoadTicket = activeLoadTicket,
+        hasPlayingItem = true,
+    )
+
+/** prepareClaim must still match after I/O — stopCasting bumps the epoch without waiting. */
+internal fun castRelayPrepareStillOwns(claim: Int, prepareEpoch: Int, closed: Boolean): Boolean =
+    !closed && claim == prepareEpoch
+
+/**
+ * A discarded prepare may have reopened the socket after [CastRelay.stop].
+ * Tear down only when closed, or when our claim is stale and no newer load
+ * owns the relay. A follow-up [CastSessionHelper.load] bumps prepareEpoch and
+ * sets activeLoadTicket — stopping then kills its live server (publish does
+ * not restart it).
+ */
+internal fun castRelayDiscardShouldStop(
+    claim: Int,
+    prepareEpoch: Int,
+    closed: Boolean,
+    activeLoadTicket: Int,
+): Boolean {
+    if (closed) return true
+    if (claim == prepareEpoch) return false
+    return activeLoadTicket == 0
+}
+
 /** The playback service, not the player, hears session end and item end. */
 internal interface CastServiceWatch {
     fun onSessionEnded()

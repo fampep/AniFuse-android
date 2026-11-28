@@ -75,15 +75,16 @@ class AnikittyApp : Application(), ImageLoaderFactory {
         database = AppDatabase.create(this)
         aniList = AniListClient(this)
         aniListAuth = AniListAuthStore(this)
+        anifuseStore = AnifuseApiStore(this)
+        anifuseApi = AnifuseApi(anifuseStore, java.io.File(filesDir, "anifuse-cache"))
+        streamServers = ServerCatalog(this, anifuseStore)
         aniListSync = AniListSync(
             aniList,
             aniListAuth,
             database.watchHistoryDao(),
             database.pendingAniListPushDao(),
+            onTitleFrontierAdvance = streamServers::forgetLiveTitle,
         )
-        anifuseStore = AnifuseApiStore(this)
-        anifuseApi = AnifuseApi(anifuseStore, java.io.File(filesDir, "anifuse-cache"))
-        streamServers = ServerCatalog(this, anifuseStore)
         SubtitleLibrary.install(this)
         serverConfig = ServerConfig(this)
         session = SessionStore(this)

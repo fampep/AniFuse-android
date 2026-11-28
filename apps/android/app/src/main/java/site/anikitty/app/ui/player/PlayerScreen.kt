@@ -29,7 +29,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -117,8 +119,11 @@ import site.anikitty.app.cast.CastSessionHelper
 import site.anikitty.app.cast.CastStartup
 import site.anikitty.app.cast.CAST_STILL_STARTING
 import site.anikitty.app.cast.castAudioKey
+import site.anikitty.app.cast.CAST_CAPTION_PUSH_MAX_POLLS
+import site.anikitty.app.cast.CAST_CAPTION_PUSH_POLL_MS
 import site.anikitty.app.cast.castCaptionKey
 import site.anikitty.app.cast.castShouldPushCaptions
+import site.anikitty.app.cast.castVolumeFromGesture
 import site.anikitty.app.cast.castJoin
 import site.anikitty.app.cast.castSameItem
 import site.anikitty.app.cast.castAttachPositionMs
@@ -230,6 +235,7 @@ import site.anikitty.app.ui.components.StageBackBridge
 import site.anikitty.app.ui.components.StageBackPose
 import site.anikitty.app.ui.components.stageBackPose
 import site.anikitty.app.ui.theme.prefersReducedMotion
+import site.anikitty.app.data.download.CastDownloadYieldOwner
 import site.anikitty.app.data.download.DOWNLOAD_USER_AGENT
 import site.anikitty.app.data.download.EpisodeDownloadEntity
 import site.anikitty.app.data.download.EpisodeDownloads
@@ -237,12 +243,15 @@ import site.anikitty.app.data.download.cacheDataSourceFactory
 import site.anikitty.app.data.download.DownloadPhase
 import site.anikitty.app.data.download.downloadButtonLabel
 import site.anikitty.app.data.download.downloadStatus
+import site.anikitty.app.data.download.downloadYieldOwner
+import site.anikitty.app.data.download.downloadYieldPlayingHost
 import site.anikitty.app.data.download.encodeHeaders
 import site.anikitty.app.data.download.hlsStreamKeys
 import site.anikitty.app.data.download.playbackSavedEpisode
 import site.anikitty.app.data.download.resolvedStripBytes
 import site.anikitty.app.data.download.savedLocalFile
 import site.anikitty.app.data.download.savedMatches
+import site.anikitty.app.data.download.shouldClearLocalPlayingOnLeave
 import site.anikitty.app.data.download.shouldRefreshSavedUrl
 import site.anikitty.app.data.download.sourceForPlayback
 import site.anikitty.app.data.download.sourceKey
@@ -262,6 +271,7 @@ import site.anikitty.app.data.servers.audioSwitchLabel
 import site.anikitty.app.data.servers.requestedAudioLanguage
 import site.anikitty.app.data.servers.SubtitleTrack
 import site.anikitty.app.data.servers.SubtitleLibrary
+import site.anikitty.app.data.servers.libraryCaptionsOrEmpty
 import site.anikitty.app.data.skip.AniSkipStamp
 import site.anikitty.app.data.skip.SkipTimes
 import site.anikitty.app.data.skip.chooseSkip
@@ -408,6 +418,8 @@ fun PlayerScreen(
     var shadowArmedHost by remember(anilistId, episode) { mutableStateOf<String?>(null) }
     var recoveryNote by remember(anilistId, episode) { mutableStateOf<String?>(null) }
     var retriedSource by remember(sourceIndex, playlist) { mutableStateOf(false) }
+    /** One offline hold retry — separate from [retriedSource] so RetrySame cannot spend it. */
+    var offlineRetried by remember(anilistId, episode, sourceIndex) { mutableStateOf(false) }
     var skipTimes by remember { mutableStateOf(SkipTimes()) }
     var didSeekStart by remember { mutableStateOf(false) }
     var resumeAtMs by remember { mutableLongStateOf(startPositionMs) }
@@ -753,26 +765,27 @@ fun PlayerScreen(
         // and minBufferMs >= bufferForPlaybackMs. Violating that crashes on open.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 3_200,
-                /* maxBufferMs = */ 55_000,
-                /* bufferForPlaybackMs = */ 500,
-                /* bufferForPlaybackAfterRebufferMs = */ 2_200,
+                /* minBufferMs = */ 2_000,
+                /* maxBufferMs = */ 50_000,
+                /* bufferForPlaybackMs = */ 320,
+                /* bufferForPlaybackAfterRebufferMs = */ 800,
             )
-            .setBackBuffer(36_000, true)
+            .setBackBuffer(40_000, true)
             .build()
         val metrics = context.resources.displayMetrics
         val seedBitrate = context.getSharedPreferences("anikitty_player", 0)
             .getInt("last_video_bitrate", 1_500_000)
             .coerceIn(400_000, 8_000_000)
-        val bandwidth = DefaultBandwidthMeter.Builder(context)
+        val innerBandwidth = DefaultBandwidthMeter.Builder(context)
             .setInitialBitrateEstimate(seedBitrate.toLong())
             .build()
-        // Flagship ABR: climb on healthy pipe, dump rungs the second stalls hit.
+        val bandwidth = ReseedableBandwidthMeter(innerBandwidth)
+        // Flagship ABR: climb early on a healthy pipe, dump rungs the second stalls hit.
         val adaptive = AdaptiveTrackSelection.Factory(
-            /* minDurationForQualityIncreaseMs = */ 5_500,
-            /* maxDurationForQualityDecreaseMs = */ 2_800,
-            /* minDurationToRetainAfterDiscardMs = */ 14_000,
-            /* bandwidthFraction = */ 0.78f,
+            /* minDurationForQualityIncreaseMs = */ 3_200,
+            /* maxDurationForQualityDecreaseMs = */ 2_000,
+            /* minDurationToRetainAfterDiscardMs = */ 10_000,
+            /* bandwidthFraction = */ 0.82f,
         )
         val selector = DefaultTrackSelector(context, adaptive).apply {
             // Device locale is the default preference. A Danish phone then keeps
@@ -801,21 +814,21 @@ fun PlayerScreen(
                 videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
                 playbackParameters = PlaybackParameters(playbackSpeed)
             }
-        PlayerBundle(exo, selector, pipeline)
+        PlayerBundle(exo, selector, pipeline, bandwidth)
     }
     val player = playerBundle?.player
     val trackSelector = playerBundle?.trackSelector
+    val bandwidthMeter = playerBundle?.bandwidth
     // The video is already playing. Captions arrive on their own and are added
     // without building a new player.
     LaunchedEffect(anilistId, episode, source?.url) {
         val provider = source?.subtitles.orEmpty()
-        val peeked = site.anikitty.app.data.servers.SubtitleLibrary.peek(anilistId, episode).orEmpty()
-        librarySubtitles = mergeSubtitleTracks(provider, peeked)
-        if (librarySubtitles.isEmpty() && anilistId > 0 && episode > 0) {
+        // Preserve peek null (unknown) vs empty (known miss) — do not .orEmpty() first.
+        val peeked = SubtitleLibrary.peek(anilistId, episode)
+        librarySubtitles = captionsAfterPeek(provider, peeked)
+        if (shouldFetchLibraryCaptions(peeked, anilistId, episode)) {
             captionsLoading = true
-            val fetched = runCatching {
-                site.anikitty.app.data.servers.SubtitleLibrary.tracks(anilistId, episode)
-            }.getOrDefault(emptyList())
+            val fetched = libraryCaptionsOrEmpty(anilistId, episode)
             librarySubtitles = mergeSubtitleTracks(provider, fetched)
             captionsLoading = false
         } else {
@@ -823,22 +836,65 @@ fun PlayerScreen(
         }
     }
     // After a CDN failover, cap ABR briefly so the new host is not judged by
-    // the previous pipe's bitrate estimate. A shadow swap lands at index 0,
-    // so the cap follows the URL, not the index.
-    var bitrateCappedFor by remember(anilistId, episode) { mutableStateOf<String?>(null) }
-    LaunchedEffect(playbackSource?.url, trackSelector) {
+    // the previous pipe's bitrate estimate. Key the effect on the CDN host —
+    // same-host quality/playlist URL swaps must not cancel a mid-flight soft
+    // release and leave maxVideoBitrate stuck for the rest of the episode.
+    var bitrateCappedForHost by remember(anilistId, episode) { mutableStateOf<String?>(null) }
+    var abrPhase by remember(anilistId, episode) { mutableStateOf(AbrFailoverPhase.Idle) }
+    val playbackHost = playableHost(playbackSource?.url.orEmpty())
+    LaunchedEffect(playbackHost, trackSelector, bandwidthMeter) {
         val selector = trackSelector ?: return@LaunchedEffect
-        val url = playbackSource?.url ?: return@LaunchedEffect
-        val first = bitrateCappedFor == null
-        bitrateCappedFor = url
+        val meter = bandwidthMeter
+        if (playbackHost.isBlank()) return@LaunchedEffect
+        val previousHost = bitrateCappedForHost
+        val first = previousHost == null
+        bitrateCappedForHost = playbackHost
         if (first) return@LaunchedEffect
-        val previous = selector.parameters
-        selector.parameters = previous.buildUpon().setMaxVideoBitrate(1_600_000).build()
-        delay(3_500)
-        if (trackSelector === selector) {
+        try {
+            if (!abrFailoverShouldReseed(previousHost, playbackHost)) {
+                // Selector/meter rebuild on the same host cancelled any in-flight
+                // soft-cap delay — clear stuck forced estimate + ceiling.
+                meter?.clearReseed()
+                selector.parameters = selector.parameters.buildUpon()
+                    .setMaxVideoBitrate(Int.MAX_VALUE)
+                    .build()
+                return@LaunchedEffect
+            }
+            val seed = playerPrefs.getInt("last_video_bitrate", 1_500_000)
+            val cap = abrFailoverCapBitrate(seed)
+            val holdMs = abrFailoverHoldMs(seed)
+            abrPhase = AbrFailoverPhase.Cap
+            meter?.reseed(abrFailoverReseedBitrate(seed))
+            val previous = selector.parameters
+            selector.parameters = previous.buildUpon().setMaxVideoBitrate(cap).build()
+            delay(holdMs)
+            if (trackSelector !== selector) return@LaunchedEffect
+            // Soft release, then a second climb — uncapping immediately thrash-climbs
+            // on a cold meter after a CDN swap.
+            abrPhase = AbrFailoverPhase.Soft
+            val soft = abrFailoverReleaseBitrate(seed)
+            meter?.reseed(soft.toLong())
             selector.parameters = selector.parameters.buildUpon()
-                .setMaxVideoBitrate(Int.MAX_VALUE)
+                .setMaxVideoBitrate(soft)
                 .build()
+            delay(abrFailoverReleaseHoldMs())
+            if (trackSelector !== selector) return@LaunchedEffect
+            abrPhase = AbrFailoverPhase.Climb
+            val climb = abrFailoverClimbBitrate(seed)
+            meter?.reseed(climb.toLong())
+            selector.parameters = selector.parameters.buildUpon()
+                .setMaxVideoBitrate(climb)
+                .build()
+            delay(abrFailoverClimbHoldMs())
+            if (trackSelector === selector) {
+                meter?.clearReseed()
+                selector.parameters = selector.parameters.buildUpon()
+                    .setMaxVideoBitrate(Int.MAX_VALUE)
+                    .build()
+            }
+        } finally {
+            // Cancel mid-ladder or natural end — never leave a stale ABR pill.
+            abrPhase = AbrFailoverPhase.Idle
         }
     }
     LaunchedEffect(player, librarySubtitles, source?.url) {
@@ -851,12 +907,14 @@ fun PlayerScreen(
         }
         if (configs.isEmpty()) return@LaunchedEffect
         val already = current.localConfiguration?.subtitleConfigurations.orEmpty()
-        if (already.map { it.uri } == configs.map { it.uri }) return@LaunchedEffect
-        // Replacing the item drops the buffered segments. While the stream is
-        // still coming up, that would restart the wait the viewer is already in.
+        if (subtitleConfigsUnchanged(already.map { it.uri.toString() }, configs.map { it.uri.toString() })) {
+            return@LaunchedEffect
+        }
+        // Attach as soon as buffering/ready — 2s ceiling, not a 6s READY wait.
+        // Stay in the loop while IDLE; prepare() often starts IDLE for a beat.
         var guard = 0
-        while (guard < 40 && exo.playbackState == Player.STATE_BUFFERING && !exo.isPlaying) {
-            delay(250)
+        while (guard < SUBTITLE_ATTACH_MAX_POLLS && !subtitleAttachMayProceed(exo.playbackState)) {
+            delay(SUBTITLE_ATTACH_POLL_MS)
             guard++
         }
         val resume = exo.playWhenReady
@@ -864,9 +922,12 @@ fun PlayerScreen(
         if (playing != null) playerBundle?.pipeline?.apply(playing)
         val updated = current.buildUpon().setSubtitleConfigurations(configs).build()
         val itemIndex = exo.currentMediaItemIndex
-        // replaceMediaItem keeps the playhead. setMediaItem would drop the
-        // buffer and the captions would come back late, off the spoken line.
-        if (exo.playbackState != Player.STATE_IDLE && itemIndex >= 0 && exo.mediaItemCount > itemIndex) {
+        // Soft replace keeps the playhead when live. Still-idle after the budget
+        // hard-reloads so captions are not abandoned for the opening lines.
+        if (!subtitleAttachShouldHardReload(exo.playbackState) &&
+            itemIndex >= 0 &&
+            exo.mediaItemCount > itemIndex
+        ) {
             exo.replaceMediaItem(itemIndex, updated)
         } else {
             exo.setMediaItem(updated, false)
@@ -947,7 +1008,10 @@ fun PlayerScreen(
         if (playing.hls || playing.url.contains(".m3u8", ignoreCase = true) || playing.gotakuObf != null) {
             itemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
         }
-        val configs = playing.subtitles.mapIndexedNotNull { index, track ->
+        // Bake warm library sidecars into the first MediaItem — late replace
+        // only covers tracks that arrive after prepare.
+        val captionTracks = playbackSubtitleTracks(playing.subtitles, librarySubtitles)
+        val configs = captionTracks.mapIndexedNotNull { index, track ->
             subtitleConfig(track, default = index == 0)
         }
         if (configs.isNotEmpty()) itemBuilder.setSubtitleConfigurations(configs)
@@ -974,6 +1038,9 @@ fun PlayerScreen(
                 resumeAtMs = live
                 didSeekStart = false
             }
+            // File→live (or HLS cache→edge) must re-arm a standby for the new host.
+            shadowArmedHost = null
+            offlineRetried = false
         }
         wasOffline = playingOffline
     }
@@ -1055,10 +1122,19 @@ fun PlayerScreen(
     var shownSkip by remember { mutableStateOf<Pair<String, site.anikitty.app.data.skip.SkipInterval>?>(null) }
     var shelfMinutes by remember { mutableIntStateOf(-1) }
     var warmedNext by remember(anilistId, episode) { mutableStateOf(false) }
+    var captionsWarmedNext by remember(anilistId, episode) { mutableStateOf(false) }
     var creditsArmed by remember(anilistId, episode) { mutableStateOf(false) }
     val latestWarmNext by rememberUpdatedState(onWarmNextEpisode)
     val latestArmCredits by rememberUpdatedState(onArmCredits)
-    LaunchedEffect(positionMs, durationMs, warmedNext, creditsArmed, onNextEpisode, onArmCredits) {
+    LaunchedEffect(
+        positionMs,
+        durationMs,
+        warmedNext,
+        captionsWarmedNext,
+        creditsArmed,
+        onNextEpisode,
+        onArmCredits,
+    ) {
         when (
             streamWarmAction(
                 positionMs = positionMs,
@@ -1066,17 +1142,31 @@ fun PlayerScreen(
                 hasNext = onNextEpisode != null,
                 nextWarmed = warmedNext,
                 creditsArmed = creditsArmed,
+                captionsWarmed = captionsWarmedNext,
             )
         ) {
             StreamWarmAction.None -> Unit
+            StreamWarmAction.PrefetchCaptions -> {
+                captionsWarmedNext = true
+                if (anilistId <= 0) return@LaunchedEffect
+                downloadScope.launch {
+                    // Next + next+1 so a binge autoplay is never caption-dark twice.
+                    runCatching { SubtitleLibrary.prefetch(anilistId, episode + 1) }
+                    runCatching { SubtitleLibrary.prefetch(anilistId, episode + 2) }
+                }
+            }
             StreamWarmAction.ResolveNext -> {
                 warmedNext = true
+                captionsWarmedNext = true
                 val warm = latestWarmNext ?: return@LaunchedEffect
                 downloadScope.launch { runCatching { warm() } }
             }
             StreamWarmAction.ArmCredits -> {
                 creditsArmed = true
-                if (onNextEpisode != null) warmedNext = true
+                if (onNextEpisode != null) {
+                    warmedNext = true
+                    captionsWarmedNext = true
+                }
                 val arm = latestArmCredits ?: return@LaunchedEffect
                 val host = playbackHost(source?.url.orEmpty())
                 downloadScope.launch { runCatching { arm(host) } }
@@ -1084,36 +1174,73 @@ fun PlayerScreen(
         }
     }
     val playbackOwner = remember { Any() }
-    LaunchedEffect(ready, source?.url, playbackOwner) {
-        if (!ready) return@LaunchedEffect
-        val host = playbackHost(source?.url.orEmpty())
-        if (host.isNotEmpty()) PlaybackHostHealth.notePlaying(host, playbackOwner)
+    val latestCasting by rememberUpdatedState(isCasting)
+    val latestSourceUrl by rememberUpdatedState(source?.url)
+    val castItemUrl = castHelper?.playingItem?.url
+    val liveCasting = isCasting || (castHelper?.casting == true)
+    LaunchedEffect(ready, source?.url, liveCasting, castItemUrl, playbackOwner) {
+        if (!ready && !liveCasting) return@LaunchedEffect
+        val host = downloadYieldPlayingHost(
+            casting = liveCasting,
+            localSourceUrl = source?.url,
+            castItemUrl = castItemUrl,
+        ) ?: return@LaunchedEffect
+        PlaybackHostHealth.notePlaying(
+            host,
+            downloadYieldOwner(casting = liveCasting, localOwner = playbackOwner),
+        )
     }
     DisposableEffect(playbackOwner) {
         onDispose {
-            PlaybackHostHealth.clearPlaying(playbackOwner)
+            val helper = CastLifetime.current()
+            val castingContinues = latestCasting || helper?.casting == true
+            if (shouldClearLocalPlayingOnLeave(castingContinues)) {
+                PlaybackHostHealth.clearPlaying(playbackOwner)
+                // Failed cast may have stamped CastDownloadYieldOwner without a live session.
+                if (helper?.casting != true) {
+                    PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
+                }
+            } else {
+                val host = downloadYieldPlayingHost(
+                    casting = true,
+                    localSourceUrl = latestSourceUrl,
+                    castItemUrl = helper?.playingItem?.url,
+                )
+                if (host != null) {
+                    PlaybackHostHealth.notePlaying(host, CastDownloadYieldOwner)
+                } else {
+                    PlaybackHostHealth.clearPlaying(playbackOwner)
+                    PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
+                }
+            }
             SegmentShadow.clear(playbackOwner)
         }
     }
     val latestArmShadow by rememberUpdatedState(onArmShadow)
-    LaunchedEffect(ready, source?.url, anilistId, episode, playbackLocal, sessionStartedOffline) {
-        if (!ready || playbackLocal || sessionStartedOffline == true) return@LaunchedEffect
-        val host = playbackHost(source?.url.orEmpty())
+    LaunchedEffect(ready, source?.url, anilistId, episode, playbackLocal, playingOffline) {
+        if (!ready || !liveShadowArmAllowed(playbackLocal, playingOffline)) return@LaunchedEffect
+        val sourceUrl = source?.url.orEmpty()
+        val host = shadowPlayingHost(sourceUrl, playbackLocal)
+        // Arm-once key stays "local" for progressive; avoidHost is the saved CDN.
+        val avoidHost = shadowArmAvoidHost(playbackLocal, sourceUrl, host)
         if (shadowArm(playbackReady = true, armedHost = shadowArmedHost, playingHost = host) != ShadowArm.Arm) {
             return@LaunchedEffect
         }
         val arm = latestArmShadow ?: return@LaunchedEffect
         delay(SHADOW_ARM_DELAY_MS)
-        if (playbackHost(source?.url.orEmpty()) != host) return@LaunchedEffect
-        PlaybackHostHealth.note(host, ok = true)
+        if (shadowPlayingHost(source?.url.orEmpty(), playbackLocal) != host) return@LaunchedEffect
+        // Progressive file has no CDN mark — do not invent a "local" host score.
+        if (host != LOCAL_SHADOW_HOST && avoidHost.isNotEmpty()) {
+            PlaybackHostHealth.note(avoidHost, ok = true)
+        }
         val armed = try {
-            arm(host, latestSources)
+            arm(avoidHost, latestSources)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (_: Exception) {
             emptyList()
         }
-        if (playbackHost(source?.url.orEmpty()) != host || armed.isEmpty()) {
+        if (shadowPlayingHost(source?.url.orEmpty(), playbackLocal) != host || armed.isEmpty()) {
             shadowArmedHost = host
             return@LaunchedEffect
         }
@@ -1122,9 +1249,11 @@ fun PlayerScreen(
         shadowAt = System.currentTimeMillis()
         shadowArmedHost = host
         val standbyHost = shadowHost
-        if (standbyHost != null) {
+        // Progressive offline keeps shadowList for leaveOffline playlist swap
+        // only — do not register a process-wide HLS retarget on the saved CDN.
+        if (standbyHost != null && shadowShouldArmSegmentLane(playbackLocal)) {
             SegmentShadow.arm(
-                fromHost = host,
+                fromHost = avoidHost.ifBlank { host },
                 toHost = standbyHost,
                 headers = armed.first().headers,
                 owner = playbackOwner,
@@ -1173,11 +1302,14 @@ fun PlayerScreen(
         )
     }
 
+    var castSentSubtitleKey by remember(anilistId, episode, source?.url) { mutableStateOf("") }
+
     fun abandonCastToPhone(local: Player?) {
         castClientGaveUp = true
         castPending = false
         castAttachStarted = false
         castLoadedKey = null
+        castSentSubtitleKey = ""
         castHint = "Chromecast is not connected"
         isCasting = false
         pushMute()
@@ -1217,6 +1349,7 @@ fun PlayerScreen(
         castAttachStarted = false
         castPending = false
         castLoadedKey = null
+        castSentSubtitleKey = ""
         castPlayheadRequested = false
         castClockStale = false
         castJoinedLive = false
@@ -1265,19 +1398,26 @@ fun PlayerScreen(
     val freshResolve = remember(anilistId, episode, playAttempt) { java.util.concurrent.atomic.AtomicBoolean(false) }
     var refreshingSources by remember(anilistId, episode) { mutableStateOf(false) }
 
-    fun shadowReadyNow(): Boolean {
-        if (playbackLocal || sessionStartedOffline == true) return false
+    fun shadowReadyNow(leaveOffline: Boolean = false): Boolean {
+        if (!leaveOffline && !liveShadowSwapAllowed(playbackLocal, playingOffline)) return false
+        if (leaveOffline && !liveShadowLeaveOfflineAllowed(playbackLocal, leaveOffline = true)) {
+            return false
+        }
         val age = if (shadowAt <= 0L) Long.MAX_VALUE else System.currentTimeMillis() - shadowAt
+        val sourceUrl = source?.url.orEmpty()
+        val armKey = shadowPlayingHost(sourceUrl, playbackLocal)
+        // leaveOffline must compare against the saved CDN, not "local".
+        val playing = shadowArmAvoidHost(playbackLocal, sourceUrl, armKey)
         return shadowList.isNotEmpty() && shadowStandbyReady(
-            playingHost = playbackHost(source?.url.orEmpty()),
+            playingHost = playing,
             standbyHost = shadowHost,
             standbyAgeMs = age,
         )
     }
 
     /** Hand the playhead to the probed runner-up. No resolve, no second probe. */
-    fun swapToShadow(resumeMs: Long): Boolean {
-        if (!shadowReadyNow()) return false
+    fun swapToShadow(resumeMs: Long, leaveOffline: Boolean = false): Boolean {
+        if (!shadowReadyNow(leaveOffline = leaveOffline)) return false
         val next = shadowList
         if (next.isEmpty() || next.map { it.url } == playlist.map { it.url }) return false
         val host = playbackHost(source?.url.orEmpty())
@@ -1289,6 +1429,9 @@ fun PlayerScreen(
         shadowHost = null
         shadowAt = 0L
         shadowArmedHost = null
+        offlineRetried = false
+        // Stop remapping the next CDN through the corrupt progressive file.
+        if (leaveOffline) sessionStartedOffline = false
         resumeAtMs = resumeMs
         positionMs = resumeMs
         playhead.ms = resumeMs
@@ -1443,16 +1586,29 @@ fun PlayerScreen(
                 }
             }
             SourceRecovery.NextSource -> {
+                // Offline / HLS-cache: one dedicated seek/prepare. A second failure
+                // leaves via armed shadow (leaveOffline) or a live sibling.
+                if (!fromCast && offlinePlaybackHoldsSource(playingOffline) && !offlineRetried) {
+                    offlineRetried = true
+                    runCatching {
+                        target?.seekTo(decision.resumeMs.coerceAtLeast(0L))
+                        target?.prepare()
+                        target?.playWhenReady = true
+                    }
+                    return
+                }
+                val leaveOffline = !fromCast && offlinePlaybackHoldsSource(playingOffline) && offlineRetried
                 val failedHost = playbackHost(
                     (if (fromCast) latestSources.getOrNull(latestSourceIndex) else source)?.url.orEmpty(),
                 )
                 if (failedHost.isNotEmpty()) PlaybackHostHealth.note(failedHost, ok = false)
-                if (swapToShadow(decision.resumeMs)) return
+                if (swapToShadow(decision.resumeMs, leaveOffline = leaveOffline)) return
                 if (fromCast) {
                     failCastSource(message, liveMs)
                 } else {
                     val next = nextIndexSkippingDead(fromCast = false)
                     if (next != null) {
+                        offlineRetried = false
                         resumeAtMs = decision.resumeMs
                         positionMs = decision.resumeMs
                         playhead.ms = decision.resumeMs
@@ -1496,7 +1652,6 @@ fun PlayerScreen(
         failCastSource(message, playhead.ms)
     }
 
-    var castSentSubtitleKey by remember(anilistId, episode, source?.url) { mutableStateOf("") }
     LaunchedEffect(anilistId, episode) { castLoadRetry = 0 }
 
     fun loadOntoCast(helper: CastSessionHelper, src: PlayableSource) {
@@ -1668,6 +1823,7 @@ fun PlayerScreen(
                     castPending = false
                     castAttachStarted = false
                     castLoadedKey = null
+                    castSentSubtitleKey = ""
                     castSentPositionMs = -1L
                     castPlayheadRequested = false
                     castClockStale = false
@@ -1739,8 +1895,9 @@ fun PlayerScreen(
             val connecting = helper.isSessionConnecting()
             if (!castPending && !connecting) return@LaunchedEffect
             castPending = true
-            // ~3s of 120ms polls — remoteMediaClient usually appears in under 1s.
-            repeat(25) {
+            // First slice ~1.8s. A session that is still connecting schedules
+            // another backoff via castClientRetry instead of giving up cold.
+            repeat(15) {
                 delay(120)
                 if (castClientGaveUp) return@LaunchedEffect
                 if (helper.isSessionAvailable()) {
@@ -1749,7 +1906,15 @@ fun PlayerScreen(
                 }
                 if (!helper.isSessionConnecting() && !castPending) return@LaunchedEffect
             }
-            if (!helper.isSessionAvailable()) abandonCastToPhone(latestPlayer)
+            if (!helper.isSessionAvailable()) {
+                // castPending is already true here — only retry while Cast is
+                // still coming up. A dead/failed session hands back to the phone.
+                if (helper.isSessionConnecting()) {
+                    scheduleCastClientRetry(latestPlayer)
+                } else {
+                    abandonCastToPhone(latestPlayer)
+                }
+            }
             return@LaunchedEffect
         }
         applyCastAttach(sessionUp = true)
@@ -1896,10 +2061,14 @@ fun PlayerScreen(
 
     // Captions often arrive after the receiver is already playing. Push the
     // sidecar files onto that item instead of leaving the TV without them.
-    LaunchedEffect(librarySubtitles) {
+    // Key on isCasting too — a session that becomes ready after library fill
+    // must still sync the phone caption set. Do not clear castSentSubtitleKey
+    // on isCasting=false alone: loadOntoCast drops that flag while the key is
+    // already stamped for the in-flight MediaItem.
+    LaunchedEffect(isCasting, librarySubtitles) {
         if (!castShouldPushCaptions(isCasting, castSentSubtitleKey, librarySubtitles)) return@LaunchedEffect
         val helper = castHelper ?: return@LaunchedEffect
-        repeat(8) {
+        repeat(CAST_CAPTION_PUSH_MAX_POLLS) {
             if (!castAlive.get()) return@LaunchedEffect
             val tracks = latestLibrarySubtitles
             if (!castShouldPushCaptions(isCasting || helper.casting, castSentSubtitleKey, tracks)) {
@@ -1908,15 +2077,20 @@ fun PlayerScreen(
             val pos = helper.castPlayer.currentPosition.coerceAtLeast(0L).takeIf { it > 0L } ?: playhead.ms
             if (helper.pushLibrarySubtitles(tracks, pos)) {
                 castSentSubtitleKey = castCaptionKey(tracks)
+                castHint = "Captions on your TV"
                 return@LaunchedEffect
             }
-            delay(400)
+            delay(CAST_CAPTION_PUSH_POLL_MS)
         }
     }
 
     LaunchedEffect(castHint) {
         val message = castHint ?: return@LaunchedEffect
-        if (message != "Connecting to your TV") {
+        // Glass pill is the primary surface — Toast only for hard failures.
+        val toastWorthy = message.contains("not connected", ignoreCase = true) ||
+            message.contains("failed", ignoreCase = true) ||
+            message.contains("Notifications", ignoreCase = true)
+        if (toastWorthy) {
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
         delay(4_200)
@@ -1961,6 +2135,8 @@ fun PlayerScreen(
                 if (playbackState == Player.STATE_READY) {
                     durationMs = activePlayer?.duration?.coerceAtLeast(0L) ?: 0L
                     error = null
+                    // Do not clear offlineRetried here — seek/prepare READY would
+                    // spend the one-shot hold before a holey download errors again.
                     // Local ExoPlayer stays ready while Chromecast plays. Do not
                     // cancel the cast end countdown from that player.
                     if (playbackEnded && !isCasting) {
@@ -2172,7 +2348,8 @@ fun PlayerScreen(
                     if (stalled && buffered == stallBuffered) {
                         if (stallSince == 0L) stallSince = System.currentTimeMillis()
                         val budget = shadowStallBudgetMs(shadowReadyNow())
-                        val canWalk = latestSources.size > latestSourceIndex + 1
+                        val canWalk = !offlinePlaybackHoldsSource(playingOffline) &&
+                            latestSources.size > latestSourceIndex + 1
                         if (System.currentTimeMillis() - stallSince >= budget && (shadowReadyNow() || canWalk)) {
                             stallSince = 0L
                             val decision = sourceFailover(
@@ -2528,6 +2705,7 @@ fun PlayerScreen(
             videoWidth = player?.videoSize?.width ?: 0,
             videoHeight = player?.videoSize?.height ?: renderedHeight,
             sourceRect = rect,
+            playing = playing,
         )
         val entered = try {
             host.enterPictureInPictureMode(params)
@@ -2603,7 +2781,8 @@ fun PlayerScreen(
             PipControls.onSeek = null
         }
     }
-    LaunchedEffect(autoPip, activity, renderedHeight) {
+    // Re-stamp PiP params when play/pause flips so the remote action glyph stays honest.
+    LaunchedEffect(autoPip, activity, renderedHeight, playerViewRef, playing) {
         val host = activity ?: return@LaunchedEffect
         val rect = android.graphics.Rect()
         playerViewRef?.getGlobalVisibleRect(rect)
@@ -2613,6 +2792,7 @@ fun PlayerScreen(
             videoWidth = player?.videoSize?.width ?: 0,
             videoHeight = player?.videoSize?.height?.takeIf { it > 0 } ?: renderedHeight,
             sourceRect = rect,
+            playing = playing,
         )
     }
 
@@ -3228,6 +3408,7 @@ fun PlayerScreen(
                         val activity = context as? Activity
                         val startBrightness = activity?.let { brightnessFraction(it) } ?: 0.5f
                         val startVolume = volumeFraction(context)
+                        val startCastVolume = castHelper?.readDeviceVolume() ?: startVolume
                         while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
                             val change = event.changes.firstOrNull { it.pressed }
@@ -3242,7 +3423,8 @@ fun PlayerScreen(
                                     level = level,
                                 )
                             } else if (isCasting) {
-                                val level = castHelper?.adjustDeviceVolume(delta) ?: startVolume
+                                val level = castHelper?.gestureDeviceVolume(startCastVolume, delta)
+                                    ?: castVolumeFromGesture(startCastVolume, delta)
                                 if (delta > 0.012f && level > 0.02f && muted) {
                                     muted = false
                                     castHelper?.setTvMuted(false)
@@ -3279,53 +3461,85 @@ fun PlayerScreen(
         }
         AnimatedVisibility(
             visible = holdBoost,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = fadeIn(tween(90)) + scaleIn(
+                initialScale = 0.88f,
+                animationSpec = spring(dampingRatio = 0.70f, stiffness = Spring.StiffnessMedium),
+            ),
+            exit = fadeOut(tween(140)) + scaleOut(targetScale = 0.94f, animationSpec = tween(140)),
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .padding(top = 18.dp),
         ) {
+            val boostShape = RoundedCornerShape(999.dp)
             Row(
                 modifier = Modifier
-                    .stageGlassPlate(shape = RoundedCornerShape(999.dp), elevated = true)
+                    .shadow(
+                        elevation = 18.dp,
+                        shape = boostShape,
+                        ambientColor = Color.Black.copy(alpha = 0.55f),
+                        spotColor = Color.Black.copy(alpha = 0.4f),
+                    )
+                    .clip(boostShape)
+                    .background(Color(0xE6101012))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.18f), Color.Transparent),
+                        ),
+                    )
+                    .border(1.dp, Color.White.copy(alpha = 0.34f), boostShape)
                     .clearAndSetSemantics {
                         contentDescription = "Playing at double speed"
                         liveRegion = LiveRegionMode.Polite
                     }
-                    .padding(horizontal = 16.dp, vertical = 9.dp),
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     Icons.Outlined.PlayCircle,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(17.dp),
+                )
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    "2×",
+                    color = Color.White,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 15.sp,
+                    letterSpacing = 0.8.sp,
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    "2× speed",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    letterSpacing = 0.2.sp,
+                    "HOLD",
+                    color = Color.White.copy(alpha = 0.62f),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.2.sp,
                 )
             }
         }
         AnimatedVisibility(
             visible = seekFlashMs != 0L,
-            enter = fadeIn(tween(90)),
-            exit = fadeOut(tween(160)),
+            enter = fadeIn(tween(90)) + scaleIn(
+                initialScale = 0.86f,
+                animationSpec = spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMedium),
+            ),
+            exit = fadeOut(tween(160)) + scaleOut(targetScale = 0.92f, animationSpec = tween(160)),
             modifier = Modifier
                 .align(if (seekFlashMs < 0L) Alignment.CenterStart else Alignment.CenterEnd)
                 .padding(horizontal = 28.dp),
         ) {
-            val secs = (kotlin.math.abs(seekFlashMs) / 1000L).toInt().coerceAtLeast(1)
-            val label = if (seekFlashMs < 0L) "−${secs}s" else "+${secs}s"
+            val label = seekFlashLabel(seekFlashMs)
             val flashShape = RoundedCornerShape(20.dp)
             Column(
                 modifier = Modifier
                     .stageGlassPlate(shape = flashShape, elevated = true)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
+                        ),
+                    )
                     .clearAndSetSemantics {
                         contentDescription = seekFlashDescription(seekFlashMs)
                         liveRegion = LiveRegionMode.Polite
@@ -3492,12 +3706,23 @@ fun PlayerScreen(
                 },
             )
                 .padding(horizontal = 28.dp),
-            enter = fadeIn(tween(if (reducedHud) 0 else 140)),
-            exit = fadeOut(tween(if (reducedHud) 0 else 180)),
+            enter = if (reducedHud) {
+                fadeIn(snap())
+            } else {
+                fadeIn(tween(90)) + scaleIn(
+                    initialScale = 0.90f,
+                    animationSpec = spring(dampingRatio = 0.74f, stiffness = Spring.StiffnessMedium),
+                )
+            },
+            exit = if (reducedHud) {
+                fadeOut(snap())
+            } else {
+                fadeOut(tween(140)) + scaleOut(targetScale = 0.94f, animationSpec = tween(140))
+            },
         ) {
             val shown = heldHud ?: return@AnimatedVisibility
             val pct = (shown.level.coerceIn(0f, 1f) * 100f).toInt()
-            val hudShape = RoundedCornerShape(18.dp)
+            val hudShape = RoundedCornerShape(20.dp)
             val hudDescription = when {
                 shown.kind == GestureHudKind.Seek -> "Seek to ${shown.caption ?: "$pct percent"}"
                 shown.kind == GestureHudKind.Brightness -> "Brightness $pct percent"
@@ -3514,13 +3739,13 @@ fun PlayerScreen(
                             spotColor = Color.Black.copy(alpha = 0.3f),
                         )
                         .clip(hudShape)
-                        .background(Color(0xCC101012))
+                        .background(Color(0xE6101012))
                         .background(
                             Brush.verticalGradient(
-                                listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
+                                listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
                             ),
                         )
-                        .border(1.dp, Color.White.copy(alpha = 0.28f), hudShape)
+                        .border(1.dp, Color.White.copy(alpha = 0.32f), hudShape)
                         .clearAndSetSemantics {
                             contentDescription = hudDescription
                             liveRegion = LiveRegionMode.Polite
@@ -3569,13 +3794,13 @@ fun PlayerScreen(
                             spotColor = Color.Black.copy(alpha = 0.3f),
                         )
                         .clip(hudShape)
-                        .background(Color(0xCC101012))
+                        .background(Color(0xE6101012))
                         .background(
                             Brush.verticalGradient(
-                                listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
+                                listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
                             ),
                         )
-                        .border(1.dp, Color.White.copy(alpha = 0.28f), hudShape)
+                        .border(1.dp, Color.White.copy(alpha = 0.32f), hudShape)
                         .clearAndSetSemantics {
                             contentDescription = hudDescription
                             liveRegion = LiveRegionMode.Polite
@@ -3755,19 +3980,38 @@ fun PlayerScreen(
             )
         }
 
-        if (!inPip && castHint != null) {
+        AnimatedVisibility(
+            visible = !inPip && castHint != null,
+            enter = fadeIn(tween(180)) + slideInVertically(tween(220)) { -it / 3 },
+            exit = fadeOut(tween(160)) + slideOutVertically(tween(180)) { -it / 4 },
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .padding(top = 72.dp, start = 20.dp, end = 20.dp),
+        ) {
+            val hintShape = RoundedCornerShape(999.dp)
             Text(
-                castHint!!,
-                color = PlayerChrome.Paper,
+                castHint.orEmpty(),
+                color = Color.White,
                 fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.3.sp,
                 modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(top = 72.dp, start = 20.dp, end = 20.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(PlayerChrome.Sheet)
-                    .border(1.dp, PlayerChrome.SheetStroke, RoundedCornerShape(12.dp))
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                    .shadow(
+                        elevation = 14.dp,
+                        shape = hintShape,
+                        ambientColor = Color.Black.copy(alpha = 0.5f),
+                        spotColor = Color.Black.copy(alpha = 0.35f),
+                    )
+                    .clip(hintShape)
+                    .background(Color(0xE6101012))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.14f), Color.Transparent),
+                        ),
+                    )
+                    .border(1.dp, Color.White.copy(alpha = 0.28f), hintShape)
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
             )
         }
 
@@ -3964,6 +4208,7 @@ fun PlayerScreen(
                         statusPill = listOfNotNull(
                             source?.serverName?.takeIf { it.isNotBlank() },
                             "$res · $mode",
+                            abrFailoverStatusPill(abrPhase),
                         ).joinToString(" · "),
                         playing = playing,
                         speedLabel = speedLabel(playbackSpeed),
@@ -4796,6 +5041,7 @@ private data class PlayerBundle(
     val player: ExoPlayer,
     val trackSelector: DefaultTrackSelector,
     val pipeline: PlaybackPipeline,
+    val bandwidth: ReseedableBandwidthMeter,
 )
 
 private data class PlayerClock(

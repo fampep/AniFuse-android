@@ -130,6 +130,128 @@ class DownloadLaneTest {
         assertEquals(403, httpCodeIn(IllegalStateException("Response code: 403")))
         assertTrue(downloadIoShouldResume(1))
         assertTrue(downloadIoShouldResume(2))
-        assertFalse(downloadIoShouldResume(3))
+        assertTrue(downloadIoShouldResume(3))
+        assertTrue(downloadIoShouldResume(4))
+        assertFalse(downloadIoShouldResume(5))
+    }
+
+    @Test
+    fun resumeRequiresAMatchingContentRange() {
+        assertEquals(100L, contentRangeStart("bytes 100-999/2000"))
+        assertEquals(40L, contentRangeStart("BYTES 40-/80"))
+        assertNull(contentRangeStart(null))
+        assertEquals(999L, contentRangeEnd("bytes 100-999/2000"))
+        assertNull(contentRangeEnd("bytes 40-/80"))
+        assertEquals(2000L, contentRangeTotal("bytes 100-999/2000"))
+        assertNull(contentRangeTotal("bytes 40-99/*"))
+        assertTrue(contentRangeMatches(40L, "bytes 40-99/200"))
+        assertFalse(contentRangeMatches(40L, "bytes 0-99/200"))
+        assertFalse(contentRangeMatches(40L, null))
+        // Inverted end or total smaller than the resume point — restart.
+        assertFalse(contentRangeMatches(40L, "bytes 40-20/200"))
+        assertFalse(contentRangeMatches(40L, "bytes 40-99/20"))
+        assertEquals(
+            DownloadTransfer.Resume,
+            downloadTransferValidated(206, partBytes = 40L, contentRange = "bytes 40-99/200"),
+        )
+        assertEquals(
+            DownloadTransfer.Restart,
+            downloadTransferValidated(206, partBytes = 40L, contentRange = "bytes 0-99/200"),
+        )
+        assertEquals(
+            DownloadTransfer.Restart,
+            downloadTransferValidated(206, partBytes = 40L, contentRange = null),
+        )
+        assertEquals(
+            DownloadTransfer.Restart,
+            downloadTransferValidated(206, partBytes = 40L, contentRange = "bytes 40-20/200"),
+        )
+        assertEquals(
+            DownloadTransfer.Replace,
+            downloadTransferValidated(200, partBytes = 40L, contentRange = null),
+        )
+    }
+
+    @Test
+    fun castYieldKeepsDownloadLaneOffTheTvCdn() {
+        val local = Any()
+        assertEquals(CastDownloadYieldOwner, downloadYieldOwner(casting = true, localOwner = local))
+        assertEquals(local, downloadYieldOwner(casting = false, localOwner = local))
+        assertEquals(
+            "cdn-cast.example",
+            downloadYieldPlayingHost(
+                casting = true,
+                localSourceUrl = "https://cdn-phone.example/ep.m3u8",
+                castItemUrl = "https://cdn-cast.example/ep.m3u8",
+            ),
+        )
+        assertEquals(
+            "cdn-phone.example",
+            downloadYieldPlayingHost(
+                casting = false,
+                localSourceUrl = "https://cdn-phone.example/ep.m3u8",
+                castItemUrl = "https://cdn-cast.example/ep.m3u8",
+            ),
+        )
+        // Before playingItem lands, fall back to local — never stamp a blank host.
+        assertEquals(
+            "cdn-phone.example",
+            downloadYieldPlayingHost(
+                casting = true,
+                localSourceUrl = "https://cdn-phone.example/ep.m3u8",
+                castItemUrl = null,
+            ),
+        )
+        assertNull(
+            downloadYieldPlayingHost(
+                casting = true,
+                localSourceUrl = null,
+                castItemUrl = "  ",
+            ),
+        )
+        assertFalse(shouldClearLocalPlayingOnLeave(castingContinues = true))
+        assertTrue(shouldClearLocalPlayingOnLeave(castingContinues = false))
+    }
+
+    @Test
+    fun hlsDownloadArmsShadowOnlyWhenPlaybackIsIdle() {
+        assertTrue(downloadMayArmSegmentShadow(playbackStandbyArmed = false))
+        assertFalse(downloadMayArmSegmentShadow(playbackStandbyArmed = true))
+        val plan = downloadSegmentShadowPlan(
+            currentUrl = "https://cdn-a.example/ep.m3u8",
+            cachedShadow = listOf(
+                PlayableSource(
+                    url = "https://cdn-b.example/ep.m3u8",
+                    headers = mapOf("Referer" to "https://b"),
+                ),
+            ),
+        )
+        assertEquals("cdn-a.example", plan?.fromHost)
+        assertEquals("cdn-b.example", plan?.toHost)
+        assertNull(
+            downloadSegmentShadowPlan(
+                currentUrl = "https://cdn-a.example/ep.m3u8",
+                cachedShadow = emptyList(),
+            ),
+        )
+        assertEquals(
+            "https://cover.example/a.jpg",
+            downloadShelfCover(21, mapOf(21 to "https://cover.example/a.jpg")),
+        )
+        assertNull(downloadShelfCover(21, mapOf(21 to "  ")))
+    }
+
+    @Test
+    fun shortEofDoesNotCountAsComplete() {
+        assertEquals(1_040L, downloadExpectedTotal(40L, bodyContentLength = 1_000L, contentRange = null))
+        assertEquals(
+            2_000L,
+            downloadExpectedTotal(40L, bodyContentLength = -1L, contentRange = "bytes 40-1999/2000"),
+        )
+        assertEquals(-1L, downloadExpectedTotal(0L, bodyContentLength = -1L, contentRange = null))
+        assertTrue(downloadBodyComplete(2_000L, expectedTotal = 2_000L))
+        assertFalse(downloadBodyComplete(1_500L, expectedTotal = 2_000L))
+        assertTrue(downloadBodyComplete(80L, expectedTotal = -1L))
+        assertFalse(downloadBodyComplete(0L, expectedTotal = -1L))
     }
 }

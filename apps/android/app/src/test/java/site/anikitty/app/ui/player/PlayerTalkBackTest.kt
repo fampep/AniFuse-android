@@ -80,6 +80,9 @@ class PlayerTalkBackTest {
     fun timeLabelsAreSpoken() {
         assertEquals("Back 10 seconds", seekFlashDescription(-10_000))
         assertEquals("Forward 1 second", seekFlashDescription(400))
+        assertEquals("+20s", seekFlashLabel(20_000))
+        assertEquals("−10s", seekFlashLabel(-10_000))
+        assertEquals("+1s", seekFlashLabel(400))
         assertEquals(
             "Elapsed 1 hour 2 minutes 3 seconds, 4 minutes 5 seconds remaining",
             playbackClockDescription(3_723_000, 3_968_000),

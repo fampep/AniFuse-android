@@ -70,11 +70,11 @@ internal fun stageSlidePose(offset: Float): StageSlidePose {
     val distance = abs(offset).coerceIn(0f, 1f)
     val eased = stageEase(distance)
     return StageSlidePose(
-        parallax = -offset * 0.34f,
-        scale = 1f - eased * 0.08f,
-        alpha = 1f - eased * 0.32f,
-        veil = eased * 0.42f,
-        tilt = offset * -6f,
+        parallax = -offset * 0.42f,
+        scale = 1f - eased * 0.11f,
+        alpha = 1f - eased * 0.38f,
+        veil = eased * 0.48f,
+        tilt = offset * -9f,
     )
 }
 
@@ -112,7 +112,7 @@ fun StageSlider(
     }
     LaunchedEffect(pagerState.isScrollInProgress) {
         if (pagerState.isScrollInProgress && autoAdvancing == 0) {
-            resumeAutoAt = SystemClock.uptimeMillis() + 14_000L
+            resumeAutoAt = SystemClock.uptimeMillis() + 9_000L
         }
     }
     LaunchedEffect(pagerState.currentPage, pagerState.isScrollInProgress) {

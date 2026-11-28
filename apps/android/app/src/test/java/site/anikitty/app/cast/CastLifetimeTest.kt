@@ -32,6 +32,122 @@ class CastLifetimeTest {
     }
 
     @Test
+    fun abortedFollowUpKeepsTheSettledCastYield() {
+        val playing = CastItemKey(1, 4, "https://cdn.example/ep4.m3u8", "ja")
+        assertTrue(castKeepPlayingAfterDrop(settledTicket = 3, abortedTicket = 4, playingItem = playing))
+        assertFalse(castKeepPlayingAfterDrop(settledTicket = 4, abortedTicket = 4, playingItem = playing))
+        assertFalse(castKeepPlayingAfterDrop(settledTicket = 0, abortedTicket = 1, playingItem = playing))
+        assertFalse(castKeepPlayingAfterDrop(settledTicket = 2, abortedTicket = 3, playingItem = null))
+        assertFalse(
+            castKeepPlayingAfterDrop(
+                settledTicket = 3,
+                abortedTicket = 4,
+                playingItem = playing,
+                mediaCommitted = true,
+            ),
+        )
+        assertEquals(playing, castLoadedAfterKeep(keep = true, playingItem = playing))
+        assertNull(castLoadedAfterKeep(keep = false, playingItem = playing))
+        assertTrue(
+            castRelayRestoreMayPublish(
+                restoreEpoch = 2,
+                currentEpoch = 2,
+                expectedSettled = 3,
+                settledTicket = 3,
+                activeLoadTicket = 0,
+                hasPlayingItem = true,
+            ),
+        )
+        assertFalse(
+            castRelayRestoreMayPublish(
+                restoreEpoch = 2,
+                currentEpoch = 3,
+                expectedSettled = 3,
+                settledTicket = 3,
+                activeLoadTicket = 0,
+                hasPlayingItem = true,
+            ),
+        )
+        assertFalse(
+            castRelayRestoreMayPublish(
+                restoreEpoch = 2,
+                currentEpoch = 2,
+                expectedSettled = 3,
+                settledTicket = 3,
+                activeLoadTicket = 4,
+                hasPlayingItem = true,
+            ),
+        )
+        assertTrue(
+            castRelayRestoreMayPrepare(
+                restoreEpoch = 1,
+                currentEpoch = 1,
+                expectedSettled = 2,
+                settledTicket = 2,
+                activeLoadTicket = 0,
+                closed = false,
+            ),
+        )
+        assertFalse(
+            castRelayRestoreMayPrepare(
+                restoreEpoch = 1,
+                currentEpoch = 2,
+                expectedSettled = 2,
+                settledTicket = 2,
+                activeLoadTicket = 0,
+                closed = false,
+            ),
+        )
+        assertFalse(
+            castRelayRestoreMayPrepare(
+                restoreEpoch = 1,
+                currentEpoch = 1,
+                expectedSettled = 2,
+                settledTicket = 2,
+                activeLoadTicket = 0,
+                closed = true,
+            ),
+        )
+        assertTrue(castRelayPrepareStillOwns(claim = 4, prepareEpoch = 4, closed = false))
+        assertFalse(castRelayPrepareStillOwns(claim = 4, prepareEpoch = 5, closed = false))
+        assertFalse(castRelayPrepareStillOwns(claim = 4, prepareEpoch = 4, closed = true))
+        // Stale claim after stopCasting (no active load) must tear down a revive.
+        assertTrue(
+            castRelayDiscardShouldStop(
+                claim = 4,
+                prepareEpoch = 5,
+                closed = false,
+                activeLoadTicket = 0,
+            ),
+        )
+        assertTrue(
+            castRelayDiscardShouldStop(
+                claim = 4,
+                prepareEpoch = 4,
+                closed = true,
+                activeLoadTicket = 0,
+            ),
+        )
+        assertFalse(
+            castRelayDiscardShouldStop(
+                claim = 4,
+                prepareEpoch = 4,
+                closed = false,
+                activeLoadTicket = 0,
+            ),
+        )
+        // Newer load owns the relay — never kill its server.
+        assertFalse(
+            castRelayDiscardShouldStop(
+                claim = 4,
+                prepareEpoch = 5,
+                closed = false,
+                activeLoadTicket = 9,
+            ),
+        )
+    }
+
+    @Test
     fun castHistoryKeepsTheLivePlayhead() {
         val target = CastProgressTarget(
             anilistId = 7,

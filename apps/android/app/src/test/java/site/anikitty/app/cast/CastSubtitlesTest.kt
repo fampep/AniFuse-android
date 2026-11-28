@@ -50,6 +50,84 @@ class CastSubtitlesTest {
         assertEquals(0.50f, castVolumeAfterNudge(0.50f, 0.001f), 0.001f)
         assertEquals(1f, castVolumeAfterNudge(0.98f, 0.2f), 0.001f)
         assertEquals(0f, castVolumeAfterNudge(0.02f, -0.2f), 0.001f)
+        assertEquals(0.06f, CAST_VOLUME_STEP, 0.0001f)
+    }
+
+    @Test
+    fun continuousGestureMapsFromStartLevel() {
+        assertEquals(0.70f, castVolumeFromGesture(0.50f, 0.20f), 0.001f)
+        assertEquals(0.30f, castVolumeFromGesture(0.50f, -0.20f), 0.001f)
+        assertEquals(1f, castVolumeFromGesture(0.90f, 0.50f), 0.001f)
+        assertEquals(0f, castVolumeFromGesture(0.10f, -0.50f), 0.001f)
+        // Same finger delta twice must not stair-step like nudge does.
+        assertEquals(
+            castVolumeFromGesture(0.40f, 0.25f),
+            castVolumeFromGesture(0.40f, 0.25f),
+            0.001f,
+        )
+    }
+
+    @Test
+    fun staleHoldStillWritesWhenLiveLevelDiffers() {
+        // Default hold 1f vs live session 0.94 — nudge to 1f must still write.
+        assertTrue(castVolumeNeedsWrite(previous = 0.94f, next = 1f))
+        assertFalse(castVolumeNeedsWrite(previous = 1f, next = 1f))
+        assertFalse(castVolumeNeedsWrite(previous = 0.50f, next = 0.5002f))
+    }
+
+    @Test
+    fun sessionSnapshotSyncsStaleHoldAfterWriteHold() {
+        val live = castDeviceVolumeSnapshot(
+            sessionLevel = 0.72f,
+            heldLevel = 1f,
+            nowMs = 1_000L,
+            lastWriteMs = 100L,
+        )
+        assertTrue(live.fromSession)
+        assertEquals(0.72f, live.level, 0.001f)
+        assertEquals(0.72f, castHeldAfterRead(held = 1f, snap = live), 0.001f)
+        val held = castDeviceVolumeSnapshot(
+            sessionLevel = 0.72f,
+            heldLevel = 0.55f,
+            nowMs = 200L,
+            lastWriteMs = 100L,
+        )
+        assertFalse(held.fromSession)
+        assertEquals(0.55f, held.level, 0.001f)
+        assertEquals(0.55f, castHeldAfterRead(held = 0.55f, snap = held), 0.001f)
+    }
+
+    @Test
+    fun pushWhenCastingAndCaptionKeyDiffers() {
+        val tracks = listOf(
+            SubtitleTrack(url = "http://143.246.203.212/api/file?id=${"a".repeat(64)}", label = "en"),
+        )
+        assertTrue(castShouldPushCaptions(casting = true, sentKey = "", tracks = tracks))
+        assertFalse(
+            castShouldPushCaptions(
+                casting = true,
+                sentKey = castCaptionKey(tracks),
+                tracks = tracks,
+            ),
+        )
+        assertFalse(castShouldPushCaptions(casting = false, sentKey = "", tracks = tracks))
+        assertFalse(castShouldPushCaptions(casting = true, sentKey = "", tracks = emptyList()))
+    }
+
+    @Test
+    fun lateCaptionsPreferReplaceOverHardReload() {
+        // Player.STATE_READY == 3, STATE_IDLE == 1.
+        assertTrue(castCanReplaceMediaItem(playbackState = 3, itemIndex = 0, mediaItemCount = 1))
+        assertTrue(castCanReplaceMediaItem(playbackState = 2, itemIndex = 0, mediaItemCount = 2))
+        assertFalse(castCanReplaceMediaItem(playbackState = 1, itemIndex = 0, mediaItemCount = 1))
+        assertFalse(castCanReplaceMediaItem(playbackState = 3, itemIndex = -1, mediaItemCount = 1))
+        assertFalse(castCanReplaceMediaItem(playbackState = 3, itemIndex = 1, mediaItemCount = 1))
+        // CastPlayer drops the playhead on replace — seek stamp must stay non-negative.
+        assertEquals(0L, castLateCaptionSeekMs(-12L))
+        assertEquals(90_000L, castLateCaptionSeekMs(90_000L))
+        // Sidecar attach alone leaves the TV caption-dark — must re-select.
+        assertTrue(castLateCaptionShouldActivateTracks(attached = true))
+        assertFalse(castLateCaptionShouldActivateTracks(attached = false))
     }
 
     @Test
@@ -66,6 +144,22 @@ class CastSubtitlesTest {
         assertFalse(castShouldPushCaptions(casting = true, sentKey = "", tracks = emptyList()))
         assertTrue(castShouldPushCaptions(casting = true, sentKey = "", tracks = listOf(english)))
         assertFalse(castShouldPushCaptions(casting = true, sentKey = castCaptionKey(listOf(english)), tracks = listOf(english)))
+    }
+
+    @Test
+    fun lateCaptionPushBudgetIsTwoSeconds() {
+        assertEquals(2_000L, castCaptionPushBudgetMs())
+        assertEquals(50L, CAST_CAPTION_PUSH_POLL_MS)
+        assertEquals(40, CAST_CAPTION_PUSH_MAX_POLLS)
+    }
+
+    @Test
+    fun librarySubripWithoutExtensionStillRelays() {
+        val library = "http://143.246.203.212/api/file?id=" + "b".repeat(64)
+        assertTrue(castRelaySubtitleEligible(library, "application/x-subrip"))
+        assertTrue(castRelaySubtitleEligible("file:///data/captions/en.srt", "text/vtt"))
+        assertFalse(castRelaySubtitleEligible("ftp://cdn/en.vtt", "text/vtt"))
+        assertFalse(castRelaySubtitleEligible(library, "application/json"))
     }
 
     @Test

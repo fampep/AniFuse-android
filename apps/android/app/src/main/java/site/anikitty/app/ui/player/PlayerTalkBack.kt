@@ -101,6 +101,12 @@ internal fun seekFlashDescription(deltaMs: Long): String {
     return "$direction ${countWord(seconds, "second")}"
 }
 
+/** Compact HUD label for stacked double-tap seeks (+20s / −10s). */
+internal fun seekFlashLabel(deltaMs: Long): String {
+    val secs = (kotlin.math.abs(deltaMs) / 1000L).toInt().coerceAtLeast(1)
+    return if (deltaMs < 0L) "−${secs}s" else "+${secs}s"
+}
+
 internal fun playbackClockDescription(positionMs: Long, durationMs: Long): String {
     val position = positionMs.coerceAtLeast(0L)
     val duration = durationMs.coerceAtLeast(0L)

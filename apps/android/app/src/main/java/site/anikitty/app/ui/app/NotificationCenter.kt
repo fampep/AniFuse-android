@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -132,12 +133,21 @@ internal suspend fun localInboxNotes(context: Context): List<InboxNote> = withCo
  * Network notes only. Airing and the release check run together and each
  * gives up quickly, so a dead CDN or a rate limit cannot hold the list.
  */
+/**
+ * Drop airing noise for episodes already finished.
+ * [completedThrough] is [WatchHistoryEntity.episodesFinished] — AniList
+ * progress / finished count. Catalog seeds finish at 0 so premieres still ping.
+ */
+internal fun airingInboxKeep(scheduleEpisode: Int, completedThrough: Int): Boolean =
+    scheduleEpisode > completedThrough.coerceAtLeast(0)
+
 internal suspend fun remoteInboxNotes(
     context: Context,
     aniList: AniListClient,
     history: List<WatchHistoryEntity>,
 ): List<InboxNote> = coroutineScope {
     val followed = history.map { it.anilistId }.toSet()
+    val finishedById = history.associate { it.anilistId to it.episodesFinished() }
     val airing = async {
         if (followed.isEmpty()) {
             emptyList()
@@ -152,6 +162,12 @@ internal suspend fun remoteInboxNotes(
                     )
                 }.getOrDefault(emptyList())
                     .filter { it.anime.id in followed }
+                    .filter { slot ->
+                        airingInboxKeep(
+                            scheduleEpisode = slot.episode,
+                            completedThrough = finishedById[slot.anime.id] ?: 0,
+                        )
+                    }
                     .take(12)
                     .map { slot ->
                         InboxNote(
@@ -315,6 +331,14 @@ internal fun NotificationCenter(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .stageGlassPlate(shape = RoundedCornerShape(22.dp), elevated = unread)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            Color.White.copy(alpha = if (unread) 0.12f else 0.05f),
+                                            Color.Transparent,
+                                        ),
+                                    ),
+                                )
                                 .spacePress {
                                     persist(read + note.id, cleared)
                                     note.anime?.let { onOpen(it, note.episode) }

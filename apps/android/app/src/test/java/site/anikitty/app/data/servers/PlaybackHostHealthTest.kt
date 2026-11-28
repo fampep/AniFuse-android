@@ -16,6 +16,33 @@ class PlaybackHostHealthTest {
     }
 
     @Test
+    fun castOwnerKeepsPlayingHostAfterLocalLeave() {
+        PlaybackHostHealth.detach()
+        val local = Any()
+        val cast = Any()
+        PlaybackHostHealth.notePlaying("cdn-a.example", local)
+        PlaybackHostHealth.notePlaying("cdn-a.example", cast)
+        PlaybackHostHealth.clearPlaying(local)
+        assertEquals("cdn-a.example", PlaybackHostHealth.playingHost())
+        PlaybackHostHealth.clearPlaying(cast)
+        assertEquals(null, PlaybackHostHealth.playingHost())
+    }
+
+    @Test
+    fun noteAdvancesLedgerGenerationOnlyForNewHosts() {
+        PlaybackHostHealth.detach()
+        val before = PlaybackHostHealth.ledgerGeneration()
+        PlaybackHostHealth.note("cdn.gen.example", ok = true, latencyMs = 40L, nowMs = 1_000L)
+        val afterInsert = PlaybackHostHealth.ledgerGeneration()
+        assertTrue(afterInsert > before)
+        // Probe RTT refresh of the same host must keep coalesce joinable.
+        PlaybackHostHealth.note("cdn.gen.example", ok = true, latencyMs = 25L, nowMs = 1_100L)
+        assertEquals(afterInsert, PlaybackHostHealth.ledgerGeneration())
+        PlaybackHostHealth.note("cdn.other.example", ok = true, latencyMs = 30L, nowMs = 1_200L)
+        assertTrue(PlaybackHostHealth.ledgerGeneration() > afterInsert)
+    }
+
+    @Test
     fun aLeavingPlayerDoesNotClearTheHostTheNextEpisodeRecorded() {
         val first = Any()
         val next = Any()
@@ -55,5 +82,86 @@ class PlaybackHostHealthTest {
         PlaybackHostHealth.attach(dir)
         assertEquals(-1_000, PlaybackHostHealth.score("cdn-a.example", nowMs = now))
         dir.deleteRecursively()
+    }
+
+    @Test
+    fun providerCdnMappingSurvivesProcessDeath() {
+        val dir = File.createTempFile("hosts-cdn", "").apply {
+            delete()
+            mkdirs()
+        }
+        val now = System.currentTimeMillis()
+        PlaybackHostHealth.detach()
+        PlaybackHostHealth.attach(dir)
+        PlaybackHostHealth.note("cdn.persist", ok = true, latencyMs = 55L, nowMs = now)
+        PlaybackHostHealth.note("site.persist", ok = false, nowMs = now)
+        PlaybackHostHealth.noteProviderCdn("anipm", "cdn.persist", nowMs = now)
+        PlaybackHostHealth.detach()
+        PlaybackHostHealth.attach(dir)
+        assertTrue(
+            PlaybackHostHealth.scoreProvider("anipm", "https://site.persist/", nowMs = now) > 0,
+        )
+        assertEquals(
+            55L,
+            PlaybackHostHealth.providerLatencyMs("anipm", "https://site.persist/", nowMs = now),
+        )
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun noteProviderCdnOnlyAdvancesGenerationForNewProviders() {
+        PlaybackHostHealth.detach()
+        val before = PlaybackHostHealth.ledgerGeneration()
+        PlaybackHostHealth.noteProviderCdn("anipm", "cdn.a", nowMs = 1_000L)
+        val afterInsert = PlaybackHostHealth.ledgerGeneration()
+        assertTrue(afterInsert > before)
+        PlaybackHostHealth.noteProviderCdn("anipm", "cdn.b", nowMs = 1_100L)
+        assertEquals(afterInsert, PlaybackHostHealth.ledgerGeneration())
+    }
+
+    @Test
+    fun providerScoreUsesCdnNotSiteUrl() {
+        PlaybackHostHealth.detach()
+        PlaybackHostHealth.note("cdn.good", ok = true, latencyMs = 50L, nowMs = 1_000L)
+        PlaybackHostHealth.note("site.example", ok = false, nowMs = 1_000L)
+        PlaybackHostHealth.noteProviderCdn("anipm", "cdn.good")
+        assertTrue(
+            PlaybackHostHealth.scoreProvider("anipm", "https://site.example/", nowMs = 1_000L) > 0,
+        )
+        // Unknown provider falls back to site host mark.
+        assertEquals(
+            -1_000,
+            PlaybackHostHealth.scoreProvider("other", "https://site.example/", nowMs = 1_000L),
+        )
+    }
+
+    @Test
+    fun rememberedHostsPreferTheFreshestMarks() {
+        PlaybackHostHealth.detach()
+        PlaybackHostHealth.note("cdn.old", ok = true, latencyMs = 80L, nowMs = 1_000L)
+        PlaybackHostHealth.note("cdn.new", ok = true, latencyMs = 40L, nowMs = 2_000L)
+        assertEquals(
+            listOf("cdn.new", "cdn.old"),
+            PlaybackHostHealth.rememberedHosts(nowMs = 2_500L),
+        )
+    }
+
+    @Test
+    fun aZeroLatencyOkNoteKeepsTheStampedResolveRtt() {
+        PlaybackHostHealth.detach()
+        PlaybackHostHealth.note("cdn.fast", ok = true, latencyMs = 420L, nowMs = 1_000L)
+        PlaybackHostHealth.noteProviderCdn("anikoto", "cdn.fast")
+        // Playback ready / shadow arm used to wipe this to 0.
+        PlaybackHostHealth.note("cdn.fast", ok = true, latencyMs = 0L, nowMs = 1_200L)
+        assertEquals(
+            420L,
+            PlaybackHostHealth.providerLatencyMs("anikoto", "https://site.example/", nowMs = 1_200L),
+        )
+        // A real new sample still replaces the old one.
+        PlaybackHostHealth.note("cdn.fast", ok = true, latencyMs = 90L, nowMs = 1_400L)
+        assertEquals(
+            90L,
+            PlaybackHostHealth.providerLatencyMs("anikoto", "https://site.example/", nowMs = 1_400L),
+        )
     }
 }

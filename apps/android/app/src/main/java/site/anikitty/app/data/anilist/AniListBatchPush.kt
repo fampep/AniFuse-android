@@ -14,7 +14,18 @@ internal data class AniListBatchPushItem(
 )
 
 /** Chunk size that stays under AniList's complexity budget while cutting ~700ms×N waits. */
-internal const val ANILIST_PUSH_CHUNK = 6
+/** Alias batch size — one paced HTTP call covers this many progress rows. */
+internal const val ANILIST_PUSH_CHUNK = 14
+
+/**
+ * Interactive Sync can push a wider alias batch — foreground traffic already
+ * owns the pacer, so fewer paced round-trips matter more than complexity headroom.
+ */
+internal const val ANILIST_PUSH_CHUNK_INTERACTIVE = 22
+
+/** Background drain stays conservative; Sync / foreground uses the wider batch. */
+internal fun aniListPushChunkSize(interactive: Boolean): Int =
+    if (interactive) ANILIST_PUSH_CHUNK_INTERACTIVE else ANILIST_PUSH_CHUNK
 
 internal fun pendingPushChunks(
     count: Int,
@@ -25,6 +36,70 @@ internal fun pendingPushChunks(
     return (0 until count step size).map { start ->
         start until minOf(count, start + size)
     }
+}
+
+/**
+ * Freshest binge marks go first so a long offline queue does not stall the
+ * episode the person just finished behind dozens of older titles.
+ */
+internal fun <T> pendingPushesForDrain(
+    rows: List<T>,
+    updatedAtOf: (T) -> Long,
+): List<T> = rows.sortedByDescending(updatedAtOf)
+
+/**
+ * Rows a multi-alias batch left behind. When the batch was a partial success,
+ * these retry as singles in the same drain so one bad mediaId does not wait
+ * for the next 5-minute sync loop.
+ */
+internal fun <T> pendingPushRejected(
+    chunk: List<T>,
+    acceptedIds: Set<Int>,
+    idOf: (T) -> Int,
+): List<T> = chunk.filter { idOf(it) !in acceptedIds }
+
+/** True when some — but not all — aliases landed; triggers same-drain singles. */
+internal fun pendingPushPartialSuccess(chunkSize: Int, acceptedCount: Int): Boolean =
+    chunkSize > 0 && acceptedCount > 0 && acceptedCount < chunkSize
+
+/** True when GraphQL returned a data object even if errors[] is present. */
+internal fun aniListBodyHasData(body: String): Boolean =
+    runCatching { org.json.JSONObject(body).optJSONObject("data") != null }.getOrDefault(false)
+
+/** Map alias-index successes → mediaIds. */
+internal fun acceptedMediaIdsFromBatch(
+    body: String,
+    items: List<AniListBatchPushItem>,
+): Set<Int> {
+    val ok = parseSaveProgressBatchSuccess(body, expected = items.size)
+    return ok.mapNotNullTo(LinkedHashSet()) { items.getOrNull(it)?.mediaId }
+}
+
+/**
+ * Cap same-drain singles so a poisoned chunk cannot add N×700ms to Sync.
+ * Re-batch leftovers first; singles only for stragglers.
+ */
+internal data class PendingPushRetryPlan(
+    val rebatch: List<AniListBatchPushItem>,
+    val singles: List<AniListBatchPushItem>,
+    val deferred: List<AniListBatchPushItem>,
+)
+
+internal fun pendingPushRetryPlan(
+    rejected: List<AniListBatchPushItem>,
+    maxSingles: Int = 3,
+    rebatchSize: Int = 4,
+): PendingPushRetryPlan {
+    if (rejected.isEmpty()) {
+        return PendingPushRetryPlan(emptyList(), emptyList(), emptyList())
+    }
+    val rebatchCap = rebatchSize.coerceAtLeast(0)
+    val singleCap = maxSingles.coerceAtLeast(0)
+    val rebatch = rejected.take(rebatchCap)
+    val afterRebatch = rejected.drop(rebatchCap)
+    val singles = afterRebatch.take(singleCap)
+    val deferred = afterRebatch.drop(singleCap)
+    return PendingPushRetryPlan(rebatch = rebatch, singles = singles, deferred = deferred)
 }
 
 /**

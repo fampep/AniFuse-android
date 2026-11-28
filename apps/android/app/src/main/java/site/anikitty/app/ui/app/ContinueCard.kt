@@ -3,6 +3,11 @@
 
 package site.anikitty.app.ui.app
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -72,10 +77,12 @@ import site.anikitty.app.ui.components.KittyMenuEntry
 import site.anikitty.app.ui.components.StageProgressBar
 import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.KittyAtmosphere
+import site.anikitty.app.ui.theme.KittyHaptics
 import site.anikitty.app.ui.theme.KittyRadius
 import site.anikitty.app.ui.theme.KittySpace
 import site.anikitty.app.ui.theme.LocalKittyPalette
 import site.anikitty.app.ui.theme.ShimmerBox
+import androidx.compose.ui.platform.LocalView
 
 private val ContinueCardWidth = 268.dp
 
@@ -219,6 +226,7 @@ fun ContinueWatchCard(
     val shown = cue ?: libraryCue(entry)
     val palette = LocalKittyPalette.current
     val context = LocalContext.current
+    val view = LocalView.current
     val shape = RoundedCornerShape(22.dp)
     var frame by remember(entry.anilistId, shown.episode) { mutableStateOf<EpisodeFrame?>(null) }
     var menu by remember(entry.anilistId) { mutableStateOf(false) }
@@ -263,7 +271,10 @@ fun ContinueWatchCard(
     Column(
         modifier = (if (fillWidth) Modifier.fillMaxWidth() else Modifier.width(ContinueCardWidth))
             .combinedClickable(
-                onClick = { onOpen(shown.episode) },
+                onClick = {
+                    KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
+                    onOpen(shown.episode)
+                },
                 onLongClick = { menu = true },
             )
             .semantics {
@@ -317,22 +328,35 @@ fun ContinueWatchCard(
                         ),
                     ),
             )
-            // Episode badge, like the reference card: dark pill, white caps.
-            Text(
-                "EP ${shown.episode}",
-                color = Color.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.4.sp,
+            // Episode badge — specular glass pill; crossfade when Sync advances EP.
+            val epShape = RoundedCornerShape(KittyRadius.sm)
+            AnimatedContent(
+                targetState = shown.episode,
+                transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(100)) },
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(KittySpace.sm)
-                    .clip(RoundedCornerShape(KittyRadius.sm))
-                    .background(Color.Black.copy(alpha = 0.62f))
-                    .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(KittyRadius.sm))
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
-                    .clearAndSetSemantics { },
-            )
+                    .padding(KittySpace.sm),
+                label = "continueEpBadge",
+            ) { ep ->
+                Text(
+                    "EP $ep",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp,
+                    modifier = Modifier
+                        .clip(epShape)
+                        .background(Color(0xE6101012))
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
+                            ),
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.28f), epShape)
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                        .clearAndSetSemantics { },
+                )
+            }
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)

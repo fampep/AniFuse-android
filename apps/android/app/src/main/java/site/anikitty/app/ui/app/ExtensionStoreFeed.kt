@@ -5,11 +5,14 @@ package site.anikitty.app.ui.app
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -53,6 +56,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -60,12 +64,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import site.anikitty.app.BuildConfig
 import site.anikitty.app.data.friendlyFailure
@@ -79,6 +85,8 @@ import site.anikitty.app.data.extensions.isCatalogSite
 import site.anikitty.app.data.extensions.isRetiredExtension
 import site.anikitty.app.data.extensions.storeCardRole
 import site.anikitty.app.data.extensions.storeListingMatches
+import site.anikitty.app.data.servers.HostHealthProbe
+import site.anikitty.app.data.servers.PlaybackHostHealth
 import site.anikitty.app.data.servers.ServerCatalog
 import site.anikitty.app.data.servers.StreamServer
 import site.anikitty.app.ui.components.AnimatedSearchIcon
@@ -91,6 +99,7 @@ import site.anikitty.app.ui.theme.KittyGlassShape
 import site.anikitty.app.ui.theme.kittyFloatingChrome
 import site.anikitty.app.ui.theme.KittyHaptics
 import site.anikitty.app.ui.theme.LocalKittyPalette
+import site.anikitty.app.ui.theme.prefersReducedMotion
 
 /**
  * Extension Store — black glass panels, white selection.
@@ -157,11 +166,34 @@ fun ExtensionStoreFeed(
     val bundledIds = catalog.bundledIds
     val coldKeys = remember(resolvers, selectedId) { catalog.coldProviderKeys() }
     val view = LocalView.current
-    val liveDock = remember(resolvers, bundledIds, selectedId) {
-        resolvers
-            .map { it.server }
-            .filter { it.id in bundledIds }
-            .distinctBy { it.id }
+    var healthTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        // Re-probe remembered CDN hosts so Race dock is hot on cold open,
+        // then refresh the chip labels on a short UI cadence.
+        runCatching {
+            site.anikitty.app.data.servers.HostHealthProbe.refreshRemembered()
+        }
+        healthTick++
+        while (true) {
+            delay(2_400)
+            healthTick++
+            if (healthTick % 12 == 0) {
+                // ~30s — refresh latency without hammering edges.
+                runCatching {
+                    site.anikitty.app.data.servers.HostHealthProbe.refreshRemembered()
+                }
+            }
+        }
+    }
+    val liveDock = remember(resolvers, bundledIds, selectedId, healthTick) {
+        raceDockOrdered(
+            resolvers
+                .map { it.server }
+                .filter { it.id in bundledIds }
+                .distinctBy { it.id },
+        ) { server ->
+            PlaybackHostHealth.scoreProvider(server.id, server.siteUrl)
+        }
     }
 
     // Always surface on-device resolvers even if the remote index is stale/offline.
@@ -331,43 +363,21 @@ fun ExtensionStoreFeed(
             }
         }
 
-        item(key = "how", contentType = "how") {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .stageGlassPlate(shape = RoundedCornerShape(22.dp))
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-            ) {
-                Text(
-                    "How extensions work",
-                    color = palette.text,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
-                )
-                Text(
-                    "AniList is the catalog. Live sites on this phone race for the file. A miss stays soft — only unreachable sources cool out of the race.",
-                    color = palette.muted,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
-        }
-
         if (liveDock.isNotEmpty()) {
             item(key = "live-dock", contentType = "dock") {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         "Race dock",
                         color = palette.text,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 22.sp,
+                        letterSpacing = (-0.6).sp,
                     )
                     Text(
-                        "${liveDock.size} live · tap to lead the next play",
+                        "${liveDock.size} live on this phone · tap to lead",
                         color = palette.muted,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
                     )
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -377,6 +387,16 @@ fun ExtensionStoreFeed(
                             val selected = server.id == selectedId
                             val cold = server.id.lowercase() in coldKeys ||
                                 server.name.trim().lowercase() in coldKeys
+                            val score = PlaybackHostHealth.scoreProvider(server.id, server.siteUrl)
+                            val latency = PlaybackHostHealth.providerLatencyMs(server.id, server.siteUrl)
+                            val pulseKind = raceDockPulseKind(
+                                selected = selected,
+                                cold = cold,
+                                score = score,
+                                latencyMs = latency,
+                            )
+                            val pulseMs = raceDockPulseMs(latency)
+                            val reducedMotion = prefersReducedMotion()
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
@@ -393,6 +413,8 @@ fun ExtensionStoreFeed(
                                     )
                                     .clickable {
                                         catalog.select(server.id)
+                                        // Re-probe remembered CDNs so LEAD · ms lands fast.
+                                        HostHealthProbe.kickRemembered()
                                         KittyHaptics.perform(view, KittyHaptics.Kind.Confirm)
                                     }
                                     .padding(horizontal = 10.dp, vertical = 8.dp),
@@ -409,26 +431,83 @@ fun ExtensionStoreFeed(
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                                     fontSize = 12.sp,
                                 )
-                                if (cold) {
+                                if (pulseKind != "none") {
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        "COLD",
-                                        color = palette.faint,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 9.sp,
-                                    )
-                                } else if (selected) {
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        "LEAD",
-                                        color = palette.onAccent,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 9.sp,
+                                    val pulseShape = RoundedCornerShape(999.dp)
+                                    val fadeMs = if (reducedMotion) 0 else 140
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(999.dp))
-                                            .background(palette.accent)
-                                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                                    )
+                                            .clip(pulseShape)
+                                            .background(
+                                                if (selected) Color(0xE6101012) else Color(0xCC141416),
+                                            )
+                                            .background(
+                                                Brush.verticalGradient(
+                                                    listOf(
+                                                        Color.White.copy(
+                                                            alpha = if (selected) 0.18f else 0.10f,
+                                                        ),
+                                                        Color.Transparent,
+                                                    ),
+                                                ),
+                                            )
+                                            .border(
+                                                1.dp,
+                                                Color.White.copy(
+                                                    alpha = if (selected) 0.34f else 0.20f,
+                                                ),
+                                                pulseShape,
+                                            )
+                                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                                    ) {
+                                        val pulseColor = when {
+                                            selected -> Color.White
+                                            pulseKind == "down" -> palette.faint
+                                            else -> Color.White.copy(alpha = 0.78f)
+                                        }
+                                        val pulseType = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = if (selected) 9.sp else 10.sp,
+                                            letterSpacing = if (selected) 0.5.sp else 0.2.sp,
+                                        )
+                                        if (pulseKind == "rtt" && pulseMs != null) {
+                                            // Live ms only — no kind animation shell.
+                                            Text(
+                                                "${pulseMs}ms",
+                                                color = pulseColor,
+                                                style = pulseType,
+                                            )
+                                        } else {
+                                            AnimatedContent(
+                                                targetState = pulseKind,
+                                                transitionSpec = {
+                                                    fadeIn(tween(fadeMs)) togetherWith
+                                                        fadeOut(tween(fadeMs))
+                                                },
+                                                label = "raceDockPulse",
+                                            ) { kind ->
+                                                Text(
+                                                    when (kind) {
+                                                        "lead" -> "LEAD"
+                                                        "down" -> "DOWN"
+                                                        "hot" -> "HOT"
+                                                        else -> ""
+                                                    },
+                                                    color = pulseColor,
+                                                    style = pulseType,
+                                                )
+                                            }
+                                            // Live RTT outside AnimatedContent — never freeze ms.
+                                            if (pulseKind == "lead" && pulseMs != null) {
+                                                Text(
+                                                    " · ${pulseMs}ms",
+                                                    color = pulseColor,
+                                                    style = pulseType,
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

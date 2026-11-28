@@ -80,6 +80,20 @@ data class EpisodeSlide(
 )
 
 /**
+ * Parallax scale for a still centered in the viewport.
+ * Stronger falloff makes the focused frame read as hero glass.
+ */
+internal fun episodeCarouselScale(
+    distanceFromCenterPx: Float,
+    reduced: Boolean,
+    maxDip: Float = 0.14f,
+    falloffPx: Float = 720f,
+): Float {
+    if (reduced) return 1f
+    return 1f - (distanceFromCenterPx / falloffPx).coerceIn(0f, maxDip)
+}
+
+/**
  * Horizontal episode scrubber. Each cell is that episode's thumbnail,
  * with a progress line and a snap so the row settles on a frame.
  */
@@ -161,13 +175,15 @@ fun EpisodeCarousel(
             }
             val layout = state.layoutInfo
             val info = layout.visibleItemsInfo.firstOrNull { it.index == index }
-            val scale = if (reduced || info == null) {
+            val scale = if (info == null) {
                 1f
             } else {
                 val viewportCenter = (layout.viewportStartOffset + layout.viewportEndOffset) / 2f
                 val center = info.offset + info.size / 2f
-                val distance = kotlin.math.abs(center - viewportCenter)
-                1f - (distance / 900f).coerceIn(0f, 0.08f)
+                episodeCarouselScale(
+                    distanceFromCenterPx = kotlin.math.abs(center - viewportCenter),
+                    reduced = reduced,
+                )
             }
             EpisodeThumb(
                 slide = slide,
@@ -259,7 +275,10 @@ private fun EpisodeThumb(
                 },
             )
             .combinedClickable(
-                onClick = onClick,
+                onClick = {
+                    KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
+                    onClick()
+                },
                 onLongClick = {
                     KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
                     menu = true
@@ -387,20 +406,13 @@ private fun EpisodeThumb(
                 )
             }
             if (progress > 0f) {
-                Box(
+                StageProgressBar(
+                    fraction = progress.coerceIn(0.04f, 1f),
+                    barHeight = 2.5.dp,
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .fillMaxWidth()
-                        .height(2.dp)
-                        .background(Color.White.copy(alpha = 0.22f)),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .fillMaxWidth(progress.coerceIn(0.04f, 1f))
-                            .background(Color.White),
-                    )
-                }
+                        .fillMaxWidth(),
+                )
             }
         }
         Spacer(modifier = Modifier.height(6.dp))
@@ -606,21 +618,14 @@ private fun EpisodeStillCard(
                     }
                 },
             )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .background(Color.White.copy(alpha = 0.22f)),
-            ) {
-                if (progress > 0f) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .fillMaxWidth(progress.coerceIn(0f, 1f))
-                            .background(Color.White),
-                    )
-                }
+            if (progress > 0f) {
+                StageProgressBar(
+                    fraction = progress.coerceIn(0f, 1f),
+                    barHeight = 2.5.dp,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth(),
+                )
             }
         }
         Spacer(modifier = Modifier.height(site.anikitty.app.ui.theme.KittySpace.sm))

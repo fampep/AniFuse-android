@@ -167,7 +167,11 @@ internal object SubtitleLibrary {
     /** Captions already known, without touching the network. Safe on any thread. */
     fun peek(anilistId: Int, episode: Int): List<SubtitleTrack>? {
         if (anilistId <= 0 || episode <= 0) return null
-        return cache.get(captionKey(anilistId, episode))
+        return promoteCaptionPeek(
+            key = captionKey(anilistId, episode),
+            memory = cache,
+            store = store,
+        )
     }
 
     /** Fetch now and keep the result warm for the player that is about to open. */
@@ -272,6 +276,26 @@ internal fun <T> valueOrEmptyUnlessCancelled(result: Result<T>): T? {
     val error = result.exceptionOrNull() ?: return result.getOrNull()
     if (error is CancellationException) throw error
     return null
+}
+
+/**
+ * Memory first, then a still-fresh disk listing. Empty disk bodies are ignored
+ * so a stale miss does not pretend there are no captions on cold reopen.
+ */
+internal fun promoteCaptionPeek(
+    key: String,
+    memory: CaptionMemoryCache,
+    store: CaptionBodyStore?,
+    nowMs: Long = System.currentTimeMillis(),
+    ttlMs: Long = CAPTION_TTL_MS,
+): List<SubtitleTrack>? {
+    memory.get(key)?.let { return it }
+    val stored = store?.read(key) ?: return null
+    if (nowMs - stored.savedAtMs > ttlMs) return null
+    val tracks = subtitleTracksFromLibrary(stored.body)
+    if (tracks.isEmpty()) return null
+    memory.put(key, tracks)
+    return tracks
 }
 
 /** Accept only library file ids. A track that points anywhere else is dropped. */

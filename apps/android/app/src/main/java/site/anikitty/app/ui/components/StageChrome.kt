@@ -112,6 +112,16 @@ fun StageProgressBar(
     modifier: Modifier = Modifier,
     barHeight: Dp = 4.dp,
 ) {
+    val reduced = prefersReducedMotion()
+    val animated by animateFloatAsState(
+        targetValue = fraction.coerceIn(0f, 1f),
+        animationSpec = if (reduced) {
+            snap()
+        } else {
+            spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow)
+        },
+        label = "stageProgress",
+    )
     val shape = RoundedCornerShape(999.dp)
     Box(
         modifier = modifier
@@ -123,7 +133,7 @@ fun StageProgressBar(
         Box(
             modifier = Modifier
                 .fillMaxHeight()
-                .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                .fillMaxWidth(animated)
                 .background(
                     Brush.horizontalGradient(
                         listOf(Color.White.copy(alpha = 0.72f), Color.White),

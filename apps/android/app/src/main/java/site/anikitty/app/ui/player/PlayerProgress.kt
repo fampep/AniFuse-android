@@ -6,6 +6,11 @@
 package site.anikitty.app.ui.player
 
 import androidx.annotation.OptIn
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,6 +27,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -47,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.delay
+import site.anikitty.app.ui.theme.prefersReducedMotion
 import site.anikitty.app.data.skip.SkipTimes
 import site.anikitty.app.ui.theme.PlayerChrome
 
@@ -98,14 +105,27 @@ internal fun LiveTimeline(
     val loader = remember(thumbnails?.url, mediaUrl) {
         ThumbnailLoader(context, thumbnails, mediaUrl)
     }
+    DisposableEffect(loader) {
+        onDispose { loader.release() }
+    }
+    LaunchedEffect(loader) {
+        loader.warm()
+    }
     var frame by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-    LaunchedEffect(scrubbing, scrubValue, durationMs, loader) {
-        if (!scrubbing || durationMs <= 0L) {
+    val scrubMs = if (scrubbing && durationMs > 0L) {
+        (scrubValue.coerceIn(0f, 1f) * durationMs).toLong()
+    } else {
+        -1L
+    }
+    val scrubBucket = if (scrubMs >= 0L) scrubPreviewBucketMs(scrubMs) else -1L
+    // Key on the bucket, not every scrub pixel — long drags stay zero-jank.
+    // Decode misses keep the last plate so the glass preview never blanks mid-scrub.
+    LaunchedEffect(scrubbing, scrubBucket, durationMs, loader) {
+        if (scrubPreviewShouldClear(scrubbing, scrubBucket) || durationMs <= 0L) {
             frame = null
             return@LaunchedEffect
         }
-        val ms = (scrubValue.coerceIn(0f, 1f) * durationMs).toLong()
-        frame = loader.frame(ms)
+        frame = scrubPreviewRetainFrame(frame, loader.frame(scrubBucket))
     }
     Box(modifier) {
         GlassScrubber(
@@ -123,6 +143,8 @@ internal fun LiveTimeline(
                 fraction = scrubValue,
                 timeLabel = formatClockPadded(shown),
                 frame = frame,
+                chapterLabel = scrubChapterLabel(skipTimes, shown),
+                chapterKind = scrubChapterKind(skipTimes, shown),
             )
         }
     }
@@ -196,16 +218,42 @@ internal fun NextEpisodePrompt(
             fontSize = 18.sp,
         )
         Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            when {
-                busy -> "Loading next episode…"
-                ended -> "Starting automatically in ${secondsLeft}s"
-                countdown > 0 -> "Episode ends in ${countdown}s"
-                else -> "Episode $nextEpisode is ready"
-            },
-            color = PlayerChrome.Graphite,
-            fontSize = 13.sp,
-        )
+        // Animate kind only — ticking seconds live outside AnimatedContent so
+        // the cached slot cannot freeze the first countdown snapshot.
+        val statusKind = when {
+            busy -> "busy"
+            ended -> "ended"
+            countdown > 0 -> "ending"
+            else -> "ready"
+        }
+        val fadeMs = if (prefersReducedMotion()) 0 else 160
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AnimatedContent(
+                targetState = statusKind,
+                transitionSpec = {
+                    fadeIn(tween(fadeMs)) togetherWith fadeOut(tween(fadeMs))
+                },
+                label = "nextEpisodeStatus",
+            ) { kind ->
+                Text(
+                    when (kind) {
+                        "busy" -> "Loading next episode…"
+                        "ended" -> "Starting automatically in "
+                        "ending" -> "Episode ends in "
+                        else -> "Episode $nextEpisode is ready"
+                    },
+                    color = PlayerChrome.Graphite,
+                    fontSize = 13.sp,
+                )
+            }
+            if (statusKind == "ended" || statusKind == "ending") {
+                Text(
+                    "${if (ended) secondsLeft else countdown}s",
+                    color = PlayerChrome.Graphite,
+                    fontSize = 13.sp,
+                )
+            }
+        }
         if (countdown > 0) {
             val span = if (ended) AUTOPLAY_COUNTDOWN_SEC else (NEAR_END_THRESHOLD_MS / 1000L).toInt()
             val fraction = (countdown.toFloat() / span.coerceAtLeast(1)).coerceIn(0f, 1f)

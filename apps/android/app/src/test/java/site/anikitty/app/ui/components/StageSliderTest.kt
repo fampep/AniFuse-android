@@ -22,14 +22,14 @@ class StageSliderTest {
     fun swipeOffsetLagsScalesAndFadesWithTheFinger() {
         val pose = stageSlidePose(-0.5f)
         assertTrue("image lags a leftward swipe", pose.parallax > 0.1f)
-        assertTrue(pose.scale in 0.90f..0.98f)
-        assertTrue(pose.alpha in 0.65f..0.95f)
+        assertTrue(pose.scale in 0.88f..0.98f)
+        assertTrue(pose.alpha in 0.60f..0.95f)
         assertTrue(pose.veil > 0.05f)
         assertTrue(pose.tilt > 0f)
         val far = stageSlidePose(-1f)
         assertTrue(far.scale < pose.scale)
         assertTrue(far.alpha < pose.alpha)
-        assertEquals(0.34f, far.parallax, 0.001f)
+        assertEquals(0.42f, far.parallax, 0.001f)
     }
 
     @Test

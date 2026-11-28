@@ -90,6 +90,44 @@ class AniListSyncTest {
         assertEquals("CURRENT", merged.listStatus)
     }
 
+    @Test
+    fun warmPullSkipsViewerWhenUserIdIsCached() {
+        val warm = aniListPullIdentity(
+            cachedUserId = 42,
+            cachedUsername = "fampep",
+            viewer = null,
+        )
+        assertEquals(42, warm!!.userId)
+        assertEquals("fampep", warm.username)
+        assertEquals(
+            null,
+            aniListPullIdentity(cachedUserId = 0, cachedUsername = null, viewer = null),
+        )
+    }
+
+    @Test
+    fun mediaListCacheKeyIsStablePerUser() {
+        assertEquals("mediaList:v1:42", mediaListCacheKey(42))
+        assertEquals("mediaList:v1:7", mediaListCacheKey(7))
+    }
+
+    @Test
+    fun postDrainMediaListAlwaysBypassesTheWarmTtl() {
+        assertTrue(mediaListForceRefreshAfterDrain(interactiveForceRefresh = false, drainedAccepted = 1))
+        assertTrue(mediaListForceRefreshAfterDrain(interactiveForceRefresh = true, drainedAccepted = 0))
+        assertTrue(mediaListForceRefreshAfterDrain(interactiveForceRefresh = true, drainedAccepted = 3))
+        assertFalse(mediaListForceRefreshAfterDrain(interactiveForceRefresh = false, drainedAccepted = 0))
+    }
+
+    @Test
+    fun cloudFrontierAdvanceDropsStaleWarm() {
+        assertTrue(shouldDropWarmOnFrontierAdvance(previousEpisode = 4, nextEpisode = 7))
+        assertFalse(shouldDropWarmOnFrontierAdvance(previousEpisode = 7, nextEpisode = 7))
+        assertFalse(shouldDropWarmOnFrontierAdvance(previousEpisode = 8, nextEpisode = 7))
+        assertFalse(shouldDropWarmOnFrontierAdvance(previousEpisode = null, nextEpisode = 3))
+        assertFalse(shouldDropWarmOnFrontierAdvance(previousEpisode = 0, nextEpisode = 2))
+    }
+
     private fun merge(local: WatchHistoryEntity?, remoteProgress: Int, pending: Int?) = mergedPullEntry(
         existing = local,
         anilistId = 7,

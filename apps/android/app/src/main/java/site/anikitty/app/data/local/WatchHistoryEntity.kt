@@ -24,13 +24,18 @@ data class WatchHistoryEntity(
 ) {
     /**
      * Episodes actually finished. Opening a title from the catalog seeds episode 1
-     * with no playback and no list status; that is not progress. AniList progress 0 stays 0.
+     * with no playback and no list status; that is not progress. Mid-watch on
+     * episode E counts E−1. At rest the field is AniList progress (or the local
+     * next-frontier after mark — both share this number).
      */
     fun episodesFinished(): Int {
         val openedOnly = listStatus.isNullOrBlank() &&
             positionMs == 0L &&
             durationMs == 0L &&
             episode <= 1
-        return if (openedOnly) 0 else episode.coerceAtLeast(0)
+        if (openedOnly) return 0
+        // Live scrub on this episode — the current one is not finished yet.
+        if (positionMs > 2_000L) return (episode - 1).coerceAtLeast(0)
+        return episode.coerceAtLeast(0)
     }
 }

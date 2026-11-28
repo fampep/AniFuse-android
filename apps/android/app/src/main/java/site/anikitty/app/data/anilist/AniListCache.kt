@@ -81,6 +81,17 @@ class AniListCache(context: Context) {
         legacy.edit().remove("$key.body").remove("$key.at").apply()
     }
 
+    /** Drop every entry whose key starts with [prefix] (e.g. mediaList after a push). */
+    fun invalidatePrefix(prefix: String) {
+        if (prefix.isEmpty()) return
+        memory.keys.filter { it.startsWith(prefix) }.forEach { memory.remove(it) }
+        val safePrefix = prefix.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        root.listFiles()?.forEach { file ->
+            val name = file.name.removeSuffix(".json")
+            if (name.startsWith(safePrefix)) file.delete()
+        }
+    }
+
     private fun migrateLegacyIfNeeded() {
         if (migrated) return
         synchronized(migrateOnce) {
@@ -124,6 +135,8 @@ class AniListCache(context: Context) {
         const val TTL_FEED_MS = 30 * 60 * 1000L
         const val TTL_SEARCH_MS = 10 * 60 * 1000L
         const val TTL_MEDIA_MS = 6 * 60 * 60 * 1000L
+        /** Short so a 5-minute background pull is often a cache hit. */
+        const val TTL_LIST_MS = 2 * 60 * 1000L
         private const val MAX_ENTRIES = 120
     }
 }

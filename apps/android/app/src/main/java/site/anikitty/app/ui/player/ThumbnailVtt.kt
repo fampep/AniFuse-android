@@ -49,6 +49,30 @@ internal fun cueAt(cues: List<ThumbnailCue>, positionMs: Long): ThumbnailCue? {
         ?: cues.first()
 }
 
+/**
+ * Neighbor sprite URLs to prefetch while the finger is still on this cue.
+ * Scrubbing into the next sheet should already have the bitmap warm.
+ */
+internal fun thumbnailNeighborSpriteUrls(
+    cues: List<ThumbnailCue>,
+    positionMs: Long,
+    limit: Int = 2,
+): List<String> {
+    if (cues.isEmpty() || limit <= 0) return emptyList()
+    val current = cueAt(cues, positionMs) ?: return emptyList()
+    val index = cues.indexOf(current).takeIf { it >= 0 } ?: return emptyList()
+    val urls = LinkedHashSet<String>()
+    // Walk past cues that share this sheet until we collect [limit] distinct neighbors.
+    var offset = 1
+    while (urls.size < limit && offset < cues.size) {
+        cues.getOrNull(index + offset)?.spriteUrl?.takeIf { it != current.spriteUrl }?.let(urls::add)
+        if (urls.size >= limit) break
+        cues.getOrNull(index - offset)?.spriteUrl?.takeIf { it != current.spriteUrl }?.let(urls::add)
+        offset++
+    }
+    return urls.take(limit)
+}
+
 private fun parseCueRange(line: String): Pair<Long, Long>? {
     val arrow = line.indexOf("-->")
     if (arrow < 0) return null

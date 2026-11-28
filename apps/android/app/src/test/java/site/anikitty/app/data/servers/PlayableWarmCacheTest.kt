@@ -45,4 +45,124 @@ class PlayableWarmCacheTest {
         assertNull(PlayableWarmCache.peek(3, 4, "dub", nowMs = 20L))
         assertEquals(1, PlayableWarmCache.peek(3, 4, "SUB", nowMs = 20L)?.size)
     }
+
+    @Test
+    fun liveLaneBeatsNextWhenProbing() = kotlinx.coroutines.runBlocking {
+        PlayableWarmCache.put(
+            11,
+            3,
+            "sub",
+            listOf(PlayableSource(url = "https://cdn.example/next.m3u8")),
+            lane = PlayableWarmCache.LANE_NEXT,
+            nowMs = 10L,
+        )
+        PlayableWarmCache.put(
+            11,
+            3,
+            "sub",
+            listOf(PlayableSource(url = "https://cdn.example/live.m3u8")),
+            lane = PlayableWarmCache.LANE_LIVE,
+            nowMs = 20L,
+        )
+        val hit = takeProbedWarm(
+            anilistId = 11,
+            episode = 3,
+            audio = "sub",
+            nowMs = 30L,
+            probe = { it },
+        )
+        assertEquals("https://cdn.example/live.m3u8", hit.single().url)
+        assertNull(PlayableWarmCache.peek(11, 3, "sub", PlayableWarmCache.LANE_LIVE, nowMs = 40L))
+        assertEquals(1, PlayableWarmCache.peek(11, 3, "sub", PlayableWarmCache.LANE_NEXT, nowMs = 40L)?.size)
+    }
+
+    @Test
+    fun diskRecallSurvivesEmptyMemory() = kotlinx.coroutines.runBlocking {
+        var forgotten = false
+        val hit = takeProbedWarm(
+            anilistId = 7,
+            episode = 2,
+            audio = "dub",
+            nowMs = 50L,
+            probe = { it },
+            diskRecall = {
+                listOf(PlayableSource(url = "https://cdn.example/disk.m3u8", label = "Disk"))
+            },
+            onDiskMiss = { forgotten = true },
+        )
+        assertEquals("https://cdn.example/disk.m3u8", hit.single().url)
+        assertEquals(false, forgotten)
+        assertEquals(
+            1,
+            PlayableWarmCache.peek(7, 2, "dub", PlayableWarmCache.LANE_LIVE, nowMs = 60L)?.size,
+        )
+    }
+
+    @Test
+    fun dropTitleClearsEveryLaneForThatShow() {
+        PlayableWarmCache.put(
+            21,
+            4,
+            "sub",
+            listOf(PlayableSource(url = "https://cdn.example/live.m3u8")),
+            lane = PlayableWarmCache.LANE_LIVE,
+            nowMs = 10L,
+        )
+        PlayableWarmCache.put(
+            21,
+            5,
+            "sub",
+            listOf(PlayableSource(url = "https://cdn.example/next.m3u8")),
+            lane = PlayableWarmCache.LANE_NEXT,
+            nowMs = 11L,
+        )
+        PlayableWarmCache.put(
+            22,
+            1,
+            "sub",
+            listOf(PlayableSource(url = "https://cdn.example/other.m3u8")),
+            nowMs = 12L,
+        )
+        PlayableWarmCache.dropTitle(21)
+        assertNull(PlayableWarmCache.peek(21, 4, "sub", PlayableWarmCache.LANE_LIVE, nowMs = 20L))
+        assertNull(PlayableWarmCache.peek(21, 5, "sub", PlayableWarmCache.LANE_NEXT, nowMs = 20L))
+        assertEquals(1, PlayableWarmCache.peek(22, 1, "sub", nowMs = 20L)?.size)
+    }
+
+    @Test
+    fun liveSourceKeysNormalizeAudio() {
+        assertEquals("9:1:sub", LiveSourceStore.key(9, 1, "SUB"))
+        assertEquals("9:1:dub", LiveSourceStore.key(9, 1, " dub "))
+    }
+
+    @Test
+    fun liveEncodeKeepsUnwrapAndHlsFields() {
+        val source = PlayableSource(
+            url = "https://cdn.example/master.txt",
+            headers = mapOf("Referer" to "https://gotaku.to/"),
+            label = "1080p",
+            stripBytes = 4096,
+            gotakuObf = GotakuObf("seed", "token", segmentBytes = 4096),
+            flix = FlixUnwrap("pk", "mask", englishAudio = true),
+            hls = true,
+            skip = site.anikitty.app.data.skip.SkipTimes(
+                intro = site.anikitty.app.data.skip.SkipInterval(10.0, 90.0),
+            ),
+            subtitles = listOf(
+                SubtitleTrack(url = "https://cdn.example/en.vtt", label = "English", language = "en"),
+            ),
+            serverName = "gotaku",
+        )
+        val round = LiveSourceStore.decode(LiveSourceStore.encode(listOf(source))).single()
+        assertEquals(source.url, round.url)
+        assertEquals(true, round.hls)
+        assertEquals(4096, round.stripBytes)
+        assertEquals("seed", round.gotakuObf?.keySeed)
+        assertEquals("token", round.gotakuObf?.playlistToken)
+        assertEquals("pk", round.flix?.playlistKey)
+        assertEquals(true, round.flix?.englishAudio)
+        assertEquals(10.0, round.skip.intro?.startSec ?: -1.0, 0.01)
+        assertEquals("https://cdn.example/en.vtt", round.subtitles.single().url)
+        assertEquals("gotaku", round.serverName)
+    }
 }

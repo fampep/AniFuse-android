@@ -88,6 +88,18 @@ object PlayableWarmCache {
         synchronized(lock) { map.remove(key(anilistId, episode, audio, lane)) }
     }
 
+    /**
+     * Cloud frontier jumped past a local Continue episode. Every lane for this
+     * title is wrong for the next open — drop live/next/shadow/standby together.
+     */
+    fun dropTitle(anilistId: Int) {
+        if (anilistId <= 0) return
+        val needle = "$anilistId:"
+        synchronized(lock) {
+            map.keys.filter { it.startsWith(needle) }.toList().forEach { map.remove(it) }
+        }
+    }
+
     fun clear() {
         synchronized(lock) { map.clear() }
     }
@@ -102,4 +114,47 @@ object PlayableWarmCache {
     const val LANE_STANDBY = "standby"
     /** Probed runner-up for the episode that is playing right now. */
     const val LANE_SHADOW = "shadow"
+    /**
+     * Last successful resolve for the episode the user just opened.
+     * Leave the player and come back within [TTL_MS] → probe + play, no race.
+     */
+    const val LANE_LIVE = "live"
+}
+
+/**
+ * Consume the freshest warm lane that still answers. Live reopen wins over a
+ * next-episode prefetch so a mid-watch return never races cold CDNs again.
+ * [diskRecall] covers process death after the in-memory map is gone.
+ */
+suspend fun takeProbedWarm(
+    anilistId: Int,
+    episode: Int,
+    audio: String,
+    lanes: List<String> = listOf(PlayableWarmCache.LANE_LIVE, PlayableWarmCache.LANE_NEXT),
+    nowMs: Long = System.currentTimeMillis(),
+    probe: suspend (List<PlayableSource>) -> List<PlayableSource> = { PlayableWarmProbe.filterAlive(it) },
+    diskRecall: (() -> List<PlayableSource>?)? = null,
+    onDiskMiss: (() -> Unit)? = null,
+): List<PlayableSource> {
+    for (lane in lanes) {
+        val raw = PlayableWarmCache.take(anilistId, episode, audio, lane, nowMs) ?: continue
+        val alive = probe(raw)
+        if (alive.isNotEmpty()) return alive
+    }
+    val disk = diskRecall?.invoke().orEmpty()
+    if (disk.isEmpty()) return emptyList()
+    val alive = probe(disk)
+    if (alive.isEmpty()) {
+        onDiskMiss?.invoke()
+        return emptyList()
+    }
+    PlayableWarmCache.put(
+        anilistId = anilistId,
+        episode = episode,
+        audio = audio,
+        sources = alive,
+        lane = PlayableWarmCache.LANE_LIVE,
+        nowMs = nowMs,
+    )
+    return alive
 }

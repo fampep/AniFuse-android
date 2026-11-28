@@ -3,6 +3,10 @@
 
 package site.anikitty.app.ui.app
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -49,6 +53,7 @@ import site.anikitty.app.ui.icons.FluentuiSystemIconsArrowSync
 import site.anikitty.app.ui.icons.FluentuiSystemIconsBookmarkOutline
 import site.anikitty.app.ui.icons.FluentuiSystemIconsMoviesAndTvFilled
 import site.anikitty.app.ui.icons.FluentuiSystemIconsStarFilled
+import site.anikitty.app.ui.components.StageProgressBar
 import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.kittyGlassSoft
 import androidx.compose.material3.CircularProgressIndicator
@@ -86,6 +91,7 @@ import site.anikitty.app.AnikittyApp
 import site.anikitty.app.data.download.EpisodeDownloadEntity
 import site.anikitty.app.data.download.LaneCandidate
 import site.anikitty.app.data.download.downloadAhead
+import site.anikitty.app.data.download.downloadShelfCover
 import site.anikitty.app.data.download.downloadShelfSubtitle
 import site.anikitty.app.data.servers.PlaybackHostHealth
 import kotlin.coroutines.cancellation.CancellationException
@@ -617,6 +623,22 @@ private fun CloudSyncBlock(
                         modifier = Modifier
                             .size(48.dp)
                             .clip(CircleShape)
+                            .then(
+                                if (syncing) {
+                                    Modifier
+                                        .stageGlassPlate(shape = CircleShape, elevated = true)
+                                        .background(
+                                            Brush.verticalGradient(
+                                                listOf(
+                                                    Color.White.copy(alpha = 0.14f),
+                                                    Color.Transparent,
+                                                ),
+                                            ),
+                                        )
+                                } else {
+                                    Modifier
+                                },
+                            )
                             .clickable(enabled = !syncing, onClick = onSync),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -695,17 +717,40 @@ private fun CloudSyncBlock(
                         .background(palette.surface),
                     contentScale = ContentScale.Crop,
                 )
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = viewer?.name ?: accountLabel.ifBlank { "AniList" },
                         color = palette.text,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     )
-                    Text(
-                        text = if (syncing) "Syncing..." else "Connected",
-                        color = palette.text.copy(alpha = if (syncing) 1f else 0.5f),
-                        style = MaterialTheme.typography.labelSmall,
-                    )
+                    AnimatedContent(
+                        targetState = cloudSyncStatusLabel(syncing),
+                        transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                        label = "cloudSyncStatus",
+                    ) { label ->
+                        Text(
+                            text = label,
+                            color = palette.text.copy(alpha = if (syncing) 1f else 0.5f),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                    if (syncing) {
+                        val pulse by spin.animateFloat(
+                            initialValue = 0.18f,
+                            targetValue = 0.92f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(900, easing = LinearEasing),
+                                repeatMode = RepeatMode.Reverse,
+                            ),
+                            label = "syncPulse",
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        StageProgressBar(
+                            fraction = pulse,
+                            modifier = Modifier.fillMaxWidth(),
+                            barHeight = 2.dp,
+                        )
+                    }
                 }
             }
 
@@ -991,12 +1036,19 @@ private fun SpacePoster(
             .border(1.5.dp, frame, RoundedCornerShape(10.dp))
             .padding(2.dp),
     ) {
+        val artShape = RoundedCornerShape(8.dp)
         Box(
             modifier = Modifier
                 .width(width)
                 .height(height)
-                .clip(RoundedCornerShape(8.dp))
-                .background(palette.text.copy(alpha = 0.05f)),
+                .clip(artShape)
+                .then(
+                    if (progress > 0f) {
+                        Modifier.stageGlassPlate(shape = artShape, elevated = true)
+                    } else {
+                        Modifier.background(palette.text.copy(alpha = 0.05f))
+                    },
+                ),
         ) {
             AsyncImage(
                 model = imageUrl,
@@ -1014,20 +1066,13 @@ private fun SpacePoster(
                     ),
             )
             if (progress > 0f) {
-                Box(
+                StageProgressBar(
+                    fraction = progress.coerceIn(0.04f, 1f),
+                    barHeight = 3.5.dp,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(2.dp)
-                        .align(Alignment.BottomStart)
-                        .background(palette.text.copy(alpha = 0.08f)),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .fillMaxWidth(progress.coerceIn(0f, 1f))
-                            .background(palette.text),
-                    )
-                }
+                        .align(Alignment.BottomStart),
+                )
             }
             if (selecting) {
                 SelectMark(
@@ -1272,14 +1317,16 @@ private fun postersForTab(
     }
     if (tab == "Downloads") {
         val playing = PlaybackHostHealth.playingHost()
+        val covers = history.associate { it.anilistId to it.coverImageUrl }
         val lane = downloads.filter { it.phase == "QUEUED" || it.phase == "RUNNING" }.map { row ->
             LaneCandidate(row.anilistId, row.episode, row.url, row.updatedAtEpochMs)
         }
         return downloads.map { row ->
+            val cover = downloadShelfCover(row.anilistId, covers)
             SpaceCard(
                 key = "dl-${row.anilistId}-${row.episode}",
                 title = row.title.ifBlank { "Episode ${row.episode}" },
-                imageUrl = null,
+                imageUrl = cover,
                 subtitle = downloadShelfSubtitle(
                     episode = row.episode,
                     phase = row.phase,
@@ -1293,7 +1340,7 @@ private fun postersForTab(
                 anime = AnimeSummary(
                     id = row.anilistId,
                     title = row.title.ifBlank { "Episode ${row.episode}" },
-                    coverImageUrl = null,
+                    coverImageUrl = cover,
                     episodes = null,
                     format = null,
                     averageScore = null,

@@ -56,6 +56,17 @@ class AniListClient(
         externalLinks { site url }
     """.trimIndent()
 
+    /**
+     * Sync-only payload. Full [mediaFields] on every MediaList row was megabytes
+     * of unused relations/trailers — this keeps pull fast and local-first.
+     */
+    private val mediaListFields = """
+        id
+        idMal
+        title { romaji english native }
+        coverImage { extraLarge large }
+    """.trimIndent()
+
     /** Richer payload for the title detail screen (episodes + relations). */
     private val mediaDetailFields = """
         $mediaFields
@@ -168,7 +179,18 @@ class AniListClient(
     suspend fun mediaListEntries(
         accessToken: String,
         userId: Int,
+        forceRefresh: Boolean = false,
     ): List<AniListMediaListEntry> = withContext(Dispatchers.IO) {
+        val cacheKey = mediaListCacheKey(userId)
+        if (forceRefresh) {
+            // Interactive Sync must not import a 2-minute-stale MediaList after
+            // another device moved progress.
+            cache?.invalidate(cacheKey)
+        } else {
+            cache?.get(cacheKey, AniListCache.TTL_LIST_MS)?.let { cached ->
+                return@withContext parseMediaListBody(cached)
+            }
+        }
         val graphql = """
             query (${'$'}userId: Int, ${'$'}type: MediaType) {
               MediaListCollection(userId: ${'$'}userId, type: ${'$'}type) {
@@ -178,7 +200,7 @@ class AniListClient(
                     id
                     status
                     progress
-                    media { $mediaFields }
+                    media { $mediaListFields }
                   }
                 }
               }
@@ -193,13 +215,19 @@ class AniListClient(
                     .put("type", "ANIME"),
             )
             .toString()
-        val body = execute(payload, accessToken, background = true)
+        // Interactive — list pull must not yield to Home shelf traffic.
+        val body = execute(payload, accessToken, background = false)
+        cache?.put(cacheKey, body)
+        parseMediaListBody(body)
+    }
+
+    private fun parseMediaListBody(body: String): List<AniListMediaListEntry> {
         val lists = JSONObject(body)
             .optJSONObject("data")
             ?.optJSONObject("MediaListCollection")
             ?.optJSONArray("lists")
-            ?: return@withContext emptyList()
-        buildList {
+            ?: return emptyList()
+        return buildList {
             for (i in 0 until lists.length()) {
                 val list = lists.optJSONObject(i) ?: continue
                 val listStatus = list.optString("status").ifBlank { "CURRENT" }
@@ -225,6 +253,7 @@ class AniListClient(
         mediaId: Int,
         progress: Int,
         status: String = "CURRENT",
+        interactive: Boolean = false,
     ): Boolean = withContext(Dispatchers.IO) {
         val graphql = """
             mutation (${'$'}mediaId: Int, ${'$'}status: MediaListStatus, ${'$'}progress: Int) {
@@ -246,25 +275,35 @@ class AniListClient(
             )
             .toString()
         runCatching {
-            val body = execute(payload, accessToken, background = true)
-            JSONObject(body).optJSONObject("data")?.optJSONObject("SaveMediaListEntry") != null
+            val body = execute(payload, accessToken, background = !interactive)
+            val ok = JSONObject(body).optJSONObject("data")?.optJSONObject("SaveMediaListEntry") != null
+            if (ok) cache?.invalidatePrefix("mediaList:")
+            ok
         }.getOrDefault(false)
     }
 
     /**
      * One paced HTTP call for up to [ANILIST_PUSH_CHUNK] pending progress rows.
-     * Returns the mediaIds AniList accepted.
+     * Returns the mediaIds AniList accepted. [allowPartial] keeps alias successes
+     * when GraphQL returns errors[] for a bad mediaId in the same mutation.
      */
     internal suspend fun saveProgressBatch(
         accessToken: String,
         items: List<AniListBatchPushItem>,
+        interactive: Boolean = false,
     ): Set<Int> = withContext(Dispatchers.IO) {
         if (items.isEmpty()) return@withContext emptySet()
         val payload = JSONObject().put("query", buildSaveProgressBatchMutation(items)).toString()
         runCatching {
-            val body = execute(payload, accessToken, background = true)
-            val okIndexes = parseSaveProgressBatchSuccess(body, expected = items.size)
-            okIndexes.mapNotNullTo(LinkedHashSet()) { index -> items.getOrNull(index)?.mediaId }
+            val body = execute(
+                payload,
+                accessToken,
+                background = !interactive,
+                allowPartial = true,
+            )
+            val accepted = acceptedMediaIdsFromBatch(body, items)
+            if (accepted.isNotEmpty()) cache?.invalidatePrefix("mediaList:")
+            accepted
         }.getOrDefault(emptySet())
     }
 
@@ -306,7 +345,9 @@ class AniListClient(
             val body = execute(payload, accessToken)
             val root = JSONObject(body)
             val errors = root.optJSONArray("errors")
-            errors == null && root.optJSONObject("data")?.optJSONObject("SaveMediaListEntry") != null
+            val ok = errors == null && root.optJSONObject("data")?.optJSONObject("SaveMediaListEntry") != null
+            if (ok) cache?.invalidatePrefix("mediaList:")
+            ok
         }.getOrDefault(false)
     }
 
@@ -377,10 +418,12 @@ class AniListClient(
             val body = execute(payload, accessToken)
             val root = JSONObject(body)
             val errors = root.optJSONArray("errors")
-            errors == null &&
+            val ok = errors == null &&
                 root.optJSONObject("data")
                     ?.optJSONObject("DeleteMediaListEntry")
                     ?.optBoolean("deleted") == true
+            if (ok) cache?.invalidatePrefix("mediaList:")
+            ok
         }.getOrDefault(false)
     }
 
@@ -1167,3 +1210,6 @@ class AniListClient(
         }
     }
 }
+
+/** Disk/memory key for the authenticated MediaList Collection body. */
+internal fun mediaListCacheKey(userId: Int): String = "mediaList:v1:$userId"

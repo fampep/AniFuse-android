@@ -127,12 +127,7 @@ class CastRelay(context: Context) {
         }
         val subs = try {
             next.subtitles.mapIndexedNotNull { index, track ->
-                if (!track.url.startsWith("http")) return@mapIndexedNotNull null
-                val lower = track.url.lowercase()
-                val text = lower.contains(".vtt") || lower.contains(".srt") ||
-                    track.mimeType?.contains("vtt", true) == true ||
-                    track.mimeType?.contains("subrip", true) == true
-                if (!text) return@mapIndexedNotNull null
+                if (!castRelaySubtitleEligible(track.url, track.mimeType)) return@mapIndexedNotNull null
                 allow(track.url)
                 RelaySubtitle(
                     url = "http://$host:$port/sub?i=$index",
@@ -163,12 +158,7 @@ class CastRelay(context: Context) {
         val host = lanIpv4() ?: return null
         source = current.copy(subtitles = tracks)
         return tracks.mapIndexedNotNull { index, track ->
-            if (!track.url.startsWith("http")) return@mapIndexedNotNull null
-            val lower = track.url.lowercase()
-            val text = lower.contains(".vtt") || lower.contains(".srt") ||
-                track.mimeType?.contains("vtt", true) == true ||
-                track.mimeType?.contains("subrip", true) == true
-            if (!text) return@mapIndexedNotNull null
+            if (!castRelaySubtitleEligible(track.url, track.mimeType)) return@mapIndexedNotNull null
             allow(track.url)
             RelaySubtitle(
                 url = "http://$host:$port/sub?i=$index",
@@ -591,9 +581,19 @@ class CastRelay(context: Context) {
         castRelaySegmentType(url, castRelayHeader(headers, "Content-Type"), segmentPack)
 
     private fun readBytes(url: String): ByteArray? {
+        val trimmed = url.trim()
+        if (trimmed.startsWith("file:", ignoreCase = true)) {
+            val path = Uri.parse(trimmed).path ?: return null
+            return runCatching { java.io.File(path).readBytes() }.getOrNull()
+        }
+        if (trimmed.startsWith("content:", ignoreCase = true)) {
+            return runCatching {
+                appContext.contentResolver.openInputStream(Uri.parse(trimmed))?.use { it.readBytes() }
+            }.getOrNull()
+        }
         val upstream = factory.createDataSource()
         return try {
-            val length = upstream.open(DataSpec(Uri.parse(url)))
+            val length = upstream.open(DataSpec(Uri.parse(trimmed)))
             readFully(upstream, length)
         } catch (_: Exception) {
             null
@@ -1051,6 +1051,31 @@ internal fun castRelayDecodeTarget(payload: String): String? {
 }
 
 internal enum class CastRelayLink { PLAYLIST, SEGMENT, TEXT }
+
+/** True when the relay can fetch this caption URL for the Chromecast. */
+internal fun castRelayCaptionFetchable(url: String): Boolean {
+    val trimmed = url.trim()
+    return trimmed.startsWith("https://", ignoreCase = true) ||
+        trimmed.startsWith("http://", ignoreCase = true) ||
+        trimmed.startsWith("file:", ignoreCase = true) ||
+        trimmed.startsWith("content:", ignoreCase = true)
+}
+
+/**
+ * Library captions often use `application/x-subrip` without a `.srt` path.
+ * Accept those plus classic VTT/SRT URLs so Cast does not drop the sidecar.
+ */
+internal fun castRelaySubtitleEligible(url: String, mimeType: String?): Boolean {
+    if (!castRelayCaptionFetchable(url)) return false
+    val lower = url.lowercase()
+    val mime = mimeType.orEmpty().lowercase()
+    return lower.contains(".vtt") ||
+        lower.contains(".srt") ||
+        "vtt" in mime ||
+        "subrip" in mime ||
+        "srt" in mime ||
+        mime == "text/plain"
+}
 
 internal fun castRelayProxyFile(url: String, kind: CastRelayLink, pack: String?): String {
     val path = url.substringBefore('?').lowercase()

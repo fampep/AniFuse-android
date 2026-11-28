@@ -8,7 +8,11 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -29,17 +33,45 @@ internal class ThumbnailLoader(
 ) {
     private val app = context.applicationContext
     private val gate = Mutex()
+    private val warmJob = SupervisorJob()
+    private val warmScope = CoroutineScope(warmJob + Dispatchers.IO)
     private var cues: List<ThumbnailCue> = emptyList()
     private var indexed = false
     private var retryAtMs = 0L
-    private val sprites = object : android.util.LruCache<String, Sprite>(4) {}
+    private val sprites = object : android.util.LruCache<String, Sprite>(8) {}
     private val localFrames = object : android.util.LruCache<Long, Bitmap>(6) {}
 
     suspend fun frame(positionMs: Long): Bitmap? = withContext(Dispatchers.IO) {
         ensureIndex()
         val cue = cueAt(cues, positionMs)
-        if (cue != null) return@withContext crop(cue)
+        if (cue != null) {
+            val bitmap = crop(cue)
+            // Neighbor HTTP must not stall the scrub preview for this cue.
+            warmNeighborsAsync(positionMs)
+            return@withContext bitmap
+        }
         localFrame(positionMs)
+    }
+
+    /** Prefetch the VTT index so the first scrub already has cues. */
+    suspend fun warm() = withContext(Dispatchers.IO) {
+        ensureIndex()
+    }
+
+    fun release() {
+        warmScope.cancel()
+    }
+
+    /** Soft-prefetch adjacent sprite sheets after the current frame is already returned. */
+    private fun warmNeighborsAsync(positionMs: Long) {
+        val urls = thumbnailNeighborSpriteUrls(cues, positionMs)
+        if (urls.isEmpty()) return
+        warmScope.launch {
+            for (url in urls) {
+                if (sprites.get(url) != null) continue
+                loadSprite(url)
+            }
+        }
     }
 
     private suspend fun ensureIndex() {

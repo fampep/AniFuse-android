@@ -28,6 +28,7 @@ import site.anikitty.app.data.servers.PlayableWarmCache
 import site.anikitty.app.data.servers.PlayableWarmProbe
 import site.anikitty.app.data.servers.PlaybackHostHealth
 import site.anikitty.app.data.servers.PlaybackHttp
+import site.anikitty.app.data.servers.SegmentShadow
 import site.anikitty.app.data.servers.playableHost
 import java.io.File
 import java.io.IOException
@@ -138,6 +139,7 @@ class EpisodeDownloadWorker(
         val part = File(dest.path + ".part")
         val already = if (part.exists()) part.length() else 0L
         val resume = progressiveResume(already)
+        var expectedTotal = -1L
         try {
             withContext(Dispatchers.IO) {
                 val request = Request.Builder().url(row.url)
@@ -147,7 +149,13 @@ class EpisodeDownloadWorker(
                 request.header("User-Agent", userAgent)
                 resume.rangeHeader?.let { request.header("Range", it) }
                 PlaybackHttp.client.newCall(request.build()).execute().use { response ->
-                    when (downloadTransfer(response.code, already)) {
+                    when (
+                        downloadTransferValidated(
+                            code = response.code,
+                            partBytes = already,
+                            contentRange = response.header("Content-Range"),
+                        )
+                    ) {
                         DownloadTransfer.Restart -> {
                             part.delete()
                             throw IOException("Couldn't resume this episode")
@@ -166,11 +174,12 @@ class EpisodeDownloadWorker(
                     val body = response.body ?: throw DownloadRejectedException("Couldn't save this episode")
                     val append = resume.appendOnPartial && response.code == 206
                     val prior = if (append) already else 0L
-                    val bodyLength = body.contentLength()
-                    val total = when {
-                        bodyLength > 0L -> prior + bodyLength
-                        else -> -1L
-                    }
+                    val total = downloadExpectedTotal(
+                        priorBytes = prior,
+                        bodyContentLength = body.contentLength(),
+                        contentRange = response.header("Content-Range"),
+                    )
+                    expectedTotal = total
                     var stopped = false
                     body.byteStream().use { input ->
                         java.io.FileOutputStream(part, append).use { output ->
@@ -215,6 +224,10 @@ class EpisodeDownloadWorker(
             part.delete()
             throw DownloadRejectedException("Couldn't save this episode")
         }
+        // Quiet mid-flight truncate — keep the partial for Range resume, do not READY.
+        if (!downloadBodyComplete(part.length(), expectedTotal)) {
+            throw IOException("Download incomplete")
+        }
         if (dest.exists()) dest.delete()
         if (!part.renameTo(dest)) {
             part.copyTo(dest, overwrite = true)
@@ -246,6 +259,26 @@ class EpisodeDownloadWorker(
         var lastPercent = -1
         var lastAt = 0L
         val dropped = java.util.concurrent.atomic.AtomicBoolean(false)
+        // Mid-segment 403s retarget in-place via SegmentRetargetInterceptor when
+        // a warm shadow exists. tryArm never steals a live playback standby.
+        val downloadOwner = Any()
+        var shadowArmed = false
+        run {
+            val audio = downloadAudioHint(row.sourceKey)
+            val cached = buildList {
+                PlayableWarmCache.peek(row.anilistId, row.episode, audio, PlayableWarmCache.LANE_SHADOW)
+                    ?.let { addAll(it) }
+                PlayableWarmCache.peek(row.anilistId, row.episode, audio, PlayableWarmCache.LANE_STANDBY)
+                    ?.let { addAll(it) }
+            }
+            val plan = downloadSegmentShadowPlan(row.url, cached) ?: return@run
+            shadowArmed = SegmentShadow.tryArm(
+                fromHost = plan.fromHost,
+                toHost = plan.toHost,
+                headers = plan.headers,
+                owner = downloadOwner,
+            )
+        }
         try {
             withContext(Dispatchers.IO) {
                 downloader.download { _, _, percentDownloaded ->
@@ -268,6 +301,8 @@ class EpisodeDownloadWorker(
         } catch (error: InterruptedException) {
             if (isStopped || dropped.get()) return stopOrRetry(dao, row)
             throw IOException("Couldn't save this episode", error)
+        } finally {
+            if (shadowArmed) SegmentShadow.clear(downloadOwner)
         }
         if (isStopped || dropped.get()) return stopOrRetry(dao, row)
         val wrote = publish(dao, row, DownloadPhase.READY.name, 100, null, null)

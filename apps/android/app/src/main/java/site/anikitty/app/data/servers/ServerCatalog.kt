@@ -45,6 +45,8 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         PlaybackHostHealth.attach(hostDir)
     }
     private val resolveCache = ResolveCache(context)
+    private val episodeAffinity = EpisodeHostAffinity(context)
+    private val liveSources = LiveSourceStore(context)
     private val episodeArtCatalog = EpisodeArtCatalog.shared(context)
     private val megaPlayCrypto = MegaPlayCrypto(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -181,6 +183,27 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
     }
 
     /**
+     * Instant reopen: memory live/next lanes first, then the disk-backed copy
+     * that survives process death. Empty means the caller should race CDNs.
+     */
+    suspend fun takeProbedLive(
+        anilistId: Int,
+        episode: Int,
+        audio: String,
+    ): List<PlayableSource> = takeProbedWarm(
+        anilistId = anilistId,
+        episode = episode,
+        audio = audio,
+        diskRecall = { liveSources.recall(anilistId, episode, audio) },
+        onDiskMiss = { liveSources.forget(anilistId, episode, audio) },
+    )
+
+    /** AniList frontier jumped — drop every disk live recall for this title. */
+    fun forgetLiveTitle(anilistId: Int) {
+        liveSources.forgetTitle(anilistId)
+    }
+
+    /**
      * Resolve using the selected installed provider first, then automatically
      * try every other **enabled** provider until one returns sources.
      * A fallback plays this episode only. The provider the user picked stays selected.
@@ -192,39 +215,64 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         titleHint: String? = null,
         onAttempt: ((serverName: String, index: Int, total: Int) -> Unit)? = null,
         avoidHost: String? = null,
-        @Suppress("UNUSED_PARAMETER") warmLead: Boolean = false,
+        warmLead: Boolean = false,
     ): ResolveFailoverResult {
         val list = _resolvers.value
         if (list.isEmpty()) error("No stream extensions installed")
         val preferredId = _selectedId.value
         val down = downProviderNames()
-        val ordered = sinkUnhealthy(
-            ordered = buildList {
-                list.firstOrNull { it.server.id == preferredId }?.let { add(it) }
-                list.filterNot { it.server.id == preferredId }.forEach { add(it) }
-            },
+        val baseOrder = buildList {
+            list.firstOrNull { it.server.id == preferredId }?.let { add(it) }
+            list.filterNot { it.server.id == preferredId }.forEach { add(it) }
+        }
+        val sunk = sinkUnhealthy(
+            ordered = baseOrder,
             down = down,
             id = { it.server.id },
             name = { it.server.name },
         )
+        // Preferred stays first. Affinity for this episode rides second. Everyone
+        // else is ordered by recent CDN health so the parallel window burns on
+        // hosts that just played.
+        val affinity = episodeAffinity.recall(anilistId, episode, audio)
+        val boosted = boostAffinityProvider(sunk, affinity?.providerId) { it.server.id }
+        val ordered = preferHealthyHosts(boosted) { resolver ->
+            val hostScore = PlaybackHostHealth.scoreProvider(
+                providerId = resolver.server.id,
+                siteUrl = resolver.server.siteUrl,
+            )
+            val affinityHostBoost =
+                if (affinity != null &&
+                    resolver.server.id.equals(affinity.providerId, true) &&
+                    affinity.host.isNotBlank()
+                ) {
+                    PlaybackHostHealth.score(affinity.host).coerceAtLeast(0)
+                } else {
+                    0
+                }
+            val affinityBoost =
+                if (affinity != null && resolver.server.id.equals(affinity.providerId, true)) 250 else 0
+            hostScore + affinityHostBoost + affinityBoost
+        }
         val errors = java.util.Collections.synchronizedList(ArrayList<String>())
         val preferred = ordered.first()
         val preferredCold = preferred.server.id.lowercase() in down ||
             preferred.server.name.trim().lowercase() in down
-        // A known-dead favorite starts beside the healthy mirrors instead of
-        // making every episode wait out its head start.
+        // Warm next-ep leads open the full pack with no head-start delay.
         val headStartMs = resolveHeadStartMs(
             anyDown = down.isNotEmpty(),
             preferredCold = preferredCold,
+            warmLead = warmLead,
         )
         val raced = raceHeadStart(
             count = ordered.size,
-            parallel = 4,
+            parallel = resolveParallel(ordered.size, warmLead),
             headStartMs = headStartMs,
             timeoutMs = RESOLVE_TIMEOUT_MS,
         ) { index ->
             val resolver = ordered[index]
             onAttempt?.invoke(resolver.server.name, index, ordered.size)
+            val startedAt = android.os.SystemClock.elapsedRealtime()
             val sources = try {
                 resolver.resolve(anilistId, episode, audio, titleHint)
             } catch (err: Exception) {
@@ -234,11 +282,12 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
                 rememberProviderDown(resolver, msg)
                 null
             }
+            val resolveMs = (android.os.SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L)
             when {
                 sources.isNullOrEmpty() -> {
                     if (sources != null) {
+                        // Soft miss — do not pulse the provider down for one empty title.
                         errors += "${resolver.server.name}: empty sources"
-                        rememberProviderDown(resolver, "empty sources")
                     }
                     null
                 }
@@ -249,14 +298,43 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
                         errors += "${resolver.server.name}: same host"
                         null
                     } else {
-                        resolver to accepted
+                        Triple(resolver, accepted, resolveMs)
                     }
                 }
             }
         }
         if (raced != null) {
-            val (resolver, sources) = raced.second
+            val (resolver, sources, resolveMs) = raced.second
             rememberProviderUp(resolver)
+            val leadHost = playableHost(sources.firstOrNull()?.url.orEmpty())
+            if (leadHost.isNotEmpty()) {
+                PlaybackHostHealth.note(leadHost, ok = true, latencyMs = resolveMs)
+                PlaybackHostHealth.noteProviderCdn(resolver.server.id, leadHost)
+                // Invalidate empty/stale probe coalesce — Race dock needs edge RTT now.
+                HostHealthProbe.kickRemembered()
+            }
+            // Shadow / credits races pass avoidHost — never overwrite the playing live lane.
+            val primaryRace = avoidHost.isNullOrBlank()
+            if (primaryRace) {
+                if (leadHost.isNotEmpty()) {
+                    episodeAffinity.remember(
+                        anilistId = anilistId,
+                        episode = episode,
+                        audio = audio,
+                        providerId = resolver.server.id,
+                        host = leadHost,
+                    )
+                }
+                // Survive process death: next Play probes this before any race.
+                PlayableWarmCache.put(
+                    anilistId = anilistId,
+                    episode = episode,
+                    audio = audio,
+                    sources = sources,
+                    lane = PlayableWarmCache.LANE_LIVE,
+                )
+                liveSources.remember(anilistId, episode, audio, sources)
+            }
             val usedFallback = resolver.server.id != preferredId
             return ResolveFailoverResult(
                 sources = sources,

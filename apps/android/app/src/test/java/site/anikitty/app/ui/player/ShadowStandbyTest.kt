@@ -10,6 +10,45 @@ import org.junit.Test
 
 class ShadowStandbyTest {
     @Test
+    fun armAllowsHlsCacheButSwapWaitsUntilOfflineEnds() {
+        assertTrue(liveShadowArmAllowed(playbackLocal = false))
+        assertFalse(liveShadowArmAllowed(playbackLocal = true, playingOffline = false))
+        // Progressive file:// arms a live CDN standby while the download plays.
+        assertTrue(liveShadowArmAllowed(playbackLocal = true, playingOffline = true))
+        assertFalse(liveShadowSwapAllowed(playbackLocal = false, playingOffline = true))
+        assertTrue(liveShadowSwapAllowed(playbackLocal = false, playingOffline = false))
+        assertFalse(liveShadowSwapAllowed(playbackLocal = true, playingOffline = false))
+        assertTrue(offlinePlaybackHoldsSource(playingOffline = true))
+        assertFalse(offlinePlaybackHoldsSource(playingOffline = false))
+        assertTrue(liveShadowLeaveOfflineAllowed(playbackLocal = false, leaveOffline = true))
+        // Progressive leaveOffline may use the armed CDN after the offline hold.
+        assertTrue(liveShadowLeaveOfflineAllowed(playbackLocal = true, leaveOffline = true))
+        assertFalse(liveShadowLeaveOfflineAllowed(playbackLocal = false, leaveOffline = false))
+        assertEquals(LOCAL_SHADOW_HOST, shadowPlayingHost("file:///data/ep.mp4", playbackLocal = true))
+        assertEquals("cdn.example", shadowPlayingHost("https://cdn.example/a.m3u8", playbackLocal = false))
+        assertEquals(LOCAL_SHADOW_HOST, shadowPlayingHost("content://downloads/1", playbackLocal = true))
+        // Progressive arm must avoid the saved CDN — not the synthetic "local" key.
+        assertEquals(
+            "cdn.saved",
+            shadowArmAvoidHost(
+                playbackLocal = true,
+                sourceUrl = "https://cdn.saved/ep.mp4",
+                armKey = LOCAL_SHADOW_HOST,
+            ),
+        )
+        assertEquals(
+            "cdn.live",
+            shadowArmAvoidHost(
+                playbackLocal = false,
+                sourceUrl = "https://cdn.live/ep.m3u8",
+                armKey = "cdn.live",
+            ),
+        )
+        assertFalse(shadowShouldArmSegmentLane(playbackLocal = true))
+        assertTrue(shadowShouldArmSegmentLane(playbackLocal = false))
+    }
+
+    @Test
     fun playbackReadyArmsOncePerHost() {
         assertEquals(ShadowArm.Hold, shadowArm(playbackReady = false, armedHost = null, playingHost = "cdn-a.example"))
         assertEquals(ShadowArm.Arm, shadowArm(playbackReady = true, armedHost = null, playingHost = "cdn-a.example"))

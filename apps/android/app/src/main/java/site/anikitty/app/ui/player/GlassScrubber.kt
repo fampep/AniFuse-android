@@ -87,6 +87,15 @@ fun GlassScrubber(
         },
         label = "thumbScale",
     )
+    val trackHeightDp by animateFloatAsState(
+        targetValue = if (scrubbing) 6f else 4.5f,
+        animationSpec = if (reduced) {
+            snap()
+        } else {
+            spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMedium)
+        },
+        label = "trackHeight",
+    )
     val latestOnScrub by rememberUpdatedState(onScrub)
     val latestOnFinished by rememberUpdatedState(onScrubFinished)
     val density = LocalDensity.current
@@ -96,6 +105,11 @@ fun GlassScrubber(
     val playhead = remember { Color.White }
     var focused by remember { mutableStateOf(false) }
     var latestFraction by remember { mutableFloatStateOf(clamped) }
+    val markerEdges = remember(skipTimes, durationMs) {
+        scrubMarkerEdges(skipTimes, durationMs)
+    }
+    // Skip stamps often arrive after duration — keep the gesture on live edges.
+    val latestMarkerEdges by rememberUpdatedState(markerEdges)
 
     fun jumpBy(deltaMs: Long) {
         if (durationMs <= 0L) return
@@ -152,6 +166,9 @@ fun GlassScrubber(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(32.dp)
+                // Do not key on markerEdges — late AniSkip stamps must not
+                // cancel an in-flight drag. Live edges come from
+                // rememberUpdatedState inside the loop.
                 .pointerInput(durationMs, trackWidthPx) {
                     awaitEachGesture {
                         val down = awaitFirstDown()
@@ -206,7 +223,11 @@ fun GlassScrubber(
                                         break
                                     }
                                     change.consume()
-                                    latest = fractionAt(change.position.x)
+                                    val next = fractionAt(change.position.x)
+                                    if (scrubCrossedMarker(latest, next, latestMarkerEdges)) {
+                                        KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
+                                    }
+                                    latest = next
                                     latestFraction = latest
                                     latestOnScrub(latest)
                                 }
@@ -221,7 +242,7 @@ fun GlassScrubber(
                 },
         ) {
             val cy = size.height / 2f
-            val trackH = (if (scrubbing) 6.dp else 4.5.dp).toPx()
+            val trackH = trackHeightDp.dp.toPx()
             val radius = CornerRadius(trackH / 2f, trackH / 2f)
             val unplayed = trackIdle
             val bufferedColor = trackBuffered
@@ -236,8 +257,14 @@ fun GlassScrubber(
 
             val bufferedW = size.width * buffered.coerceIn(0f, 1f)
             if (bufferedW > 0f) {
+                // Soft glass rail ahead of the playhead — buffer reads as depth, not chalk.
                 drawRoundRect(
-                    color = bufferedColor,
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            bufferedColor.copy(alpha = 0.55f),
+                            bufferedColor.copy(alpha = 0.88f),
+                        ),
+                    ),
                     topLeft = Offset(0f, cy - trackH / 2f),
                     size = Size(bufferedW, trackH),
                     cornerRadius = radius,
@@ -270,6 +297,7 @@ fun GlassScrubber(
 
             if (durationMs > 0 && !skipTimes.isEmpty) {
                 val dur = durationMs.coerceAtLeast(1L).toFloat()
+                val tickH = trackH * 2.1f
                 skipTimes.segments.forEach { (kind, iv) ->
                     val start = (iv.startMs / dur).coerceIn(0f, 1f)
                     val end = (iv.endMs / dur).coerceIn(0f, 1f)
@@ -286,31 +314,65 @@ fun GlassScrubber(
                         size = Size(w, trackH),
                         cornerRadius = radius,
                     )
+                    // Edge ticks so intro/credits boundaries read as glass cuts.
+                    val tickAlpha = when (kind) {
+                        "intro" -> 0.78f
+                        "credits" -> 0.48f
+                        else -> 0.32f
+                    }
+                    listOf(start, end).forEach { edge ->
+                        val x = size.width * edge
+                        drawRoundRect(
+                            color = Color.White.copy(alpha = tickAlpha),
+                            topLeft = Offset(x - 0.75.dp.toPx(), cy - tickH / 2f),
+                            size = Size(1.5.dp.toPx(), tickH),
+                            cornerRadius = CornerRadius(0.75.dp.toPx(), 0.75.dp.toPx()),
+                        )
+                    }
                 }
             }
 
-            val thumbR = 7.dp.toPx() * thumbScale
+            val thumbR = (if (scrubbing) 8.dp else 7.dp).toPx() * thumbScale
             val thumbX = progressW.coerceIn(thumbR, (size.width - thumbR).coerceAtLeast(thumbR))
+            val thumbCenter = Offset(thumbX, cy)
+            // Soft ground shadow under the glass thumb.
             drawCircle(
-                color = Color.Black.copy(alpha = 0.35f),
-                radius = thumbR + 3.dp.toPx(),
-                center = Offset(thumbX, cy),
+                color = Color.Black.copy(alpha = if (scrubbing) 0.48f else 0.35f),
+                radius = thumbR + 3.5.dp.toPx(),
+                center = thumbCenter,
+            )
+            // Specular rim — reads as floating glass, not a flat white disc.
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.55f),
+                        Color.White.copy(alpha = 0.18f),
+                        Color.Transparent,
+                    ),
+                    center = thumbCenter,
+                    radius = thumbR + 2.4.dp.toPx(),
+                ),
+                radius = thumbR + 2.4.dp.toPx(),
+                center = thumbCenter,
             )
             drawCircle(
-                color = Color.White.copy(alpha = 0.22f),
-                radius = thumbR + 1.5.dp.toPx(),
-                center = Offset(thumbX, cy),
-            )
-            drawCircle(
-                color = Color.White,
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color.White,
+                        Color(0xFFF2F2F4),
+                        Color(0xFFE8E8EC),
+                    ),
+                    center = Offset(thumbX - thumbR * 0.28f, cy - thumbR * 0.32f),
+                    radius = thumbR * 1.35f,
+                ),
                 radius = thumbR,
-                center = Offset(thumbX, cy),
+                center = thumbCenter,
             )
             if (scrubbing) {
                 drawCircle(
-                    color = Color.Black.copy(alpha = 0.18f),
-                    radius = thumbR * 0.32f,
-                    center = Offset(thumbX, cy),
+                    color = Color.Black.copy(alpha = 0.14f),
+                    radius = thumbR * 0.28f,
+                    center = thumbCenter,
                 )
             }
         }

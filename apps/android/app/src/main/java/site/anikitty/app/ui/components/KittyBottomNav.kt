@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -85,17 +86,18 @@ private fun dockColors(): DockColors {
         DockColors(
             fill = StageGlassFill,
             stroke = StageGlassStroke,
-            selected = Color.White,
+            // Translucent selected fill — not a solid white paint chip.
+            selected = Color.White.copy(alpha = 0.18f),
             idle = Color(0xFF8A8A8A),
-            ink = Color(0xFF080808),
+            ink = Color.White,
         )
     } else {
         DockColors(
             fill = Color.White.copy(alpha = 0.96f),
             stroke = palette.hairline,
-            selected = palette.accent,
+            selected = palette.accent.copy(alpha = 0.22f),
             idle = palette.muted,
-            ink = palette.onAccent,
+            ink = palette.text,
         )
     }
 }
@@ -137,6 +139,15 @@ fun KittyBottomNav(
                     spotColor = Color.Black.copy(alpha = if (nightDock) 0.55f else 0.12f),
                 )
                 .stageFrosted(shape)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = if (nightDock) 0.10f else 0.06f),
+                            Color.Transparent,
+                        ),
+                    ),
+                    shape,
+                )
                 .padding(horizontal = 6.dp, vertical = 6.dp),
         ) {
             if (tabs.isNotEmpty()) {
@@ -147,8 +158,8 @@ fun KittyBottomNav(
                         snap()
                     } else {
                         spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMediumLow,
+                            dampingRatio = 0.72f,
+                            stiffness = Spring.StiffnessMedium,
                         )
                     },
                     label = "dockSlide",
@@ -160,7 +171,17 @@ fun KittyBottomNav(
                         .fillMaxHeight()
                         .padding(horizontal = 2.dp)
                         .clip(RoundedCornerShape(22.dp))
-                        .background(dock.selected),
+                        .background(dock.selected)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.White.copy(alpha = if (nightDock) 0.22f else 0.14f),
+                                    Color.Transparent,
+                                    Color.White.copy(alpha = if (nightDock) 0.06f else 0.04f),
+                                ),
+                            ),
+                        )
+                        .border(0.5.dp, Color.White.copy(alpha = 0.40f), RoundedCornerShape(22.dp)),
                 )
             }
             Row(
@@ -175,12 +196,12 @@ fun KittyBottomNav(
                         label = "navTint",
                     )
                     val scale by animateFloatAsState(
-                        targetValue = if (selected) 1.08f else 1f,
+                        targetValue = if (selected) 1.12f else 1f,
                         animationSpec = if (reduced) {
                             snap()
                         } else {
                             spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                dampingRatio = 0.68f,
                                 stiffness = Spring.StiffnessMedium,
                             )
                         },

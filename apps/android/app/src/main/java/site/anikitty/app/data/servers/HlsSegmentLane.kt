@@ -77,8 +77,10 @@ internal data class SegmentStandby(
 /**
  * The warm shadow for the episode on screen. A newer player replaces it.
  * The player that left does not clear a standby the next episode already armed.
+ * Downloads use [tryArm] so they never steal a live playback standby.
  */
 internal object SegmentShadow {
+    private val lock = Any()
     private val standby = AtomicReference<SegmentStandby?>(null)
     private val ownerRef = AtomicReference<Any?>(null)
 
@@ -86,21 +88,43 @@ internal object SegmentShadow {
         val from = fromHost.trim().lowercase()
         val to = toHost.trim().lowercase()
         if (from.isEmpty() || to.isEmpty() || from == to) return
-        standby.set(SegmentStandby(from, to, headers))
-        ownerRef.set(owner)
+        synchronized(lock) {
+            standby.set(SegmentStandby(from, to, headers))
+            ownerRef.set(owner)
+        }
+    }
+
+    /**
+     * Claim an empty slot only. Returns false when playback (or another owner)
+     * already holds the standby — never overwrites.
+     */
+    fun tryArm(fromHost: String, toHost: String, headers: Map<String, String>, owner: Any): Boolean {
+        val from = fromHost.trim().lowercase()
+        val to = toHost.trim().lowercase()
+        if (from.isEmpty() || to.isEmpty() || from == to) return false
+        synchronized(lock) {
+            if (ownerRef.get() != null) return false
+            standby.set(SegmentStandby(from, to, headers))
+            ownerRef.set(owner)
+            return true
+        }
     }
 
     fun current(): SegmentStandby? = standby.get()
 
     fun clear(owner: Any) {
-        if (ownerRef.get() !== owner) return
-        standby.set(null)
-        ownerRef.set(null)
+        synchronized(lock) {
+            if (ownerRef.get() !== owner) return
+            standby.set(null)
+            ownerRef.set(null)
+        }
     }
 
     fun reset() {
-        standby.set(null)
-        ownerRef.set(null)
+        synchronized(lock) {
+            standby.set(null)
+            ownerRef.set(null)
+        }
     }
 }
 

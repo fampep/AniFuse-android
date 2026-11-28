@@ -59,9 +59,66 @@ class PlaybackAndRaceTest {
     }
 
     @Test
+    fun winnerReturnsWithoutWaitingOnLosingTimeouts() = runBlocking {
+        val started = System.currentTimeMillis()
+        val winner = raceHeadStart(
+            count = 2,
+            parallel = 2,
+            headStartMs = 0L,
+            timeoutMs = 800L,
+        ) { index ->
+            when (index) {
+                0 -> "fast"
+                else -> {
+                    delay(700)
+                    "slow"
+                }
+            }
+        }
+        val elapsed = System.currentTimeMillis() - started
+        assertEquals(0, winner?.first)
+        assertEquals("fast", winner?.second)
+        // Must not sit on the loser's 800ms timeout after the winner lands.
+        assertTrue("elapsed=${elapsed}ms", elapsed < 400L)
+    }
+
+    @Test
     fun everyMissReturnsNull() = runBlocking {
         val winner = raceHeadStart<String>(count = 2, headStartMs = 10L, timeoutMs = 40L) { null }
         assertNull(winner)
+    }
+
+    @Test
+    fun slidingWindowStillReachesPastTheFirstPack() = runBlocking {
+        val winner = raceHeadStart(
+            count = 6,
+            parallel = 2,
+            headStartMs = 5L,
+            timeoutMs = 80L,
+        ) { index ->
+            when (index) {
+                0, 1, 2, 3, 4 -> {
+                    delay(40)
+                    null
+                }
+                else -> "tail"
+            }
+        }
+        assertEquals(5, winner?.first)
+        assertEquals("tail", winner?.second)
+    }
+
+    @Test
+    fun healthyHostsLeadAfterThePreferred() {
+        val ranked = preferHealthyHosts(listOf("pick", "dead", "fast", "unknown")) { name ->
+            when (name) {
+                "fast" -> 900
+                "unknown" -> 0
+                "dead" -> -1000
+                else -> 0
+            }
+        }
+        assertEquals(listOf("pick", "fast", "unknown", "dead"), ranked)
     }
 
     @Test

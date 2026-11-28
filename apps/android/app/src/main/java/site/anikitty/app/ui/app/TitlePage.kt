@@ -112,6 +112,7 @@ import site.anikitty.app.ui.components.EpisodeCardRow
 import site.anikitty.app.ui.components.EpisodeCardSkeletonRow
 import site.anikitty.app.ui.components.EpisodeSlide
 import site.anikitty.app.ui.components.HeroBanner
+import site.anikitty.app.ui.components.StageProgressBar
 import site.anikitty.app.ui.components.StageSlider
 import site.anikitty.app.ui.components.enrichEpisodeSlides
 import site.anikitty.app.ui.components.rememberDockScroll
@@ -1351,21 +1352,13 @@ private fun PlayButton(
                 }
             }
             if (fraction > 0f) {
-                Box(
-                    Modifier
+                StageProgressBar(
+                    fraction = fraction.coerceIn(0.04f, 1f),
+                    barHeight = 3.dp,
+                    modifier = Modifier
                         .padding(top = 8.dp)
-                        .width(220.dp)
-                        .height(3.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(Color.White.copy(alpha = 0.22f)),
-                ) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth(fraction.coerceIn(0.04f, 1f))
-                            .height(3.dp)
-                            .background(Color.White),
-                    )
-                }
+                        .width(220.dp),
+                )
             }
         }
         return
@@ -1383,6 +1376,7 @@ private fun PlayButton(
                 ),
             )
             .border(1.dp, Color.White.copy(alpha = 0.22f), playShape)
+            // spacePress already fires Confirm — do not stack a second pulse here.
             .spacePress(onClick = { if (!busy) onClick() }, grabFocus = isTelevision()),
     ) {
         Box(
@@ -1428,19 +1422,11 @@ private fun PlayButton(
             }
         }
         if (fraction > 0f && !busy) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(3.dp)
-                    .background(palette.onAccent.copy(alpha = 0.18f)),
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(fraction.coerceIn(0.04f, 1f))
-                        .height(3.dp)
-                        .background(palette.onAccent),
-                )
-            }
+            StageProgressBar(
+                fraction = fraction.coerceIn(0.04f, 1f),
+                barHeight = 3.dp,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
@@ -1479,10 +1465,15 @@ private fun TitleAction(
             .kittyGlassSoft(shape)
             .background(
                 Brush.verticalGradient(
-                    listOf(Color.White.copy(alpha = 0.08f), Color.Transparent),
+                    listOf(
+                        Color.White.copy(alpha = 0.14f),
+                        Color.White.copy(alpha = 0.04f),
+                        Color.Transparent,
+                    ),
                 ),
             )
-            .border(1.dp, Color.White.copy(alpha = 0.14f), shape)
+            .border(1.dp, Color.White.copy(alpha = 0.18f), shape)
+            // spacePress already fires Confirm — skip a second Tick.
             .spacePress(onClick)
             .padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

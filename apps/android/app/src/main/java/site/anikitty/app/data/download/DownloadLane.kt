@@ -11,10 +11,10 @@ import site.anikitty.app.data.servers.rankShadowCandidates
 internal const val DOWNLOAD_LANE = "episode-download-lane"
 
 /** How often the lane looks again while playback owns the CDN. */
-internal const val LANE_YIELD_SLICE_MS = 1_500L
+internal const val LANE_YIELD_SLICE_MS = 800L
 
 /** A dropped connection resumes this many times. Yielding to playback does not spend them. */
-internal const val DOWNLOAD_IO_ATTEMPTS = 3
+internal const val DOWNLOAD_IO_ATTEMPTS = 5
 
 internal fun downloadIoShouldResume(attempt: Int): Boolean = attempt in 1 until DOWNLOAD_IO_ATTEMPTS
 
@@ -78,6 +78,38 @@ internal fun keepPartialForNextUrl(currentUrl: String, nextUrl: String): Boolean
 }
 
 /**
+ * HLS download arms SegmentShadow only when playback has not already claimed
+ * the standby — stealing mid-watch would break live segment retarget.
+ */
+internal fun downloadMayArmSegmentShadow(playbackStandbyArmed: Boolean): Boolean =
+    !playbackStandbyArmed
+
+/** Warm shadow/standby host for mid-segment 403s during an HLS save. */
+internal data class DownloadSegmentShadowPlan(
+    val fromHost: String,
+    val toHost: String,
+    val headers: Map<String, String>,
+)
+
+internal fun downloadSegmentShadowPlan(
+    currentUrl: String,
+    cachedShadow: List<PlayableSource>,
+): DownloadSegmentShadowPlan? {
+    val from = playableHost(currentUrl)
+    if (from.isEmpty()) return null
+    val pick = inheritDownloadSource(currentUrl, cachedShadow, emptyList()) ?: return null
+    val to = playableHost(pick.url)
+    if (to.isEmpty() || to == from) return null
+    return DownloadSegmentShadowPlan(fromHost = from, toHost = to, headers = pick.headers)
+}
+
+/** Cover art for the Downloads shelf — history wins when the row has none. */
+internal fun downloadShelfCover(
+    anilistId: Int,
+    historyCoverById: Map<Int, String?>,
+): String? = historyCoverById[anilistId]?.takeIf { it.isNotBlank() }
+
+/**
  * The probed shadow wins. Otherwise the first healthy resolve on another host.
  * The URL already being saved is never a standby.
  */
@@ -106,6 +138,35 @@ internal fun downloadYields(url: String, playingHost: String?, phase: String): B
     if (playing.isEmpty()) return false
     return playableHost(url) == playing
 }
+
+/**
+ * Process-scoped owner so Cast outliving PlayerScreen still blocks the
+ * download lane on the CDN the TV is pulling.
+ */
+internal object CastDownloadYieldOwner
+
+internal fun downloadYieldOwner(casting: Boolean, localOwner: Any): Any =
+    if (casting) CastDownloadYieldOwner else localOwner
+
+/**
+ * Host downloads must yield to. While casting, prefer the cast item URL host
+ * even if the phone player is paused / the screen has left.
+ */
+internal fun downloadYieldPlayingHost(
+    casting: Boolean,
+    localSourceUrl: String?,
+    castItemUrl: String?,
+): String? {
+    val raw = if (casting) {
+        castItemUrl?.takeIf { it.isNotBlank() } ?: localSourceUrl
+    } else {
+        localSourceUrl
+    }
+    return playableHost(raw.orEmpty()).ifBlank { null }
+}
+
+/** Leave-screen clear must not wipe a host Cast already claimed. */
+internal fun shouldClearLocalPlayingOnLeave(castingContinues: Boolean): Boolean = !castingContinues
 
 internal fun downloadAhead(
     updatedAtEpochMs: Long,

@@ -100,15 +100,60 @@ internal fun castPlaybackFinished(playerState: Int, idleReason: Int): Boolean =
 internal fun castItemEndedAfterStart(sawPlayback: Boolean, playerState: Int, idleReason: Int): Boolean =
     sawPlayback && castPlaybackFinished(playerState, idleReason)
 
-/** One swipe step is 6% of the Chromecast speaker volume. */
+/** One hardware / nudge step is 6% of the Chromecast speaker volume. */
+internal const val CAST_VOLUME_STEP = 0.06f
+
 internal fun castVolumeAfterNudge(current: Float, delta: Float): Float {
     val steps = when {
         delta > 0.012f -> 1
         delta < -0.012f -> -1
         else -> 0
     }
-    return (current + steps * 0.06f).coerceIn(0f, 1f)
+    return (current + steps * CAST_VOLUME_STEP).coerceIn(0f, 1f)
 }
+
+/**
+ * Continuous finger volume must map from the level at gesture start.
+ * Feeding the same delta into [castVolumeAfterNudge] every frame stair-steps
+ * the TV by 6% per event and overshoots.
+ */
+internal fun castVolumeFromGesture(startLevel: Float, fingerDelta: Float): Float =
+    (startLevel.coerceIn(0f, 1f) + fingerDelta).coerceIn(0f, 1f)
+
+/** True when the TV speaker still needs a setVolume for this target. */
+internal fun castVolumeNeedsWrite(previous: Float, next: Float): Boolean =
+    kotlin.math.abs(previous.coerceIn(0f, 1f) - next.coerceIn(0f, 1f)) > 0.0005f
+
+/** Hold the last write briefly so a round-trip echo does not fight the finger. */
+internal const val CAST_DEVICE_VOLUME_HOLD_MS = 400L
+
+internal data class CastDeviceVolumeSnapshot(
+    val level: Float,
+    val fromSession: Boolean,
+)
+
+/**
+ * Prefer the live session volume once the post-write hold expires.
+ * A stale default hold must not mask the TV speaker forever.
+ */
+internal fun castDeviceVolumeSnapshot(
+    sessionLevel: Float?,
+    heldLevel: Float,
+    nowMs: Long,
+    lastWriteMs: Long,
+    holdMs: Long = CAST_DEVICE_VOLUME_HOLD_MS,
+): CastDeviceVolumeSnapshot {
+    val live = sessionLevel?.takeIf { it.isFinite() }?.coerceIn(0f, 1f)
+    return if (live != null && nowMs - lastWriteMs > holdMs) {
+        CastDeviceVolumeSnapshot(level = live, fromSession = true)
+    } else {
+        CastDeviceVolumeSnapshot(level = heldLevel.coerceIn(0f, 1f), fromSession = false)
+    }
+}
+
+/** Sync the hold when the snapshot came from the live session. */
+internal fun castHeldAfterRead(held: Float, snap: CastDeviceVolumeSnapshot): Float =
+    if (snap.fromSession) snap.level else held
 
 /** Stable identity for the sidecar list last given to the receiver. */
 internal fun castCaptionKey(tracks: List<SubtitleTrack>): String =
@@ -123,6 +168,42 @@ internal fun castShouldPushCaptions(
     if (!casting || tracks.isEmpty()) return false
     return castCaptionKey(tracks) != sentKey
 }
+
+/**
+ * Late library captions used to wait ~3s (400ms × 8) before giving up.
+ * Mirror phone subtitle attach: a tight 2s ceiling so the TV catches the
+ * sidecar as soon as the relay can take a new MediaItem.
+ */
+internal const val CAST_CAPTION_PUSH_POLL_MS = 50L
+internal const val CAST_CAPTION_PUSH_MAX_POLLS = 40
+
+internal fun castCaptionPushBudgetMs(
+    pollMs: Long = CAST_CAPTION_PUSH_POLL_MS,
+    maxPolls: Int = CAST_CAPTION_PUSH_MAX_POLLS,
+): Long = pollMs.coerceAtLeast(1L) * maxPolls.coerceAtLeast(1)
+
+/**
+ * Late library captions should [androidx.media3.common.Player.replaceMediaItem]
+ * when the CastPlayer already has a live item — [setMediaItem]+[prepare] blacks
+ * the TV for a beat. Callers must [seekTo] afterward: CastPlayer implements
+ * replace as queue insert/remove and drops the playhead.
+ */
+internal fun castCanReplaceMediaItem(
+    playbackState: Int,
+    itemIndex: Int,
+    mediaItemCount: Int,
+): Boolean = playbackState != 1 /* Player.STATE_IDLE */ &&
+    itemIndex >= 0 &&
+    mediaItemCount > itemIndex
+
+/** Playhead to stamp after a Cast caption replace (never negative). */
+internal fun castLateCaptionSeekMs(positionMs: Long): Long = positionMs.coerceAtLeast(0L)
+
+/**
+ * Replace/setMediaItem attaches sidecar files but does not select them.
+ * Callers must re-activate text tracks after a successful late push.
+ */
+internal fun castLateCaptionShouldActivateTracks(attached: Boolean): Boolean = attached
 
 /** Pick an active text-track id from the live cast session tracks. */
 internal fun castPickTextTrackId(
