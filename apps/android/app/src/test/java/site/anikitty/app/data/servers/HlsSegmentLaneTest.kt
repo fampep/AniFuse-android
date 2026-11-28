@@ -49,4 +49,20 @@ class HlsSegmentLaneTest {
         SegmentShadow.clear(next)
         assertNull(SegmentShadow.current())
     }
+
+    @Test
+    fun tryArmNeverStealsPlaybackStandby() {
+        val playback = Any()
+        val download = Any()
+        assertTrue(SegmentShadow.tryArm("cdn-a.example", "cdn-b.example", emptyMap(), download))
+        assertEquals("cdn-b.example", SegmentShadow.current()?.toHost)
+        // Playback may replace (arm), but a second tryArm must not steal.
+        SegmentShadow.arm("cdn-c.example", "cdn-d.example", emptyMap(), playback)
+        assertFalse(SegmentShadow.tryArm("cdn-e.example", "cdn-f.example", emptyMap(), download))
+        assertEquals("cdn-d.example", SegmentShadow.current()?.toHost)
+        SegmentShadow.clear(download)
+        assertEquals("cdn-d.example", SegmentShadow.current()?.toHost)
+        SegmentShadow.clear(playback)
+        assertNull(SegmentShadow.current())
+    }
 }

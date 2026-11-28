@@ -260,10 +260,10 @@ class EpisodeDownloadWorker(
         var lastAt = 0L
         val dropped = java.util.concurrent.atomic.AtomicBoolean(false)
         // Mid-segment 403s retarget in-place via SegmentRetargetInterceptor when
-        // a warm shadow exists and playback has not already armed the standby.
+        // a warm shadow exists. tryArm never steals a live playback standby.
         val downloadOwner = Any()
         var shadowArmed = false
-        if (downloadMayArmSegmentShadow(playbackStandbyArmed = SegmentShadow.current() != null)) {
+        run {
             val audio = downloadAudioHint(row.sourceKey)
             val cached = buildList {
                 PlayableWarmCache.peek(row.anilistId, row.episode, audio, PlayableWarmCache.LANE_SHADOW)
@@ -271,11 +271,13 @@ class EpisodeDownloadWorker(
                 PlayableWarmCache.peek(row.anilistId, row.episode, audio, PlayableWarmCache.LANE_STANDBY)
                     ?.let { addAll(it) }
             }
-            val plan = downloadSegmentShadowPlan(row.url, cached)
-            if (plan != null) {
-                SegmentShadow.arm(plan.fromHost, plan.toHost, plan.headers, downloadOwner)
-                shadowArmed = true
-            }
+            val plan = downloadSegmentShadowPlan(row.url, cached) ?: return@run
+            shadowArmed = SegmentShadow.tryArm(
+                fromHost = plan.fromHost,
+                toHost = plan.toHost,
+                headers = plan.headers,
+                owner = downloadOwner,
+            )
         }
         try {
             withContext(Dispatchers.IO) {
