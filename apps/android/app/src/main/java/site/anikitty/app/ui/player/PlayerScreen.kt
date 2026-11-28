@@ -858,9 +858,9 @@ fun PlayerScreen(
             return@LaunchedEffect
         }
         // Attach as soon as buffering/ready — 2s ceiling, not a 6s READY wait.
+        // Stay in the loop while IDLE; prepare() often starts IDLE for a beat.
         var guard = 0
         while (guard < SUBTITLE_ATTACH_MAX_POLLS && !subtitleAttachMayProceed(exo.playbackState)) {
-            if (exo.playbackState == Player.STATE_IDLE && guard > 0) return@LaunchedEffect
             delay(SUBTITLE_ATTACH_POLL_MS)
             guard++
         }
