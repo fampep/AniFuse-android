@@ -20,4 +20,46 @@ class EpisodeHostAffinityTest {
         assertEquals("154587:1:sub", EpisodeHostAffinity.key(154587, 1, "sub"))
         assertTrue(EpisodeHostAffinity.key(1, 2, "DUB").endsWith(":dub"))
     }
+
+    @Test
+    fun recentHostsAreNewestFirstAndDistinct() {
+        val hits = listOf(
+            EpisodeHostAffinity.Hit("anipm", "cdn.old", atMs = 100L),
+            EpisodeHostAffinity.Hit("mmani", "play.anien.top", atMs = 300L),
+            EpisodeHostAffinity.Hit("kaa", "play.anien.top", atMs = 200L),
+            EpisodeHostAffinity.Hit("gotaku", "cdn.mid", atMs = 250L),
+        )
+        assertEquals(
+            listOf("play.anien.top", "cdn.mid", "cdn.old"),
+            affinityRecentHosts(hits, limit = 6),
+        )
+        assertEquals(
+            listOf("play.anien.top"),
+            affinityRecentHosts(hits, limit = 1),
+        )
+        assertEquals(emptyList<String>(), affinityRecentHosts(hits, limit = 0))
+        assertEquals(emptyList<String>(), affinityRecentHosts(emptyList(), limit = 3))
+    }
+
+    @Test
+    fun seedProviderMapKeepsNewestProviderPerHost() {
+        val hits = listOf(
+            EpisodeHostAffinity.Hit("anipm", "cdn.old", atMs = 100L),
+            EpisodeHostAffinity.Hit("mmani", "play.anien.top", atMs = 300L),
+            EpisodeHostAffinity.Hit("kaa", "play.anien.top", atMs = 200L),
+            EpisodeHostAffinity.Hit("gotaku", "cdn.mid", atMs = 250L),
+            EpisodeHostAffinity.Hit("", "cdn.blank", atMs = 400L),
+        )
+        val seeds = affinityRecentSeeds(hits, limit = 6)
+        assertEquals("play.anien.top", seeds.first { it.providerId == "mmani" }.host)
+        // Blank provider hosts stay in the seed wave but never rebind LEAD.
+        assertEquals(
+            mapOf(
+                "play.anien.top" to "mmani",
+                "cdn.mid" to "gotaku",
+                "cdn.old" to "anipm",
+            ),
+            affinitySeedProviderMap(seeds),
+        )
+    }
 }

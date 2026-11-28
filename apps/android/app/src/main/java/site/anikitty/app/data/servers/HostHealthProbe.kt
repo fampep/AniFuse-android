@@ -75,19 +75,32 @@ internal data class HostProbeHit(
 )
 
 /**
- * Probe budget: healthy hosts only, preferred CDN first, then freshest.
- * Sunk marks must not steal slots from the Race dock wave.
+ * Probe budget: preferred CDN first (even when not yet in the healthy ledger),
+ * then affinity/warm seeds, then freshest healthy marks. Sunk marks must not
+ * steal slots — callers pass healthyOnly hosts.
  */
 internal fun hostsForProbeWave(
     healthyHostsNewestFirst: List<String>,
     preferredHost: String?,
+    seedHosts: List<String> = emptyList(),
     limit: Int = HOST_PROBE_LIMIT,
 ): List<String> {
-    val preferred = preferredHost?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
-    val rest = healthyHostsNewestFirst.filter { it != preferred }
+    val preferred = preferredHost?.trim()?.lowercase()
+        ?.takeIf { hostProbeUrl(it) != null }
+    val seeds = seedHosts.mapNotNull { raw ->
+        raw.trim().lowercase().takeIf { hostProbeUrl(it) != null }
+    }
+    val healthy = healthyHostsNewestFirst.mapNotNull { raw ->
+        raw.trim().lowercase().takeIf { it.isNotEmpty() }
+    }
     return buildList {
-        if (preferred != null && preferred in healthyHostsNewestFirst) add(preferred)
-        addAll(rest)
+        if (preferred != null) add(preferred)
+        for (seed in seeds) {
+            if (seed !in this) add(seed)
+        }
+        for (host in healthy) {
+            if (host !in this) add(host)
+        }
     }.take(limit.coerceAtLeast(0))
 }
 
@@ -154,8 +167,15 @@ internal object HostHealthProbe {
         timeoutMs: Long = HOST_PROBE_TIMEOUT_MS,
         nowMs: Long = System.currentTimeMillis(),
         preferredHost: String? = null,
+        seedHosts: List<String> = emptyList(),
+        /** host → providerId — rebind Race dock LEAD after HOLD expires. */
+        seedProviders: Map<String, String> = emptyMap(),
     ): List<HostProbeSample> {
         val preferred = preferredHost?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        val seeds = seedHosts.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
+        val providers = seedProviders.mapKeys { it.key.trim().lowercase() }
+            .mapValues { it.value.trim().lowercase() }
+            .filter { it.key.isNotEmpty() && it.value.isNotEmpty() }
         val work = refreshGate.withLock {
             val active = refreshFlight?.takeIf { it.isActive }
             val ledgerGen = PlaybackHostHealth.ledgerGeneration()
@@ -178,9 +198,14 @@ internal object HostHealthProbe {
                         healthyOnly = true,
                     ),
                     preferredHost = preferred,
+                    seedHosts = seeds,
                     limit = limit,
                 )
-                if (hosts.isEmpty()) emptyList() else probeHosts(hosts, timeoutMs, nowMs)
+                if (hosts.isEmpty()) {
+                    emptyList()
+                } else {
+                    probeHosts(hosts, timeoutMs, nowMs, seedProviders = providers)
+                }
             }.also {
                 refreshFlight = it
                 refreshFlightGeneration = ledgerGen
@@ -201,9 +226,19 @@ internal object HostHealthProbe {
     }
 
     /** Fire-and-forget after a resolve stamp so Race dock gets real CDN RTT. */
-    fun kickRemembered(preferredHost: String? = null) {
+    fun kickRemembered(
+        preferredHost: String? = null,
+        seedHosts: List<String> = emptyList(),
+        seedProviders: Map<String, String> = emptyMap(),
+    ) {
         refreshScope.launch {
-            runCatching { refreshRemembered(preferredHost = preferredHost) }
+            runCatching {
+                refreshRemembered(
+                    preferredHost = preferredHost,
+                    seedHosts = seedHosts,
+                    seedProviders = seedProviders,
+                )
+            }
         }
     }
 
@@ -211,9 +246,12 @@ internal object HostHealthProbe {
         hosts: List<String>,
         timeoutMs: Long = HOST_PROBE_TIMEOUT_MS,
         nowMs: Long = System.currentTimeMillis(),
+        seedProviders: Map<String, String> = emptyMap(),
     ): List<HostProbeSample> = coroutineScope {
         hosts.map { host ->
-            async(Dispatchers.IO) { probeOne(host, timeoutMs, nowMs) }
+            async(Dispatchers.IO) {
+                probeOne(host, timeoutMs, nowMs, seedProviders = seedProviders)
+            }
         }.awaitAll().filterNotNull()
     }
 
@@ -221,6 +259,7 @@ internal object HostHealthProbe {
         host: String,
         timeoutMs: Long,
         nowMs: Long,
+        seedProviders: Map<String, String> = emptyMap(),
     ): HostProbeSample? {
         val url = hostProbeUrl(host) ?: return null
         val hit = withContext(Dispatchers.IO) {
@@ -235,6 +274,12 @@ internal object HostHealthProbe {
                 method = hit.method,
             )
             PlaybackHostHealth.note(host, ok = true, latencyMs = stamped, nowMs = nowMs)
+            // Affinity seeds outlive HOLD — rebind provider → CDN so LEAD · ms
+            // reads the fresh stamp instead of a cold/expired providerCdns map.
+            val provider = seedProviders[host.trim().lowercase()]
+            if (!provider.isNullOrBlank()) {
+                PlaybackHostHealth.noteProviderCdn(provider, host, nowMs = nowMs)
+            }
         }
         return HostProbeSample(host = host, ok = ok, latencyMs = sampleMs)
     }

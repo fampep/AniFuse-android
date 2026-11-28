@@ -168,10 +168,13 @@ fun ExtensionStoreFeed(
     val view = LocalView.current
     var healthTick by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
-        // Re-probe remembered CDN hosts so Race dock is hot on cold open,
-        // then refresh the chip labels on a short UI cadence.
+        // Re-probe remembered + affinity CDN hosts so Race dock is hot on
+        // cold open, then refresh the chip labels on a short UI cadence.
         runCatching {
-            site.anikitty.app.data.servers.HostHealthProbe.refreshRemembered()
+            site.anikitty.app.data.servers.HostHealthProbe.refreshRemembered(
+                seedHosts = catalog.affinitySeedHosts(),
+                seedProviders = catalog.affinitySeedProviders(),
+            )
         }
         healthTick++
         while (true) {
@@ -180,7 +183,10 @@ fun ExtensionStoreFeed(
             if (healthTick % 12 == 0) {
                 // ~30s — refresh latency without hammering edges.
                 runCatching {
-                    site.anikitty.app.data.servers.HostHealthProbe.refreshRemembered()
+                    site.anikitty.app.data.servers.HostHealthProbe.refreshRemembered(
+                        seedHosts = catalog.affinitySeedHosts(),
+                        seedProviders = catalog.affinitySeedProviders(),
+                    )
                 }
             }
         }
@@ -416,6 +422,8 @@ fun ExtensionStoreFeed(
                                         // Prefer this provider's CDN so LEAD · ms is a live HEAD.
                                         HostHealthProbe.kickRemembered(
                                             preferredHost = PlaybackHostHealth.providerCdnHost(server.id),
+                                            seedHosts = catalog.affinitySeedHosts(),
+                                            seedProviders = catalog.affinitySeedProviders(),
                                         )
                                         KittyHaptics.perform(view, KittyHaptics.Kind.Confirm)
                                     }

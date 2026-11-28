@@ -60,6 +60,33 @@ class EpisodeHostAffinity(context: Context) {
             .apply()
     }
 
+    /**
+     * Newest affinity hits still inside [TTL_MS] — host + provider so a seed
+     * probe can rebind [PlaybackHostHealth.noteProviderCdn] after HOLD expires.
+     */
+    fun recentSeeds(limit: Int = 6, nowMs: Long = System.currentTimeMillis()): List<Hit> {
+        val hits = ArrayList<Hit>()
+        for ((_, hit) in memory) {
+            if (nowMs - hit.atMs <= TTL_MS && hit.host.isNotBlank()) hits += hit
+        }
+        for ((rawKey, value) in prefs.all) {
+            if (!rawKey.endsWith(".host") || value !is String) continue
+            val base = rawKey.removeSuffix(".host")
+            val at = prefs.getLong("$base.at", 0L)
+            if (at <= 0L || nowMs - at > TTL_MS) continue
+            val host = value.trim().lowercase()
+            if (host.isEmpty()) continue
+            if (hits.any { it.host == host }) continue
+            val provider = prefs.getString("$base.provider", "") ?: ""
+            hits += Hit(providerId = provider, host = host, atMs = at)
+        }
+        return affinityRecentSeeds(hits, limit)
+    }
+
+    /** Hostnames only — probe-wave budget. Prefer [recentSeeds] for rebinding. */
+    fun recentHosts(limit: Int = 6, nowMs: Long = System.currentTimeMillis()): List<String> =
+        recentSeeds(limit = limit, nowMs = nowMs).map { it.host }
+
     companion object {
         private const val PREFS = "anikitty_episode_affinity"
         /** Affinity stays hot across a binge night, then expires. */
@@ -87,4 +114,48 @@ internal fun <T> boostAffinityProvider(
     if (id(head).trim().lowercase() == want) return ordered
     val match = ordered.firstOrNull { id(it).trim().lowercase() == want } ?: return ordered
     return listOf(head) + match + ordered.drop(1).filterNot { id(it).trim().lowercase() == want }
+}
+
+/** Newest-first unique CDN hosts from affinity hits (TTL already filtered). */
+internal fun affinityRecentHosts(
+    hits: List<EpisodeHostAffinity.Hit>,
+    limit: Int,
+): List<String> = affinityRecentSeeds(hits, limit).map { it.host }
+
+/**
+ * Newest-first unique host hits — keeps [providerId] so Race-dock seed probes
+ * can rebind provider → CDN after PlaybackHostHealth HOLD expires.
+ */
+internal fun affinityRecentSeeds(
+    hits: List<EpisodeHostAffinity.Hit>,
+    limit: Int,
+): List<EpisodeHostAffinity.Hit> {
+    if (limit <= 0 || hits.isEmpty()) return emptyList()
+    return hits
+        .sortedByDescending { it.atMs }
+        .map { hit ->
+            hit.copy(
+                providerId = hit.providerId.trim().lowercase(),
+                host = hit.host.trim().lowercase(),
+            )
+        }
+        .filter { it.host.isNotEmpty() }
+        .distinctBy { it.host }
+        .take(limit)
+}
+
+/** host → providerId for successful seed probes to rebind Race dock LEAD. */
+internal fun affinitySeedProviderMap(
+    seeds: List<EpisodeHostAffinity.Hit>,
+): Map<String, String> {
+    if (seeds.isEmpty()) return emptyMap()
+    return buildMap {
+        for (seed in seeds) {
+            val host = seed.host.trim().lowercase()
+            val provider = seed.providerId.trim().lowercase()
+            if (host.isEmpty() || provider.isEmpty()) continue
+            // Newest-first seeds win — do not overwrite.
+            if (host !in this) put(host, provider)
+        }
+    }
 }
