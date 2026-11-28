@@ -166,10 +166,10 @@ fun GlassScrubber(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(32.dp)
-                // Do not key on markerEdges — late AniSkip stamps must not
-                // cancel an in-flight drag. Live edges come from
-                // rememberUpdatedState inside the loop.
-                .pointerInput(durationMs, trackWidthPx) {
+                // Restart only when the drag coordinate space changes.
+                // Duration (0→real) and late AniSkip stamps must not cancel
+                // an in-flight drag — live values via rememberUpdatedState.
+                .pointerInput(trackWidthPx) {
                     awaitEachGesture {
                         val down = awaitFirstDown()
                         val slop = viewConfiguration.touchSlop

@@ -34,4 +34,12 @@ class ScrubMarkerHapticsTest {
         assertFalse(scrubCrossedMarker(from = 0.2f, to = 0.3f, edges = edges))
         assertFalse(scrubCrossedMarker(from = 0.5f, to = 0.5f, edges = edges))
     }
+
+    @Test
+    fun gestureRestartsOnlyOnTrackWidthChange() {
+        assertFalse(scrubGestureShouldRestart(previousTrackWidthPx = 400f, nextTrackWidthPx = 400f))
+        assertTrue(scrubGestureShouldRestart(previousTrackWidthPx = 400f, nextTrackWidthPx = 360f))
+        // Duration / marker updates are not restart keys — width alone decides.
+        assertFalse(scrubGestureShouldRestart(previousTrackWidthPx = 400f, nextTrackWidthPx = 400f))
+    }
 }
