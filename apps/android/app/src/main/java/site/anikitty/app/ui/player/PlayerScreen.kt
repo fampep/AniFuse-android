@@ -846,10 +846,13 @@ fun PlayerScreen(
         if (shouldFetchLibraryCaptions(peeked, anilistId, episode)) {
             captionsLoading = true
             ccPhase = SubtitleAttachPhase.Fetch
+            val beforeUrls = librarySubtitles.map { it.url }
             val fetched = libraryCaptionsOrEmpty(anilistId, episode)
-            librarySubtitles = mergeSubtitleTracks(provider, fetched)
+            val merged = mergeSubtitleTracks(provider, fetched)
+            librarySubtitles = merged
             captionsLoading = false
-            ccPhase = subtitleAttachPhaseAfterFetch(librarySubtitles.size)
+            // Ready when the listing did not grow — attach will not restart.
+            ccPhase = subtitleAttachPhaseAfterFetch(beforeUrls, merged)
         } else {
             captionsLoading = false
             if (librarySubtitles.isEmpty()) ccPhase = SubtitleAttachPhase.Idle
@@ -926,7 +929,10 @@ fun PlayerScreen(
         val exo = player ?: return@LaunchedEffect
         val tracks = librarySubtitles
         if (tracks.isEmpty()) {
-            ccPhase = SubtitleAttachPhase.Idle
+            // Library fetch still in flight — keep CC · WARM; do not wipe Fetch.
+            if (ccPhase != SubtitleAttachPhase.Fetch) {
+                ccPhase = SubtitleAttachPhase.Idle
+            }
             return@LaunchedEffect
         }
         var expectedUri = playbackSource?.url ?: return@LaunchedEffect
@@ -934,7 +940,9 @@ fun PlayerScreen(
             subtitleConfig(track, default = index == 0)
         }
         if (configs.isEmpty()) {
-            ccPhase = SubtitleAttachPhase.Idle
+            if (ccPhase != SubtitleAttachPhase.Fetch) {
+                ccPhase = SubtitleAttachPhase.Idle
+            }
             return@LaunchedEffect
         }
         val nextUris = configs.map { it.uri.toString() }

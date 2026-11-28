@@ -131,9 +131,19 @@ internal fun subtitleAttachPhaseAfterAction(action: SubtitleAttachAction): Subti
         SubtitleAttachAction.ReArm -> null
     }
 
-/** Fetch finished with nothing to attach — drop the warm pill. */
-internal fun subtitleAttachPhaseAfterFetch(trackCount: Int): SubtitleAttachPhase =
-    if (trackCount <= 0) SubtitleAttachPhase.Idle else SubtitleAttachPhase.Fetch
+/**
+ * After the library round-trip: Idle on a total miss, Fetch only when new
+ * tracks arrived (attach must still run), Ready when the listing was unchanged
+ * so CC · WARM cannot stick for the rest of the episode.
+ */
+internal fun subtitleAttachPhaseAfterFetch(
+    previousUrls: List<String>,
+    nextTracks: List<SubtitleTrack>,
+): SubtitleAttachPhase {
+    if (nextTracks.isEmpty()) return SubtitleAttachPhase.Idle
+    val nextUrls = nextTracks.map { it.url }
+    return if (previousUrls == nextUrls) SubtitleAttachPhase.Ready else SubtitleAttachPhase.Fetch
+}
 
 /** 33ms × 36 ≈ 1.2s ceiling — attach as soon as Media3 leaves IDLE. */
 internal const val SUBTITLE_ATTACH_POLL_MS = 33L

@@ -166,8 +166,26 @@ class SubtitleAttachTest {
             subtitleAttachPhaseAfterAction(SubtitleAttachAction.None),
         )
         assertEquals(null, subtitleAttachPhaseAfterAction(SubtitleAttachAction.ReArm))
-        assertEquals(SubtitleAttachPhase.Idle, subtitleAttachPhaseAfterFetch(0))
-        assertEquals(SubtitleAttachPhase.Fetch, subtitleAttachPhaseAfterFetch(2))
+        assertEquals(
+            SubtitleAttachPhase.Idle,
+            subtitleAttachPhaseAfterFetch(previousUrls = emptyList(), nextTracks = emptyList()),
+        )
+        // Unchanged listing after a library miss must clear WARM, not stick Fetch.
+        val provider = listOf(track("https://cdn.example/a.vtt", "en"))
+        assertEquals(
+            SubtitleAttachPhase.Ready,
+            subtitleAttachPhaseAfterFetch(
+                previousUrls = provider.map { it.url },
+                nextTracks = provider,
+            ),
+        )
+        assertEquals(
+            SubtitleAttachPhase.Fetch,
+            subtitleAttachPhaseAfterFetch(
+                previousUrls = provider.map { it.url },
+                nextTracks = provider + track("https://lib.example/b.vtt", "es"),
+            ),
+        )
         assertTrue(SUBTITLE_ATTACH_MAX_REARMS >= 1)
     }
 
