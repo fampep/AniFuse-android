@@ -388,6 +388,13 @@ fun PlayerScreen(
     episodeSlides: List<EpisodeSlide> = emptyList(),
     fallbackArt: String? = null,
     stageModifier: Modifier = Modifier,
+    /**
+     * 18h episode-host affinity seeds for the Quality / Sources sheet Race
+     * wave. Without these the open-frame kick only knows the live host and
+     * skips CDNs that fell out of the short HOLD window.
+     */
+    affinitySeedHosts: () -> List<String> = { emptyList() },
+    affinitySeedProviders: () -> Map<String, String> = { emptyMap() },
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -532,11 +539,15 @@ fun PlayerScreen(
     LaunchedEffect(panel, source?.url, shadowHost) {
         if (panel != PlayerMenuPage.Quality) return@LaunchedEffect
         // Keep Sources RTT live while the glass sheet is open — LEAD / STANDBY
-        // badges must not freeze on the open-frame snapshot.
+        // badges must not freeze on the open-frame snapshot. Affinity seeds
+        // re-warm CDNs that expired from HOLD so the first Race wave matches
+        // the dock chip / post-resolve stamp path.
         hostHealthTick++
         while (true) {
             HostHealthProbe.kickRemembered(
                 preferredHost = playableHost(source?.url.orEmpty()).ifBlank { shadowHost },
+                seedHosts = affinitySeedHosts(),
+                seedProviders = affinitySeedProviders(),
             )
             delay(2_400L)
             hostHealthTick++
@@ -3193,7 +3204,10 @@ fun PlayerScreen(
                 }
                 val sourcesBlock = @Composable {
                     if (playlist.isNotEmpty()) {
-                        PlayerMenuSectionLabel("Sources")
+                        val affinityWarm = affinitySeedHosts().isNotEmpty()
+                        PlayerMenuSectionLabel(
+                            if (affinityWarm) "Sources · Affinity race" else "Sources",
+                        )
                         // Playing row stays LEAD on top; mirrors race-dock by live score.
                         val sourceRows = remember(playlist, sourceIndex, hostHealthTick) {
                             glassSourceRowsOrdered(

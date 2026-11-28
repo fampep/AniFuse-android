@@ -1294,6 +1294,8 @@ fun LocalFirstApp(
                 },
                 fallbackArt = current.anime.bannerImageUrl ?: current.anime.coverImageUrl,
                 stageModifier = artModifier,
+                affinitySeedHosts = { streamServers.affinitySeedHosts() },
+                affinitySeedProviders = { streamServers.affinitySeedProviders() },
             )
         }
         is Screen.Detail -> {
