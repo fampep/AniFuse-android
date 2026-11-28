@@ -150,6 +150,7 @@ android {
             java.srcDir("../../../extensions/providers/anirex")
             java.srcDir("../../../extensions/providers/animeheaven")
             java.srcDir("../../../extensions/providers/2dhive")
+            java.srcDir("../../../extensions/providers/hinatatv")
         }
     }
 }

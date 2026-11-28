@@ -1081,6 +1081,8 @@ private fun bundledStoreVersion(id: String): String = when (id) {
     "oneko" -> "1.0.0"
     "anirex" -> "1.0.0"
     "animeheaven" -> "1.0.0"
+    "twodhive" -> "1.0.0"
+    "hinatatv" -> "1.0.0"
     else -> "1.1.1"
 }
 
@@ -1106,5 +1108,7 @@ private fun providerSource(id: String): String = when (id) {
     "oneko" -> "https://github.com/fampep/AniFuse-android/tree/main/extensions/providers/oneko"
     "anirex" -> "https://github.com/fampep/AniFuse-android/tree/main/extensions/providers/anirex"
     "animeheaven" -> "https://github.com/fampep/AniFuse-android/tree/main/extensions/providers/animeheaven"
+    "twodhive" -> "https://github.com/fampep/AniFuse-android/tree/main/extensions/providers/2dhive"
+    "hinatatv" -> "https://github.com/fampep/AniFuse-android/tree/main/extensions/providers/hinatatv"
     else -> "https://github.com/fampep/anikitty-extensions"
 }

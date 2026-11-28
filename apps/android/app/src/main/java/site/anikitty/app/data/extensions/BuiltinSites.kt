@@ -61,6 +61,19 @@ internal fun builtinStoreListings(): List<StoreListing> = listOf(
         protocol = "1.1",
         playsOnDevice = true,
     ),
+    StoreListing(
+        id = HINATATV_ID,
+        name = "HinataTV",
+        description = "On-device hinatatv.site resolve. AnimePapa playlists play on this phone.",
+        github = HINATATV_SITE,
+        author = "hinatatv.site",
+        featured = true,
+        iconUrl = "https://www.google.com/s2/favicons?domain=hinatatv.site&sz=128",
+        siteUrl = HINATATV_SITE,
+        version = "site",
+        protocol = "1.1",
+        playsOnDevice = true,
+    ),
 )
 
 internal const val ANIREX_ID = "anirex"
@@ -71,6 +84,8 @@ internal const val ONEKO_ID = "oneko"
 internal const val ONEKO_SITE = "https://beta.0neko.cc/"
 internal const val TWODHIVE_ID = "twodhive"
 internal const val TWODHIVE_SITE = "https://2dhive.com/"
+internal const val HINATATV_ID = "hinatatv"
+internal const val HINATATV_SITE = "https://hinatatv.site/"
 
 internal fun isCatalogSite(listing: StoreListing): Boolean = !listing.playsOnDevice
 
