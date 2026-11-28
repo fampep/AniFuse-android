@@ -81,6 +81,9 @@ internal class ThumbnailLoader(
     /** Live cue span for adaptive scrub buckets, or null when cold. */
     fun activeCueSpanMs(positionMs: Long): Long? = cueSpanMs(cues, positionMs)
 
+    /** Cue start under the finger — SeekPreview keys plates on this, not a grid snap. */
+    fun activeCueStartMs(positionMs: Long): Long? = cueAt(cues, positionMs)?.startMs
+
     fun hasIndex(): Boolean = indexed && cues.isNotEmpty()
 
     fun release() {
