@@ -127,18 +127,13 @@ internal fun GlassResolutionChip(
     var focused by remember { mutableStateOf(false) }
     Text(
         label,
-        color = when {
-            selected -> Color.Black
-            focused -> Color.White
-            else -> Color.White
-        },
+        color = if (selected) Color.Black else Color.White,
         fontSize = 13.sp,
         fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
         maxLines = 1,
         modifier = Modifier
             .menuInitialFocus()
             .onFocusChanged { focused = it.isFocused || it.hasFocus }
-            .playerFocusCue(shape)
             .clip(shape)
             .background(
                 when {
@@ -148,10 +143,11 @@ internal fun GlassResolutionChip(
                 },
             )
             .border(
-                width = 1.dp,
+                // Constant 2.dp so focus does not resize the chip (TV-safe).
+                width = 2.dp,
                 color = when {
-                    selected -> Color.White
-                    focused -> Color.White.copy(alpha = 0.42f)
+                    focused -> Color.White
+                    selected -> Color.White.copy(alpha = 0.0f)
                     else -> Color.White.copy(alpha = 0.16f)
                 },
                 shape = shape,
@@ -174,31 +170,31 @@ internal fun GlassSourceCard(
     rttLabel: String?,
     selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+    cardModifier: Modifier = Modifier,
 ) {
     val view = LocalView.current
     val shape = RoundedCornerShape(16.dp)
     var focused by remember { mutableStateOf(false) }
+    val plate = when {
+        selected -> Modifier
+            .clip(shape)
+            .background(Color.White.copy(alpha = 0.14f))
+            .border(2.dp, if (focused) Color.White else Color.White.copy(alpha = 0.28f), shape)
+        focused -> Modifier
+            .clip(shape)
+            .background(Color.White.copy(alpha = 0.12f))
+            .border(2.dp, Color.White, shape)
+        else -> Modifier
+            .stageGlassPlate(shape = shape)
+            .border(2.dp, Color.Transparent, shape)
+    }
     Row(
-        modifier = modifier
+        modifier = cardModifier
             .fillMaxWidth()
             .padding(horizontal = 10.dp, vertical = 4.dp)
             .menuInitialFocus()
             .onFocusChanged { focused = it.isFocused || it.hasFocus }
-            .playerFocusCue(shape)
-            .then(
-                when {
-                    selected -> Modifier
-                        .clip(shape)
-                        .background(Color.White.copy(alpha = 0.14f))
-                        .border(1.dp, Color.White.copy(alpha = 0.28f), shape)
-                    focused -> Modifier
-                        .clip(shape)
-                        .background(Color.White.copy(alpha = 0.12f))
-                        .border(1.dp, Color.White.copy(alpha = 0.36f), shape)
-                    else -> Modifier.stageGlassPlate(shape = shape)
-                },
-            )
+            .then(plate)
             .clickable(role = Role.Button) {
                 KittyHaptics.perform(view, KittyHaptics.Kind.Confirm)
                 onClick()
@@ -220,8 +216,8 @@ internal fun GlassSourceCard(
             tint = if (selected || focused) Color.White else Color.White.copy(alpha = 0.72f),
             modifier = Modifier.size(20.dp),
         )
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier = Modifier.weight(1f)) {
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 title,
                 color = PlayerChrome.Paper,
