@@ -29,7 +29,9 @@ import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
 import com.google.android.gms.cast.framework.media.RemoteMediaClient
+import site.anikitty.app.data.download.CastDownloadYieldOwner
 import site.anikitty.app.data.servers.PlayableSource
+import site.anikitty.app.data.servers.PlaybackHostHealth
 import site.anikitty.app.data.servers.SubtitleTrack
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -646,6 +648,7 @@ class CastSessionHelper private constructor(
         playingItem = null
         ticketItem.set(null)
         clearProgress()
+        PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
         CastPlaybackService.demoteIfIdle()
     }
 
@@ -667,6 +670,7 @@ class CastSessionHelper private constructor(
         casting = false
         playingItem = null
         ticketItem.set(null)
+        PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
         clearProgress()
         CastPlaybackService.demoteIfIdle()
     }

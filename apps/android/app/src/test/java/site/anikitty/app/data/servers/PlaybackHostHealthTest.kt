@@ -16,6 +16,19 @@ class PlaybackHostHealthTest {
     }
 
     @Test
+    fun castOwnerKeepsPlayingHostAfterLocalLeave() {
+        PlaybackHostHealth.detach()
+        val local = Any()
+        val cast = Any()
+        PlaybackHostHealth.notePlaying("cdn-a.example", local)
+        PlaybackHostHealth.notePlaying("cdn-a.example", cast)
+        PlaybackHostHealth.clearPlaying(local)
+        assertEquals("cdn-a.example", PlaybackHostHealth.playingHost())
+        PlaybackHostHealth.clearPlaying(cast)
+        assertEquals(null, PlaybackHostHealth.playingHost())
+    }
+
+    @Test
     fun noteAdvancesLedgerGenerationOnlyForNewHosts() {
         PlaybackHostHealth.detach()
         val before = PlaybackHostHealth.ledgerGeneration()

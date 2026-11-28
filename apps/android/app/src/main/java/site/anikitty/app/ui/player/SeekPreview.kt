@@ -162,27 +162,35 @@ internal fun SeekPreview(
                     }
                 }
             }
-            Box(
-                modifier = Modifier
-                    .padding(top = if (chapterLabel.isNullOrBlank()) 6.dp else 4.dp)
-                    .clip(chipShape)
-                    .background(Color(0xCC101012))
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
-                        ),
+            AnimatedContent(
+                targetState = timeLabel,
+                transitionSpec = {
+                    fadeIn(tween(fadeMs)) togetherWith fadeOut(tween(fadeMs))
+                },
+                label = "seekPreviewTime",
+                modifier = Modifier.padding(top = if (chapterLabel.isNullOrBlank()) 6.dp else 4.dp),
+            ) { label ->
+                Box(
+                    modifier = Modifier
+                        .clip(chipShape)
+                        .background(Color(0xCC101012))
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
+                            ),
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.22f), chipShape)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        label,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.SansSerif,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.2.sp,
                     )
-                    .border(1.dp, Color.White.copy(alpha = 0.22f), chipShape)
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    timeLabel,
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.SansSerif,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 0.2.sp,
-                )
+                }
             }
         }
     }

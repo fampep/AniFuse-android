@@ -139,6 +139,35 @@ internal fun downloadYields(url: String, playingHost: String?, phase: String): B
     return playableHost(url) == playing
 }
 
+/**
+ * Process-scoped owner so Cast outliving PlayerScreen still blocks the
+ * download lane on the CDN the TV is pulling.
+ */
+internal object CastDownloadYieldOwner
+
+internal fun downloadYieldOwner(casting: Boolean, localOwner: Any): Any =
+    if (casting) CastDownloadYieldOwner else localOwner
+
+/**
+ * Host downloads must yield to. While casting, prefer the cast item URL host
+ * even if the phone player is paused / the screen has left.
+ */
+internal fun downloadYieldPlayingHost(
+    casting: Boolean,
+    localSourceUrl: String?,
+    castItemUrl: String?,
+): String? {
+    val raw = if (casting) {
+        castItemUrl?.takeIf { it.isNotBlank() } ?: localSourceUrl
+    } else {
+        localSourceUrl
+    }
+    return playableHost(raw.orEmpty()).ifBlank { null }
+}
+
+/** Leave-screen clear must not wipe a host Cast already claimed. */
+internal fun shouldClearLocalPlayingOnLeave(castingContinues: Boolean): Boolean = !castingContinues
+
 internal fun downloadAhead(
     updatedAtEpochMs: Long,
     anilistId: Int,

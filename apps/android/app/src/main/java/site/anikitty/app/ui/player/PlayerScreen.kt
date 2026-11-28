@@ -235,6 +235,7 @@ import site.anikitty.app.ui.components.StageBackBridge
 import site.anikitty.app.ui.components.StageBackPose
 import site.anikitty.app.ui.components.stageBackPose
 import site.anikitty.app.ui.theme.prefersReducedMotion
+import site.anikitty.app.data.download.CastDownloadYieldOwner
 import site.anikitty.app.data.download.DOWNLOAD_USER_AGENT
 import site.anikitty.app.data.download.EpisodeDownloadEntity
 import site.anikitty.app.data.download.EpisodeDownloads
@@ -242,12 +243,15 @@ import site.anikitty.app.data.download.cacheDataSourceFactory
 import site.anikitty.app.data.download.DownloadPhase
 import site.anikitty.app.data.download.downloadButtonLabel
 import site.anikitty.app.data.download.downloadStatus
+import site.anikitty.app.data.download.downloadYieldOwner
+import site.anikitty.app.data.download.downloadYieldPlayingHost
 import site.anikitty.app.data.download.encodeHeaders
 import site.anikitty.app.data.download.hlsStreamKeys
 import site.anikitty.app.data.download.playbackSavedEpisode
 import site.anikitty.app.data.download.resolvedStripBytes
 import site.anikitty.app.data.download.savedLocalFile
 import site.anikitty.app.data.download.savedMatches
+import site.anikitty.app.data.download.shouldClearLocalPlayingOnLeave
 import site.anikitty.app.data.download.shouldRefreshSavedUrl
 import site.anikitty.app.data.download.sourceForPlayback
 import site.anikitty.app.data.download.sourceKey
@@ -1130,14 +1134,37 @@ fun PlayerScreen(
         }
     }
     val playbackOwner = remember { Any() }
-    LaunchedEffect(ready, source?.url, playbackOwner) {
-        if (!ready) return@LaunchedEffect
-        val host = playbackHost(source?.url.orEmpty())
-        if (host.isNotEmpty()) PlaybackHostHealth.notePlaying(host, playbackOwner)
+    val latestCasting by rememberUpdatedState(isCasting)
+    val latestSourceUrl by rememberUpdatedState(source?.url)
+    LaunchedEffect(ready, source?.url, isCasting, playbackOwner) {
+        if (!ready && !isCasting) return@LaunchedEffect
+        val host = downloadYieldPlayingHost(
+            casting = isCasting,
+            localSourceUrl = source?.url,
+            castItemUrl = source?.url,
+        ) ?: return@LaunchedEffect
+        PlaybackHostHealth.notePlaying(
+            host,
+            downloadYieldOwner(casting = isCasting, localOwner = playbackOwner),
+        )
     }
     DisposableEffect(playbackOwner) {
         onDispose {
-            PlaybackHostHealth.clearPlaying(playbackOwner)
+            val castingContinues = latestCasting || CastLifetime.current()?.casting == true
+            if (shouldClearLocalPlayingOnLeave(castingContinues)) {
+                PlaybackHostHealth.clearPlaying(playbackOwner)
+            } else {
+                val host = downloadYieldPlayingHost(
+                    casting = true,
+                    localSourceUrl = latestSourceUrl,
+                    castItemUrl = latestSourceUrl,
+                )
+                if (host != null) {
+                    PlaybackHostHealth.notePlaying(host, CastDownloadYieldOwner)
+                } else {
+                    PlaybackHostHealth.clearPlaying(playbackOwner)
+                }
+            }
             SegmentShadow.clear(playbackOwner)
         }
     }

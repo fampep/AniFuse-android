@@ -173,6 +173,31 @@ class DownloadLaneTest {
     }
 
     @Test
+    fun castYieldKeepsDownloadLaneOffTheTvCdn() {
+        val local = Any()
+        assertEquals(CastDownloadYieldOwner, downloadYieldOwner(casting = true, localOwner = local))
+        assertEquals(local, downloadYieldOwner(casting = false, localOwner = local))
+        assertEquals(
+            "cdn-cast.example",
+            downloadYieldPlayingHost(
+                casting = true,
+                localSourceUrl = "https://cdn-phone.example/ep.m3u8",
+                castItemUrl = "https://cdn-cast.example/ep.m3u8",
+            ),
+        )
+        assertEquals(
+            "cdn-phone.example",
+            downloadYieldPlayingHost(
+                casting = false,
+                localSourceUrl = "https://cdn-phone.example/ep.m3u8",
+                castItemUrl = "https://cdn-cast.example/ep.m3u8",
+            ),
+        )
+        assertFalse(shouldClearLocalPlayingOnLeave(castingContinues = true))
+        assertTrue(shouldClearLocalPlayingOnLeave(castingContinues = false))
+    }
+
+    @Test
     fun hlsDownloadArmsShadowOnlyWhenPlaybackIsIdle() {
         assertTrue(downloadMayArmSegmentShadow(playbackStandbyArmed = false))
         assertFalse(downloadMayArmSegmentShadow(playbackStandbyArmed = true))
