@@ -167,11 +167,78 @@ class CastAttachTest {
     }
 
     @Test
+    fun liveCommitKeepsStampedResumePastColdStartIntro() {
+        // Phone played 5s during deferred wait; stamped attach was mid-episode.
+        assertEquals(
+            90_000L,
+            castLiveCommitPositionMs(stampedMs = 90_000L, phoneMs = 5_000L),
+        )
+        // Live watch past the stamp advances the TV commit.
+        assertEquals(
+            95_000L,
+            castLiveCommitPositionMs(stampedMs = 90_000L, phoneMs = 95_000L),
+        )
+        // Released player / zero clock falls back to the stamp.
+        assertEquals(
+            90_000L,
+            castLiveCommitPositionMs(stampedMs = 90_000L, phoneMs = 0L, knownMs = 0L),
+        )
+        // History that lands during the wait while phone is still cold-start.
+        assertEquals(
+            90_000L,
+            castLiveCommitPositionMs(
+                stampedMs = 0L,
+                phoneMs = 2_000L,
+                lateResumeMs = 90_000L,
+            ),
+        )
+        // Past the cold-start window, late history must not yank a live watch.
+        assertEquals(
+            5_000L,
+            castLiveCommitPositionMs(
+                stampedMs = 0L,
+                phoneMs = 5_000L,
+                lateResumeMs = 90_000L,
+            ),
+        )
+    }
+
+    @Test
     fun thePhoneStaysQuietWhileTheTvHasTheEpisode() {
         assertTrue(castPhoneShouldStayQuiet(casting = true, handoff = false, pending = false))
-        assertTrue(castPhoneShouldStayQuiet(casting = false, handoff = true, pending = false))
-        assertTrue(castPhoneShouldStayQuiet(casting = false, handoff = false, pending = true))
+        // Handoff / pending without a committed MediaItem keeps the phone playing.
+        assertFalse(castPhoneShouldStayQuiet(casting = false, handoff = true, pending = false))
+        assertFalse(castPhoneShouldStayQuiet(casting = false, handoff = false, pending = true))
+        assertTrue(
+            castPhoneShouldStayQuiet(
+                casting = false,
+                handoff = true,
+                pending = false,
+                receiverReady = true,
+            ),
+        )
+        assertTrue(
+            castPhoneShouldStayQuiet(
+                casting = false,
+                handoff = false,
+                pending = true,
+                receiverReady = true,
+            ),
+        )
         assertFalse(castPhoneShouldStayQuiet(casting = false, handoff = false, pending = false))
+        assertTrue(castHandoffChromeVisible(casting = false, handoff = true, pending = false))
+        assertTrue(castHandoffChromeVisible(casting = false, handoff = false, pending = true))
+        assertFalse(castHandoffChromeVisible(casting = false, handoff = false, pending = false))
+        // Connecting chrome must not mute or freeze phone transport.
+        assertTrue(castHandoffChromeVisible(casting = false, handoff = true, pending = true))
+        assertFalse(
+            castPhoneShouldStayQuiet(
+                casting = false,
+                handoff = true,
+                pending = true,
+                receiverReady = false,
+            ),
+        )
     }
 
     @Test

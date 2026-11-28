@@ -131,8 +131,6 @@ internal fun LookSettings(
 ) {
     val context = LocalContext.current
     val palette = LocalKittyPalette.current
-    val playerPrefs = remember { context.getSharedPreferences("anikitty_player", 0) }
-    var startTheater by remember { mutableStateOf(playerPrefs.getBoolean("start_theater", false)) }
     Column(
         modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -158,25 +156,6 @@ internal fun LookSettings(
                 selected = LookState.look == "amoled",
                 onClick = { LookState.setLook(context, "amoled") },
                 modifier = Modifier.weight(1f),
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                "Open the player full screen",
-                color = palette.text,
-                fontSize = 14.sp,
-                modifier = Modifier.weight(1f),
-            )
-            Switch(
-                checked = startTheater,
-                onCheckedChange = {
-                    startTheater = it
-                    playerPrefs.edit().putBoolean("start_theater", it).apply()
-                },
             )
         }
         Row(

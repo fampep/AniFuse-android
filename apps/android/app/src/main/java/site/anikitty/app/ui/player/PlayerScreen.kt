@@ -55,7 +55,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -127,10 +126,12 @@ import site.anikitty.app.cast.castVolumeFromGesture
 import site.anikitty.app.cast.castJoin
 import site.anikitty.app.cast.castSameItem
 import site.anikitty.app.cast.castAttachPositionMs
+import site.anikitty.app.cast.castLiveCommitPositionMs
 import site.anikitty.app.cast.castDisconnectResumeMs
 import site.anikitty.app.cast.castMayCorrectReceiver
 import site.anikitty.app.cast.castPhoneKnownPosition
 import site.anikitty.app.cast.castPhoneResumeTarget
+import site.anikitty.app.cast.castHandoffChromeVisible
 import site.anikitty.app.cast.castPhoneShouldStayQuiet
 import site.anikitty.app.cast.releaseCastHandoff
 import site.anikitty.app.cast.castClientRetryDelayMs
@@ -630,10 +631,11 @@ fun PlayerScreen(
     }
 
     val television = isTelevision()
-    var phoneTheater by remember { mutableStateOf(playerPrefs.getBoolean("start_theater", false)) }
+    // Phone always uses AniFusePlayerChrome theater — never the old page shell.
+    var phoneTheater by remember { mutableStateOf(true) }
     val theater = playerOpensInTheater(television, phoneTheater)
     fun leaveTheater() {
-        if (leavingTheaterClosesPlayer(television)) onClose() else phoneTheater = false
+        onClose()
     }
     fun enterTheater() {
         phoneTheater = true
@@ -662,7 +664,7 @@ fun PlayerScreen(
 
     fun closePanelOrExit() {
         when (panel) {
-            PlayerMenuPage.None -> if (theater) leaveTheater() else onClose()
+            PlayerMenuPage.None -> leaveTheater()
             PlayerMenuPage.Root -> panel = PlayerMenuPage.None
             else -> panel = PlayerMenuPage.Root
         }
@@ -861,23 +863,28 @@ fun PlayerScreen(
                 return@LaunchedEffect
             }
             val seed = playerPrefs.getInt("last_video_bitrate", 1_500_000)
-            val cap = abrFailoverCapBitrate(seed)
-            val holdMs = abrFailoverHoldMs(seed)
-            abrPhase = AbrFailoverPhase.Cap
-            meter?.reseed(abrFailoverReseedBitrate(seed))
-            val previous = selector.parameters
-            selector.parameters = previous.buildUpon().setMaxVideoBitrate(cap).build()
-            delay(holdMs)
-            if (trackSelector !== selector) return@LaunchedEffect
+            // Race dock / resolve may already know this CDN is hot — do not
+            // punish a proven pipe with a full Cap dwell from the dead host.
+            val hostRtt = PlaybackHostHealth.latencyMs(playbackHost)
+            val soft = abrFailoverReleaseBitrate(seed)
+            if (!abrFailoverSkipCap(hostRtt)) {
+                val cap = abrFailoverCapBitrate(seed)
+                abrPhase = AbrFailoverPhase.Cap
+                meter?.reseed(abrFailoverReseedBitrate(seed))
+                selector.parameters = selector.parameters.buildUpon()
+                    .setMaxVideoBitrate(cap)
+                    .build()
+                delay(abrFailoverHoldMs(seed, hostRtt))
+                if (trackSelector !== selector) return@LaunchedEffect
+            }
             // Soft release, then a second climb — uncapping immediately thrash-climbs
             // on a cold meter after a CDN swap.
             abrPhase = AbrFailoverPhase.Soft
-            val soft = abrFailoverReleaseBitrate(seed)
             meter?.reseed(soft.toLong())
             selector.parameters = selector.parameters.buildUpon()
                 .setMaxVideoBitrate(soft)
                 .build()
-            delay(abrFailoverReleaseHoldMs())
+            delay(abrFailoverReleaseHoldMs(hostRtt))
             if (trackSelector !== selector) return@LaunchedEffect
             abrPhase = AbrFailoverPhase.Climb
             val climb = abrFailoverClimbBitrate(seed)
@@ -885,7 +892,7 @@ fun PlayerScreen(
             selector.parameters = selector.parameters.buildUpon()
                 .setMaxVideoBitrate(climb)
                 .build()
-            delay(abrFailoverClimbHoldMs())
+            delay(abrFailoverClimbHoldMs(hostRtt))
             if (trackSelector === selector) {
                 meter?.clearReseed()
                 selector.parameters = selector.parameters.buildUpon()
@@ -897,19 +904,16 @@ fun PlayerScreen(
             abrPhase = AbrFailoverPhase.Idle
         }
     }
-    LaunchedEffect(player, librarySubtitles, source?.url) {
+    LaunchedEffect(player, librarySubtitles, playbackSource?.url) {
         val exo = player ?: return@LaunchedEffect
         val tracks = librarySubtitles
         if (tracks.isEmpty()) return@LaunchedEffect
-        val current = exo.currentMediaItem ?: return@LaunchedEffect
+        val expectedUri = playbackSource?.url ?: return@LaunchedEffect
         val configs = tracks.mapIndexedNotNull { index, track ->
             subtitleConfig(track, default = index == 0)
         }
         if (configs.isEmpty()) return@LaunchedEffect
-        val already = current.localConfiguration?.subtitleConfigurations.orEmpty()
-        if (subtitleConfigsUnchanged(already.map { it.uri.toString() }, configs.map { it.uri.toString() })) {
-            return@LaunchedEffect
-        }
+        val nextUris = configs.map { it.uri.toString() }
         // Attach as soon as buffering/ready — 2s ceiling, not a 6s READY wait.
         // Stay in the loop while IDLE; prepare() often starts IDLE for a beat.
         var guard = 0
@@ -917,22 +921,40 @@ fun PlayerScreen(
             delay(SUBTITLE_ATTACH_POLL_MS)
             guard++
         }
+        // Re-read after the poll — a pre-poll snapshot can soft-replace a dead
+        // CDN URI back into the player after a successful failover.
+        val live = exo.currentMediaItem ?: return@LaunchedEffect
+        val liveUri = live.localConfiguration?.uri?.toString()
+        val already = live.localConfiguration?.subtitleConfigurations.orEmpty()
+            .map { it.uri.toString() }
+        val action = subtitleAttachAction(
+            expectedUri = expectedUri,
+            liveUri = liveUri,
+            liveItemPresent = true,
+            existingUris = already,
+            nextUris = nextUris,
+            playbackState = exo.playbackState,
+            itemIndex = exo.currentMediaItemIndex,
+            mediaItemCount = exo.mediaItemCount,
+        )
+        if (action == SubtitleAttachAction.None) return@LaunchedEffect
         val resume = exo.playWhenReady
-        val playing = source?.let { sourceForPlayback(it, playbackSaved) }
-        if (playing != null) playerBundle?.pipeline?.apply(playing)
-        val updated = current.buildUpon().setSubtitleConfigurations(configs).build()
-        val itemIndex = exo.currentMediaItemIndex
-        // Soft replace keeps the playhead when live. Still-idle after the budget
-        // hard-reloads so captions are not abandoned for the opening lines.
-        if (!subtitleAttachShouldHardReload(exo.playbackState) &&
-            itemIndex >= 0 &&
-            exo.mediaItemCount > itemIndex
-        ) {
-            exo.replaceMediaItem(itemIndex, updated)
-        } else {
-            exo.setMediaItem(updated, false)
-            exo.prepare()
-            exo.playWhenReady = resume
+        playbackSource?.let { playerBundle?.pipeline?.apply(it) }
+        val updated = live.buildUpon().setSubtitleConfigurations(configs).build()
+        when (action) {
+            SubtitleAttachAction.SoftReplace ->
+                exo.replaceMediaItem(exo.currentMediaItemIndex, updated)
+            SubtitleAttachAction.HardReload -> {
+                exo.setMediaItem(updated, false)
+                exo.prepare()
+                exo.playWhenReady = resume
+            }
+            SubtitleAttachAction.None -> Unit
+        }
+        // Track groups can be empty for one tick after replace — re-assert the
+        // user's caption pick the same way Cast does after late sidecars.
+        trackSelector?.let { selector ->
+            applyTextSelection(selector, selectedTextId, textOptions, subsEnabled)
         }
     }
     // Kaa uses one master for Sub and Dub, so the player is not rebuilt.
@@ -950,13 +972,31 @@ fun PlayerScreen(
     }
     val activePlayer: Player? = if (isCasting) castHelper?.castPlayer else player
     val latestPlayer by rememberUpdatedState(player)
+    var castMediaCommitted by remember { mutableStateOf(false) }
+    LaunchedEffect(castHelper, castAttachStarted, castPending, isCasting) {
+        if (isCasting) {
+            castMediaCommitted = true
+            return@LaunchedEffect
+        }
+        if (!castAttachStarted && !castPending) {
+            castMediaCommitted = false
+            return@LaunchedEffect
+        }
+        while (true) {
+            val ready = castHelper?.hasMediaCommitted() == true
+            castMediaCommitted = ready
+            if (ready) return@LaunchedEffect
+            delay(50)
+        }
+    }
     val phoneQuietNow = castPhoneShouldStayQuiet(
         casting = isCasting,
         handoff = castAttachStarted && !isCasting && !castClientGaveUp,
         pending = castPending && !castClientGaveUp,
+        receiverReady = castMediaCommitted,
     )
-    // Keep the phone paused for the whole handoff, including the gap before
-    // the receiver reports that it is playing.
+    // Mute only after the TV has a committed MediaItem — not during the
+    // remoteMediaClient deferred-start poll.
     LaunchedEffect(player, phoneQuietNow) {
         if (!phoneQuietNow) return@LaunchedEffect
         runCatching {
@@ -1019,6 +1059,7 @@ fun PlayerScreen(
             casting = isCasting,
             handoff = castAttachStarted && !isCasting && !castClientGaveUp,
             pending = castPending && !castClientGaveUp,
+            receiverReady = castMediaCommitted,
         )
         exo.setMediaItem(itemBuilder.build(), start)
         exo.prepare()
@@ -1666,10 +1707,8 @@ fun PlayerScreen(
         val pos = castPlayhead()
         castSentPositionMs = pos
         castPlayheadRequested = true
-        runCatching {
-            latestPlayer?.pause()
-            latestPlayer?.playWhenReady = false
-        }
+        // Do not pause yet — phoneQuietNow waits for hasMediaCommitted().
+        castMediaCommitted = false
         isCasting = false
         castHint = "Connecting to your TV"
         controlsVisible = true
@@ -1684,6 +1723,22 @@ fun PlayerScreen(
                 episode = latestEpisode,
                 positionMs = pos,
                 anilistId = anilistId,
+                // Advance from the stamped attach clock only — never re-run
+                // castPlayhead() (that drops pendingResume once castSent is set)
+                // and never throw into start()'s deferred failure path.
+                livePositionMs = {
+                    val phone = runCatching {
+                        latestPlayer?.currentPosition?.takeIf { it > 0L } ?: 0L
+                    }.getOrDefault(0L)
+                    val known = runCatching { latestPosition.ms }.getOrDefault(0L)
+                    val late = maxOf(
+                        resumeAtMs,
+                        if (latestAllowHistory) latestStartPositionMs else 0L,
+                    )
+                    val next = castLiveCommitPositionMs(pos, phone, known, late)
+                    if (next > castSentPositionMs) castSentPositionMs = next
+                    next
+                },
                 onReady = { castReady() },
                 onError = { message -> castFailed(message) },
             ),
@@ -2165,6 +2220,7 @@ fun PlayerScreen(
                     casting = isCasting,
                     handoff = castAttachStarted && !isCasting && !castClientGaveUp,
                     pending = castPending && !castClientGaveUp,
+                    receiverReady = castMediaCommitted,
                 )
                 if (quiet && isPlaying) {
                     activePlayer?.pause()
@@ -2719,12 +2775,13 @@ fun PlayerScreen(
     }
 
     val handoffToCast = castAttachStarted && !isCasting && !castClientGaveUp
-    val castScreenUp = castPhoneShouldStayQuiet(
+    val castScreenUp = castHandoffChromeVisible(
         casting = isCasting,
         handoff = castAttachStarted && !castClientGaveUp,
         pending = castPending && !castClientGaveUp,
     )
-    fun castHandoffInFlight(): Boolean = castScreenUp && !isCasting
+    // Block transport only after the TV owns audio — pending handoff keeps the phone live.
+    fun castHandoffInFlight(): Boolean = phoneQuietNow && !isCasting
     fun playOnScreen() {
         if (castHandoffInFlight()) return
         (if (isCasting) castHelper?.castPlayer else player)?.play()
@@ -3317,9 +3374,7 @@ fun PlayerScreen(
                             controlsVisible = true
                             return@detectTapGestures
                         }
-                        if (!theater) {
-                            stageChrome = !stageChrome
-                        } else if (panel.isStickyStylePage()) {
+                        if (panel.isStickyStylePage()) {
                             // Keep Size / Color / … open so captions can be previewed live.
                         } else if (panel != PlayerMenuPage.None) {
                             panel = PlayerMenuPage.None
@@ -3607,74 +3662,6 @@ fun PlayerScreen(
                     .border(1.dp, Color.White.copy(alpha = 0.28f), RoundedCornerShape(999.dp))
                     .padding(horizontal = 14.dp, vertical = 8.dp),
             )
-        }
-
-        if (
-            !inPip && !theater && error == null && (player != null || castScreenUp) &&
-            panel == PlayerMenuPage.None && !showEndAutoplay
-        ) {
-            val showStageTransport = castScreenUp || !playing || stageChrome
-            if (showStageTransport) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(if (castScreenUp) 72.dp else 64.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.55f))
-                        .border(1.dp, Color.White.copy(alpha = 0.28f), CircleShape)
-                        .clickable {
-                            if (swallowCenterClick) return@clickable
-                            val current = if (isCasting) castHelper?.castPlayer else player
-                            if (current != null && playbackEnded && onNextEpisode != null && !castHandoffInFlight()) {
-                                goNextEpisode()
-                            } else {
-                                toggleOnScreen()
-                            }
-                            stageChrome = true
-                            if (castScreenUp) controlsVisible = true
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                        contentDescription = centerTransportDescription(
-                            playing = playing,
-                            ended = playbackEnded,
-                            hasNext = onNextEpisode != null,
-                        ),
-                        tint = Color.White,
-                        modifier = Modifier.size(if (castScreenUp) 34.dp else 32.dp),
-                    )
-                }
-            }
-            if ((castScreenUp || stageChrome) && !controlsLocked) {
-                ChromeDisc(
-                    onClick = { seekBy(-10_000) },
-                    size = if (castScreenUp) 52.dp else 44.dp,
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = 16.dp),
-                ) {
-                    Icon(
-                        Icons.Outlined.Replay10,
-                        contentDescription = "Back 10 seconds",
-                        tint = Color.White,
-                    )
-                }
-                ChromeDisc(
-                    onClick = { seekBy(10_000) },
-                    size = if (castScreenUp) 52.dp else 44.dp,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 16.dp),
-                ) {
-                    Icon(
-                        Icons.Outlined.Forward10,
-                        contentDescription = "Forward 10 seconds",
-                        tint = Color.White,
-                    )
-                }
-            }
         }
 
         if (castScreenUp && (!isCasting || !theater || !controlsVisible || controlsLocked)) {
@@ -4198,6 +4185,8 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
+                // Phone local playback: AniFuse chrome only. Opening a menu
+                // hides chrome under PlayerMenuFrame — never the old capsules.
                 val phoneChrome = !television && !castScreenUp && panel == PlayerMenuPage.None
                 if (phoneChrome) {
                     val res = shortQuality(qualityLabel)
@@ -4274,6 +4263,8 @@ fun PlayerScreen(
                         },
                     )
                 }
+                // Old TV/cast wash — never under AniFuse phone chrome.
+                if (!phoneChrome && (television || castScreenUp)) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -4285,8 +4276,9 @@ fun PlayerScreen(
                             ),
                         ),
                 )
+                }
 
-                // Title strip — only when settings sheet is closed.
+                // Title strip — TV / cast only (phone uses AniFuse chrome).
                 if (panel == PlayerMenuPage.None && (television || castScreenUp)) {
                     Row(
                         modifier = Modifier
@@ -4385,7 +4377,9 @@ fun PlayerScreen(
                     }
                 }
 
-                if (television || castScreenUp || panel != PlayerMenuPage.None) {
+                // Capsules / Cast transport: TV and cast only — phone menus
+                // sit on PlayerMenuFrame without the old bottom chrome.
+                if (television || castScreenUp) {
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -4728,256 +4722,8 @@ fun PlayerScreen(
             .offset { androidx.compose.ui.unit.IntOffset(0, dismissY.toInt()) }
             .background(Color(0xFF0B0C0E)),
     ) {
-        val currentEpisodeTitle = if (isMovie) {
-            null
-        } else {
-            displaySlides.firstOrNull { it.number == episode }?.title
-                ?.takeIf { it.isNotBlank() && !it.equals("Episode $episode", ignoreCase = true) }
-        }
-        val barTitle = currentEpisodeTitle ?: title
-        val barLine = when {
-            isMovie -> "Movie"
-            currentEpisodeTitle != null -> "Episode $episode · $title"
-            else -> "Episode $episode"
-        }
-        if (!theater) {
-            PlayerPageBar(
-                title = barTitle,
-                episodeLine = barLine,
-                onBack = onClose,
-                modifier = Modifier.dismissDrag(),
-            )
-        }
-        val shelfFraction = if (durationMs > 0L && shelfMinutes >= 0) {
-            (1f - (shelfMinutes * 60_000f / durationMs.toFloat())).coerceIn(0f, 1f)
-        } else {
-            0f
-        }
-        if (theater) {
-            VideoStage(modifier = stageModifier.then(Modifier.weight(1f)))
-        } else {
-            Box(
-                modifier = stageModifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f),
-            ) {
-                VideoStage(modifier = Modifier.matchParentSize())
-                if (durationMs > 0L && controlsVisible) {
-                    // Transport inside the frame, like the reference page; it
-                    // hides with the rest of the chrome so subtitles stay clear.
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f)),
-                                ),
-                            )
-                            .padding(start = 16.dp, end = 12.dp, top = 34.dp, bottom = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        LiveTimeline(
-                            player = activePlayer,
-                            scrubbing = scrubbing,
-                            scrubValue = scrubValue,
-                            durationMs = durationMs,
-                            skipTimes = skipTimes,
-                            thumbnails = source?.thumbnails,
-                            mediaUrl = source?.url,
-                            onScrub = {
-                                scrubbing = true
-                                scrubValue = it
-                            },
-                            onScrubFinished = { fraction ->
-                                val p = activePlayer
-                                val raw = (fraction * durationMs).toLong()
-                                val target = if (p != null) {
-                                    safeSeekTarget(raw, p.duration, durationMs)
-                                } else {
-                                    raw.coerceAtLeast(0L)
-                                }
-                                p?.seekTo(target)
-                                playhead.ms = target
-                                positionMs = target
-                                scrubbing = false
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            LiveClockText(
-                                player = activePlayer,
-                                scrubbing = scrubbing,
-                                scrubValue = scrubValue,
-                                durationMs = durationMs,
-                                modifier = Modifier.weight(1f),
-                            )
-                            ChromeDisc(
-                                onClick = { subsEnabled = !subsEnabled },
-                                size = 36.dp,
-                            ) {
-                                Icon(
-                                    Icons.Outlined.ClosedCaption,
-                                    contentDescription = if (subsEnabled) {
-                                        "Turn subtitles off"
-                                    } else {
-                                        "Turn subtitles on"
-                                    },
-                                    tint = if (subsEnabled) {
-                                        LookState.accent
-                                    } else {
-                                        Color.White.copy(alpha = 0.6f)
-                                    },
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                            Box(
-                                modifier = Modifier.size(44.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                CastRouteButton(
-                                    unavailable = castRouteReason,
-                                    onUnavailable = { castHint = it },
-                                )
-                            }
-                            ChromeDisc(onClick = { enterTheater() }, size = 36.dp) {
-                                Icon(
-                                    Icons.Rounded.Fullscreen,
-                                    contentDescription = "Full screen",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (!theater) {
-            PlayerEpisodeShelf(
-                title = title,
-                episodeTitle = currentEpisodeTitle,
-                episode = episode,
-                totalEpisodes = totalEpisodes.coerceAtLeast(1),
-                watchedThrough = watchedThrough,
-                positionFraction = shelfFraction,
-                audio = audio,
-                isMovie = isMovie,
-                autoNext = autoNext,
-                onPickEpisode = { picked -> onPickEpisode?.invoke(picked) },
-                onToggleAutoNext = {
-                    autoNext = !autoNext
-                    playerPrefs.edit().putBoolean("auto_next", autoNext).apply()
-                },
-                episodeSlides = displaySlides,
-                anilistId = anilistId,
-                fallbackArt = fallbackArt,
-                minutesLeft = shelfMinutes.takeIf { it >= 0 },
-                onToggleWatched = onToggleWatched,
-                sourceLabel = source?.label?.takeIf { !source.leadKey.isNullOrBlank() && it.isNotBlank() }
-                    ?: source?.serverName?.takeIf { it.isNotBlank() }
-                    ?: source?.qualityRating?.takeIf { it.isNotBlank() }
-                    ?: "Auto",
-                qualityLabel = shortQuality(qualityLabel),
-                qualitySelected = panel == PlayerMenuPage.Quality && !sourcePanelFocus,
-                onQuality = {
-                    if (panel == PlayerMenuPage.Quality && !sourcePanelFocus) {
-                        panel = PlayerMenuPage.None
-                    } else {
-                        sourcePanelFocus = false
-                        panel = PlayerMenuPage.Quality
-                    }
-                    controlsVisible = true
-                },
-                sourceSelected = panel == PlayerMenuPage.Quality && sourcePanelFocus,
-                onSource = {
-                    if (panel == PlayerMenuPage.Quality && sourcePanelFocus) {
-                        sourcePanelFocus = false
-                        panel = PlayerMenuPage.None
-                    } else {
-                        sourcePanelFocus = true
-                        panel = PlayerMenuPage.Quality
-                    }
-                    controlsVisible = true
-                },
-                audioSelected = panel == PlayerMenuPage.Audio,
-                onAudio = {
-                    sourcePanelFocus = false
-                    panel = if (panel == PlayerMenuPage.Audio) {
-                        PlayerMenuPage.None
-                    } else {
-                        PlayerMenuPage.Audio
-                    }
-                    controlsVisible = true
-                },
-                onMore = {
-                    sourcePanelFocus = false
-                    panel = if (panel == PlayerMenuPage.None) PlayerMenuPage.Root else PlayerMenuPage.None
-                    controlsVisible = true
-                },
-                onEpisodes = {
-                    if (panel == PlayerMenuPage.Episodes) {
-                        panel = PlayerMenuPage.None
-                        episodeJumpFocus = false
-                    } else {
-                        episodeJumpFocus = true
-                        panel = PlayerMenuPage.Episodes
-                    }
-                    controlsVisible = true
-                },
-                onShare = {
-                    if (anilistId > 0) {
-                        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(
-                                android.content.Intent.EXTRA_TEXT,
-                                "https://anilist.co/anime/$anilistId",
-                            )
-                            putExtra(android.content.Intent.EXTRA_SUBJECT, title)
-                        }
-                        runCatching {
-                            context.startActivity(
-                                android.content.Intent.createChooser(send, "Share")
-                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-                            )
-                        }
-                    }
-                },
-                shareEnabled = anilistId > 0,
-                downloadEnabled = download?.canStart == true,
-                downloadLabel = download?.let(::downloadButtonLabel) ?: "Download",
-                onDownload = {
-                    val current = source
-                    if (current != null && download?.canStart == true) {
-                        downloadScope.launch {
-                            EpisodeDownloads.enqueue(context, anilistId, episode, title, current)
-                        }
-                    }
-                },
-                onRemoveDownload = if (download?.canRemove == true) {
-                    {
-                        val row = savedRow
-                        if (row != null) downloadScope.launch { EpisodeDownloads.remove(context, row) }
-                    }
-                } else {
-                    null
-                },
-                modifier = Modifier.weight(1f).dismissDrag(),
-            )
-        }
-    }
-    if (!theater && panel != PlayerMenuPage.None) {
-        PlayerMenuFrame(
-            theater = false,
-            page = panel,
-            onBack = { panel = PlayerMenuPage.Root },
-            onDismiss = { panel = PlayerMenuPage.None },
-        ) {
-            PanelContents()
-        }
+        // AniFuse fullscreen chrome only — old page bar / 16:9 card / shelf gone.
+        VideoStage(modifier = Modifier.weight(1f).then(stageModifier))
     }
     }
     }

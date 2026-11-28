@@ -11,33 +11,22 @@ import org.junit.Test
 
 class PlayerStageTest {
     @Test
-    fun televisionAlwaysOpensTheater() {
+    fun phoneAndTelevisionAlwaysOpenAniFuseChrome() {
         assertTrue(playerOpensInTheater(television = true, savedTheater = false))
         assertTrue(playerOpensInTheater(television = true, savedTheater = true))
-    }
-
-    @Test
-    fun phoneKeepsTheSavedChoice() {
-        assertFalse(playerOpensInTheater(television = false, savedTheater = false))
+        // Old page shell is gone — ignore the saved start_theater preference.
+        assertTrue(playerOpensInTheater(television = false, savedTheater = false))
         assertTrue(playerOpensInTheater(television = false, savedTheater = true))
     }
 
     @Test
-    fun televisionStaysLandscape() {
+    fun chromeStaysLandscape() {
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
             playerRequestedOrientation(television = true, theater = true),
         )
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
-            playerRequestedOrientation(television = true, theater = false),
-        )
-    }
-
-    @Test
-    fun phonePageStaysPortrait() {
-        assertEquals(
-            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
             playerRequestedOrientation(television = false, theater = false),
         )
         assertEquals(
@@ -47,9 +36,9 @@ class PlayerStageTest {
     }
 
     @Test
-    fun leavingTheaterOnTelevisionClosesThePlayer() {
+    fun leavingChromeAlwaysClosesThePlayer() {
         assertTrue(leavingTheaterClosesPlayer(television = true))
-        assertFalse(leavingTheaterClosesPlayer(television = false))
+        assertTrue(leavingTheaterClosesPlayer(television = false))
     }
 
     @Test

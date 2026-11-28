@@ -104,6 +104,9 @@ class CastSessionHelper private constructor(
     /** Ticket whose MediaItem was handed to CastPlayer — errors before this are uncommitted. */
     private val mediaCommittedTicket = AtomicInteger(0)
 
+    /** Live phone playhead read when [start] finally commits media after a deferred wait. */
+    @Volatile private var loadLivePosition: (() -> Long)? = null
+
     /** Cancels an in-flight keep-path relay restore when a newer load starts. */
     private val restoreEpoch = AtomicInteger(0)
 
@@ -230,6 +233,9 @@ class CastSessionHelper private constructor(
 
     /** True from the moment a load is requested until that load settles or a newer one replaces it. */
     fun isLoadInFlight(): Boolean = activeLoadTicket.get() != 0
+
+    /** True after [start] handed a MediaItem to CastPlayer for the active ticket. */
+    fun hasMediaCommitted(): Boolean = mediaCommittedTicket.get() != 0
 
     /** Fires once per load when the receiver finishes the current item. */
     fun setPlaybackEndedListener(listener: (() -> Unit)?) {
@@ -388,6 +394,8 @@ class CastSessionHelper private constructor(
         episode: Int,
         positionMs: Long,
         anilistId: Int = 0,
+        /** Fresh phone playhead at commit time — phone keeps playing during deferred start. */
+        livePositionMs: (() -> Long)? = null,
         onReady: () -> Unit,
         onError: (String) -> Unit,
     ): CastLoadHooks {
@@ -396,6 +404,7 @@ class CastSessionHelper private constructor(
         val prepareClaim = prepareEpoch.incrementAndGet()
         val ticket = generation.incrementAndGet()
         activeLoadTicket.set(ticket)
+        loadLivePosition = livePositionMs
         val item = CastItemKey(
             anilistId = anilistId,
             episode = episode,
@@ -713,7 +722,15 @@ class CastSessionHelper private constructor(
             .build()
         // Hand the item to CastPlayer before arming watchLoad so leftover
         // IDLE/ERROR from the previous item cannot settle this ticket.
-        castPlayer.setMediaItem(item, positionMs.coerceAtLeast(0L))
+        // Prefer a live phone clock — the frozen load timestamp rewinds after
+        // a deferred remoteMediaClient wait while the phone kept playing.
+        // A throw from the live lambda must not abort this ticket (start's
+        // deferred path treats any failure as a cast load error).
+        val seekMs = runCatching { loadLivePosition?.invoke() }
+            .getOrNull()
+            ?.coerceAtLeast(0L)
+            ?: positionMs.coerceAtLeast(0L)
+        castPlayer.setMediaItem(item, seekMs)
         castPlayer.prepare()
         castPlayer.volume = heldVolume
         castPlayer.playWhenReady = true
@@ -903,6 +920,7 @@ class CastSessionHelper private constructor(
         settledTicket.set(0)
         settledSource = null
         mediaCommittedTicket.set(0)
+        loadLivePosition = null
         ticketItem.set(null)
         ticketSource.set(null)
         PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)

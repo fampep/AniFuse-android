@@ -101,12 +101,30 @@ internal fun reduceCastAttach(
     return CastAttachDecision(pending = false, loadStarted = true, load = true)
 }
 
-/** The phone stays silent while the TV has the episode, or while that handoff is still starting. */
-internal fun castPhoneShouldStayQuiet(
+/**
+ * Connecting chrome while Cast is pending or handoff is in flight — independent
+ * of whether the phone must already be muted.
+ */
+internal fun castHandoffChromeVisible(
     casting: Boolean,
     handoff: Boolean,
     pending: Boolean,
 ): Boolean = casting || handoff || pending
+
+/**
+ * Mute the phone once the TV owns the episode. Pending / deferred
+ * remoteMediaClient waits keep the phone playing so the handoff gap is not silent.
+ */
+internal fun castPhoneShouldStayQuiet(
+    casting: Boolean,
+    handoff: Boolean,
+    pending: Boolean,
+    receiverReady: Boolean = false,
+): Boolean {
+    if (casting) return true
+    if (!(handoff || pending)) return false
+    return receiverReady
+}
 
 /**
  * The receiver often opens at the start even when the load asked for a later
@@ -227,4 +245,28 @@ internal fun castAttachPositionMs(
     // still opens mid-episode instead of restarting from the cold start buffer.
     if (local > 3_000L) return local
     return maxOf(local, saved)
+}
+
+/**
+ * Playhead at Cast media commit after a deferred remoteMediaClient wait.
+ * Never drops below the stamped attach clock — re-running [castAttachPositionMs]
+ * after `castSentPositionMs` is set would clear pendingResume and open the TV
+ * on the cold-start intro instead of the mid-episode resume.
+ *
+ * [lateResumeMs] covers history that lands during the wait while the phone is
+ * still in the cold-start window (same ~3s rule as [castAttachPositionMs]).
+ */
+internal fun castLiveCommitPositionMs(
+    stampedMs: Long,
+    phoneMs: Long,
+    knownMs: Long = 0L,
+    lateResumeMs: Long = 0L,
+): Long {
+    val stamped = stampedMs.coerceAtLeast(0L)
+    val phone = phoneMs.coerceAtLeast(0L)
+    val known = knownMs.coerceAtLeast(0L)
+    val late = lateResumeMs.coerceAtLeast(0L)
+    val live = maxOf(stamped, phone, known)
+    if (phone <= 3_000L && late > live) return late
+    return live
 }
