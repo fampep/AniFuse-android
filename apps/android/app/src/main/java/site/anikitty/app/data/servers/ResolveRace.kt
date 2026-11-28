@@ -16,6 +16,25 @@ import java.util.concurrent.atomic.AtomicInteger
 /** One resolver in the playback race. An inner race must finish inside this. */
 internal const val RESOLVE_TIMEOUT_MS = 7_500L
 
+/** How often the race waiter checks for a winner or an empty field. */
+internal const val RACE_POLL_MS = 5L
+
+/**
+ * Absolute ceiling for a sliding-window race: head-start stagger plus a few
+ * timeout waves, with a small cushion for cancelChildren.
+ */
+internal fun raceAbsoluteTimeoutMs(
+    count: Int,
+    parallel: Int,
+    headStartMs: Long,
+    timeoutMs: Long,
+): Long {
+    if (count <= 0) return 0L
+    val window = parallel.coerceAtLeast(1).coerceAtMost(count)
+    val waves = ((count + window - 1) / window).coerceIn(1, 4)
+    return headStartMs + timeoutMs * waves + 500L
+}
+
 /**
  * The preferred resolver starts immediately. The next ones in the first window
  * join after [headStartMs] so a dead host does not hold the episode for its
@@ -68,13 +87,12 @@ internal suspend fun <T> raceHeadStart(
         launchRacer(index, initialDelayMs = if (index > 0) headStartMs else 0L)
     }
     yield()
-    // Sliding window: at most a few timeout waves after the head-start stagger.
-    val waves = ((count + window - 1) / window).coerceIn(1, 4)
-    val absolute = headStartMs + timeoutMs * waves + 500L
+    val absolute = raceAbsoluteTimeoutMs(count, parallel, headStartMs, timeoutMs)
     try {
         withTimeoutOrNull(absolute) {
+            // 5ms poll — a 20ms waiter used to leave ~15ms on the table after a win.
             while (!winner.isCompleted && active.get() > 0) {
-                delay(20)
+                delay(RACE_POLL_MS)
             }
             if (winner.isCompleted) winner.await() else null
         }

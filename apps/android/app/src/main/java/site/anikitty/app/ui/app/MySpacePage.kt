@@ -49,6 +49,7 @@ import site.anikitty.app.ui.icons.FluentuiSystemIconsArrowSync
 import site.anikitty.app.ui.icons.FluentuiSystemIconsBookmarkOutline
 import site.anikitty.app.ui.icons.FluentuiSystemIconsMoviesAndTvFilled
 import site.anikitty.app.ui.icons.FluentuiSystemIconsStarFilled
+import site.anikitty.app.ui.components.StageProgressBar
 import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.kittyGlassSoft
 import androidx.compose.material3.CircularProgressIndicator
@@ -1014,20 +1015,13 @@ private fun SpacePoster(
                     ),
             )
             if (progress > 0f) {
-                Box(
+                StageProgressBar(
+                    fraction = progress.coerceIn(0.04f, 1f),
+                    barHeight = 2.5.dp,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(2.dp)
-                        .align(Alignment.BottomStart)
-                        .background(palette.text.copy(alpha = 0.08f)),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .fillMaxWidth(progress.coerceIn(0f, 1f))
-                            .background(palette.text),
-                    )
-                }
+                        .align(Alignment.BottomStart),
+                )
             }
             if (selecting) {
                 SelectMark(
