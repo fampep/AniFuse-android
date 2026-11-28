@@ -72,10 +72,12 @@ import site.anikitty.app.ui.components.KittyMenuEntry
 import site.anikitty.app.ui.components.StageProgressBar
 import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.KittyAtmosphere
+import site.anikitty.app.ui.theme.KittyHaptics
 import site.anikitty.app.ui.theme.KittyRadius
 import site.anikitty.app.ui.theme.KittySpace
 import site.anikitty.app.ui.theme.LocalKittyPalette
 import site.anikitty.app.ui.theme.ShimmerBox
+import androidx.compose.ui.platform.LocalView
 
 private val ContinueCardWidth = 268.dp
 
@@ -219,6 +221,7 @@ fun ContinueWatchCard(
     val shown = cue ?: libraryCue(entry)
     val palette = LocalKittyPalette.current
     val context = LocalContext.current
+    val view = LocalView.current
     val shape = RoundedCornerShape(22.dp)
     var frame by remember(entry.anilistId, shown.episode) { mutableStateOf<EpisodeFrame?>(null) }
     var menu by remember(entry.anilistId) { mutableStateOf(false) }
@@ -263,7 +266,10 @@ fun ContinueWatchCard(
     Column(
         modifier = (if (fillWidth) Modifier.fillMaxWidth() else Modifier.width(ContinueCardWidth))
             .combinedClickable(
-                onClick = { onOpen(shown.episode) },
+                onClick = {
+                    KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
+                    onOpen(shown.episode)
+                },
                 onLongClick = { menu = true },
             )
             .semantics {

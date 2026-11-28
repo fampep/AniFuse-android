@@ -80,12 +80,14 @@ import site.anikitty.app.data.mediaFormatLabel
 import site.anikitty.app.data.watchedAgo
 import site.anikitty.app.ui.components.HeroBanner
 import site.anikitty.app.ui.components.StageGlassDisc
+import site.anikitty.app.ui.components.StageProgressBar
 import site.anikitty.app.ui.components.stageFrosted
 import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.components.StageSlider
 import site.anikitty.app.ui.components.KittyImage
 import site.anikitty.app.ui.components.PrismMark
 import site.anikitty.app.ui.components.sharedPoster
+import androidx.compose.ui.platform.LocalView
 import site.anikitty.app.ui.components.KittySectionHeading
 import site.anikitty.app.ui.theme.KittyHaptics
 import site.anikitty.app.ui.theme.KittyRadius
@@ -655,6 +657,7 @@ internal data class HomeContinueCard(
 internal fun HomeContinueRow(cards: List<HomeContinueCard>) {
     if (cards.isEmpty()) return
     val palette = LocalKittyPalette.current
+    val view = LocalView.current
     LazyRow(
         contentPadding = PaddingValues(horizontal = KittySpace.md),
         horizontalArrangement = Arrangement.spacedBy(KittySpace.sm),
@@ -663,7 +666,11 @@ internal fun HomeContinueRow(cards: List<HomeContinueCard>) {
             Column(
                 modifier = Modifier
                     .width(248.dp)
-                    .spacePress(card.onClick),
+                    .animateItem()
+                    .spacePress {
+                        KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
+                        card.onClick()
+                    },
             ) {
                 ContinueArt(card)
                 Text(
@@ -734,24 +741,19 @@ private fun ContinueArt(card: HomeContinueCard) {
                 .padding(start = 12.dp, end = 12.dp, bottom = 16.dp),
         )
         if (card.progress > 0f) {
-            Box(
+            StageProgressBar(
+                fraction = continueRailProgress(card.progress),
+                barHeight = 3.5.dp,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .height(3.5.dp)
-                    .background(Color.White.copy(alpha = 0.18f)),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth(card.progress.coerceIn(0f, 1f))
-                        .clip(RoundedCornerShape(topEnd = 2.dp, bottomEnd = 2.dp))
-                        .background(Color.White),
-                )
-            }
+                    .fillMaxWidth(),
+            )
         }
     }
 }
+
+/** Clamp continue-row progress for the glass rail. */
+internal fun continueRailProgress(progress: Float): Float = progress.coerceIn(0f, 1f)
 
 internal data class HomeAiringCard(
     val key: String,
