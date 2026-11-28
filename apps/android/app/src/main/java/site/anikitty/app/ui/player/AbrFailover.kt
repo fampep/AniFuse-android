@@ -50,6 +50,9 @@ internal fun abrFailoverClimbBitrate(seedBitrate: Int): Int {
     return (soft * 7L / 4L).toInt().coerceIn(2_000_000, 6_000_000)
 }
 
+/** Soft-release dwell before the second climb — long enough for a segment sample. */
+internal fun abrFailoverReleaseHoldMs(): Long = 1_400L
+
 /** Hold the second climb long enough for a few segment samples. */
 internal fun abrFailoverClimbHoldMs(): Long = 1_100L
 

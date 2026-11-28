@@ -23,8 +23,19 @@ class NextEpisodeWarmTest {
     fun creditsArmAfterTheNextEpisodeIsAlreadyWarm() {
         val duration = 1_200_000L
         assertEquals(
+            StreamWarmAction.PrefetchCaptions,
+            streamWarmAction(300_000L, duration, hasNext = true, nextWarmed = false, creditsArmed = false),
+        )
+        assertEquals(
             StreamWarmAction.None,
-            streamWarmAction(500_000L, duration, hasNext = true, nextWarmed = false, creditsArmed = false),
+            streamWarmAction(
+                300_000L,
+                duration,
+                hasNext = true,
+                nextWarmed = false,
+                creditsArmed = false,
+                captionsWarmed = true,
+            ),
         )
         assertEquals(
             StreamWarmAction.ResolveNext,
@@ -57,5 +68,6 @@ class NextEpisodeWarmTest {
         assertTrue(shouldWarmNextCaptions(hasNext = true, nextWarmed = false))
         assertFalse(shouldWarmNextCaptions(hasNext = true, nextWarmed = true))
         assertFalse(shouldWarmNextCaptions(hasNext = false, nextWarmed = false))
+        assertEquals(0.25f, NEXT_CAPTION_WARM_FRACTION)
     }
 }

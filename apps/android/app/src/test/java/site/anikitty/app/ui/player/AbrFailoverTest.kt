@@ -36,6 +36,7 @@ class AbrFailoverTest {
         assertTrue(climb > release)
         assertTrue(climb < Int.MAX_VALUE)
         assertEquals(4_200_000, climb)
+        assertEquals(1_400L, abrFailoverReleaseHoldMs())
         assertEquals(1_100L, abrFailoverClimbHoldMs())
     }
 

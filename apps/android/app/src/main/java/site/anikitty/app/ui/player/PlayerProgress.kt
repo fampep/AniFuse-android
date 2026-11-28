@@ -6,6 +6,11 @@
 package site.anikitty.app.ui.player
 
 import androidx.annotation.OptIn
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.delay
+import site.anikitty.app.ui.theme.prefersReducedMotion
 import site.anikitty.app.data.skip.SkipTimes
 import site.anikitty.app.ui.theme.PlayerChrome
 
@@ -211,16 +217,26 @@ internal fun NextEpisodePrompt(
             fontSize = 18.sp,
         )
         Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            when {
-                busy -> "Loading next episode…"
-                ended -> "Starting automatically in ${secondsLeft}s"
-                countdown > 0 -> "Episode ends in ${countdown}s"
-                else -> "Episode $nextEpisode is ready"
+        val statusLine = when {
+            busy -> "Loading next episode…"
+            ended -> "Starting automatically in ${secondsLeft}s"
+            countdown > 0 -> "Episode ends in ${countdown}s"
+            else -> "Episode $nextEpisode is ready"
+        }
+        val fadeMs = if (prefersReducedMotion()) 0 else 160
+        AnimatedContent(
+            targetState = statusLine,
+            transitionSpec = {
+                fadeIn(tween(fadeMs)) togetherWith fadeOut(tween(fadeMs))
             },
-            color = PlayerChrome.Graphite,
-            fontSize = 13.sp,
-        )
+            label = "nextEpisodeStatus",
+        ) { line ->
+            Text(
+                line,
+                color = PlayerChrome.Graphite,
+                fontSize = 13.sp,
+            )
+        }
         if (countdown > 0) {
             val span = if (ended) AUTOPLAY_COUNTDOWN_SEC else (NEAR_END_THRESHOLD_MS / 1000L).toInt()
             val fraction = (countdown.toFloat() / span.coerceAtLeast(1)).coerceIn(0f, 1f)

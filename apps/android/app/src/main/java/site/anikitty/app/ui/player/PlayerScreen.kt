@@ -873,7 +873,7 @@ fun PlayerScreen(
         selector.parameters = selector.parameters.buildUpon()
             .setMaxVideoBitrate(soft)
             .build()
-        delay(1_400L)
+        delay(abrFailoverReleaseHoldMs())
         if (trackSelector !== selector) return@LaunchedEffect
         val climb = abrFailoverClimbBitrate(seed)
         meter?.reseed(climb.toLong())
@@ -1113,10 +1113,19 @@ fun PlayerScreen(
     var shownSkip by remember { mutableStateOf<Pair<String, site.anikitty.app.data.skip.SkipInterval>?>(null) }
     var shelfMinutes by remember { mutableIntStateOf(-1) }
     var warmedNext by remember(anilistId, episode) { mutableStateOf(false) }
+    var captionsWarmedNext by remember(anilistId, episode) { mutableStateOf(false) }
     var creditsArmed by remember(anilistId, episode) { mutableStateOf(false) }
     val latestWarmNext by rememberUpdatedState(onWarmNextEpisode)
     val latestArmCredits by rememberUpdatedState(onArmCredits)
-    LaunchedEffect(positionMs, durationMs, warmedNext, creditsArmed, onNextEpisode, onArmCredits) {
+    LaunchedEffect(
+        positionMs,
+        durationMs,
+        warmedNext,
+        captionsWarmedNext,
+        creditsArmed,
+        onNextEpisode,
+        onArmCredits,
+    ) {
         when (
             streamWarmAction(
                 positionMs = positionMs,
@@ -1124,17 +1133,29 @@ fun PlayerScreen(
                 hasNext = onNextEpisode != null,
                 nextWarmed = warmedNext,
                 creditsArmed = creditsArmed,
+                captionsWarmed = captionsWarmedNext,
             )
         ) {
             StreamWarmAction.None -> Unit
+            StreamWarmAction.PrefetchCaptions -> {
+                captionsWarmedNext = true
+                if (anilistId <= 0) return@LaunchedEffect
+                downloadScope.launch {
+                    runCatching { SubtitleLibrary.prefetch(anilistId, episode + 1) }
+                }
+            }
             StreamWarmAction.ResolveNext -> {
                 warmedNext = true
+                captionsWarmedNext = true
                 val warm = latestWarmNext ?: return@LaunchedEffect
                 downloadScope.launch { runCatching { warm() } }
             }
             StreamWarmAction.ArmCredits -> {
                 creditsArmed = true
-                if (onNextEpisode != null) warmedNext = true
+                if (onNextEpisode != null) {
+                    warmedNext = true
+                    captionsWarmedNext = true
+                }
                 val arm = latestArmCredits ?: return@LaunchedEffect
                 val host = playbackHost(source?.url.orEmpty())
                 downloadScope.launch { runCatching { arm(host) } }
