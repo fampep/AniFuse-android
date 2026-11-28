@@ -84,6 +84,25 @@ internal fun sourceKey(source: PlayableSource): String {
     ).joinToString("\u0001")
 }
 
+/**
+ * Rebuild the stream identity a failed shelf card stored in [sourceKey].
+ * Retry must keep label / quality / audio so [savedMatches] still ties the
+ * finished file to the live episode after the save lands.
+ */
+internal fun playableFromDownload(row: EpisodeDownloadEntity): PlayableSource {
+    val parts = row.sourceKey.split('\u0001')
+    return PlayableSource(
+        url = row.url,
+        headers = decodeHeaders(row.headersJson),
+        label = parts.getOrNull(0)?.takeIf { it.isNotBlank() } ?: "Stream",
+        quality = parts.getOrNull(1)?.takeIf { it.isNotBlank() },
+        audio = parts.getOrNull(2)?.takeIf { it.isNotBlank() },
+        audioLanguage = parts.getOrNull(3)?.takeIf { it.isNotBlank() },
+        hls = row.hls,
+        stripBytes = row.stripBytes,
+    )
+}
+
 internal fun savedMatches(saved: SavedEpisode, source: PlayableSource): Boolean =
     saved.sourceKey == sourceKey(source)
 

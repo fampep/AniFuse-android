@@ -253,6 +253,41 @@ class EpisodeDownloadTest {
         assertEquals(mapOf("Referer" to "https://site"), saved.headers)
     }
 
+    @Test
+    fun shelfRetryKeepsTheStoredSourceIdentity() {
+        val original = PlayableSource(
+            url = "https://cdn.example/ep.m3u8?token=old",
+            headers = mapOf("Referer" to "https://site"),
+            label = "AniVault · HD",
+            quality = "1080p",
+            audio = "AAC 2.0 · SUB",
+            audioLanguage = "ja",
+            hls = true,
+            stripBytes = 252,
+        )
+        val row = EpisodeDownloadEntity(
+            anilistId = 9,
+            episode = 2,
+            title = "Show",
+            sourceKey = sourceKey(original),
+            url = original.url,
+            headersJson = encodeHeaders(original.headers),
+            hls = true,
+            stripBytes = 252,
+            phase = "FAILED",
+            progressPercent = 0,
+            localPath = null,
+            error = "403",
+            updatedAtEpochMs = 1L,
+        )
+        val rebuilt = playableFromDownload(row)
+        assertEquals(sourceKey(original), sourceKey(rebuilt))
+        assertTrue(savedMatches(row.toSaved(), rebuilt))
+        assertEquals("AniVault · HD", rebuilt.label)
+        assertEquals("1080p", rebuilt.quality)
+        assertEquals("ja", rebuilt.audioLanguage)
+    }
+
     private fun source(
         url: String,
         headers: Map<String, String> = emptyMap(),

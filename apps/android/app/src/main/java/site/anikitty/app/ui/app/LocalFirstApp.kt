@@ -691,6 +691,20 @@ fun LocalFirstApp(
                         }
                     },
                     onOpen = { openDetail(it) },
+                    onOpenDownload = { id, episode, title ->
+                        openDetail(
+                            AnimeSummary(
+                                id = id,
+                                title = title,
+                                coverImageUrl = null,
+                                episodes = null,
+                                format = null,
+                                averageScore = null,
+                            ),
+                            startEpisode = episode,
+                            autoPlay = true,
+                        )
+                    },
                     onOpenAccount = { tab = "profile" },
                     onSeeAllContinue = { screen = Screen.Continue },
                     onBrowse = { tab = "search" },
