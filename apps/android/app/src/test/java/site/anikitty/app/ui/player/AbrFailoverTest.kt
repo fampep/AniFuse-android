@@ -24,6 +24,20 @@ class AbrFailoverTest {
     }
 
     @Test
+    fun hotRaceDockRttSkipsCapAndShortensHolds() {
+        assertTrue(abrFailoverSkipCap(80L))
+        assertFalse(abrFailoverSkipCap(200L))
+        assertFalse(abrFailoverSkipCap(null))
+        assertFalse(abrFailoverSkipCap(0L))
+        assertEquals(600L, abrFailoverHoldMs(3_500_000, hostLatencyMs = 90L))
+        assertTrue(abrFailoverHoldMs(3_500_000, hostLatencyMs = 200L) < abrFailoverHoldMs(3_500_000))
+        assertEquals(700L, abrFailoverReleaseHoldMs(80L))
+        assertEquals(500L, abrFailoverClimbHoldMs(80L))
+        assertEquals(1_400L, abrFailoverReleaseHoldMs(null))
+        assertEquals(1_100L, abrFailoverClimbHoldMs(null))
+    }
+
+    @Test
     fun softReleaseSitsBetweenTheCapAndAnUncappedLadder() {
         val seed = 1_500_000
         val release = abrFailoverReleaseBitrate(seed)

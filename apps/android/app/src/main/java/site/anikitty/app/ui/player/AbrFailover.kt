@@ -35,11 +35,34 @@ internal fun abrFailoverStatusPill(phase: AbrFailoverPhase): String? = when (pha
 internal fun abrFailoverCapBitrate(seedBitrate: Int): Int =
     seedBitrate.coerceIn(500_000, 2_400_000).coerceAtMost(1_200_000)
 
+/** Race-dock RTT that already proves the new CDN — skip the Cap rung. */
+internal const val ABR_HOT_RTT_MS = 120L
+
+/** Warm RTT — shorten Cap/Soft dwells without skipping Cap. */
+internal const val ABR_WARM_RTT_MS = 280L
+
+/**
+ * Skip Cap when Race dock / resolve already stamped a hot RTT for the new host.
+ * Cold or unknown latency keeps the full Cap → Soft → Climb ladder.
+ */
+internal fun abrFailoverSkipCap(hostLatencyMs: Long?): Boolean {
+    val rtt = hostLatencyMs ?: return false
+    return rtt in 1L..ABR_HOT_RTT_MS
+}
+
 /** Hold the ceiling longer when the previous rung was high — the meter is more wrong. */
-internal fun abrFailoverHoldMs(seedBitrate: Int): Long = when {
-    seedBitrate >= 3_000_000 -> 3_200L
-    seedBitrate >= 1_800_000 -> 2_600L
-    else -> 2_000L
+internal fun abrFailoverHoldMs(seedBitrate: Int, hostLatencyMs: Long? = null): Long {
+    val base = when {
+        seedBitrate >= 3_000_000 -> 3_200L
+        seedBitrate >= 1_800_000 -> 2_600L
+        else -> 2_000L
+    }
+    val rtt = hostLatencyMs ?: return base
+    return when {
+        rtt in 1L..ABR_HOT_RTT_MS -> 600L
+        rtt in 1L..ABR_WARM_RTT_MS -> (base * 2L / 5L).coerceAtLeast(800L)
+        else -> base
+    }
 }
 
 /**
@@ -62,10 +85,24 @@ internal fun abrFailoverClimbBitrate(seedBitrate: Int): Int {
 }
 
 /** Soft-release dwell before the second climb — long enough for a segment sample. */
-internal fun abrFailoverReleaseHoldMs(): Long = 1_400L
+internal fun abrFailoverReleaseHoldMs(hostLatencyMs: Long? = null): Long {
+    val rtt = hostLatencyMs ?: return 1_400L
+    return when {
+        rtt in 1L..ABR_HOT_RTT_MS -> 700L
+        rtt in 1L..ABR_WARM_RTT_MS -> 900L
+        else -> 1_400L
+    }
+}
 
 /** Hold the second climb long enough for a few segment samples. */
-internal fun abrFailoverClimbHoldMs(): Long = 1_100L
+internal fun abrFailoverClimbHoldMs(hostLatencyMs: Long? = null): Long {
+    val rtt = hostLatencyMs ?: return 1_100L
+    return when {
+        rtt in 1L..ABR_HOT_RTT_MS -> 500L
+        rtt in 1L..ABR_WARM_RTT_MS -> 700L
+        else -> 1_100L
+    }
+}
 
 /** Forced meter reading while the soft cap is live — matches the ladder ceiling. */
 internal fun abrFailoverReseedBitrate(seedBitrate: Int): Long =
