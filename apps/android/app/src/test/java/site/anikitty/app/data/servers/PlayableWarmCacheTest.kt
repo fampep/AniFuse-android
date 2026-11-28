@@ -194,6 +194,43 @@ class PlayableWarmCacheTest {
     }
 
     @Test
+    fun deadShadowDiskFallsThroughToStandbyWithoutWipingIt() = kotlinx.coroutines.runBlocking {
+        PlayableWarmCache.clear()
+        var shadowMiss = false
+        var standbyMiss = false
+        val hit = takeProbedShadow(
+            anilistId = 8,
+            episode = 3,
+            audio = "sub",
+            nowMs = 50L,
+            probe = { sources ->
+                sources.filterNot { it.url.contains("dead") }
+            },
+            diskLanes = listOf(
+                DiskLaneRecall(
+                    recall = {
+                        listOf(PlayableSource(url = "https://cdn.dead/shadow.m3u8"))
+                    },
+                    onMiss = { shadowMiss = true },
+                ),
+                DiskLaneRecall(
+                    recall = {
+                        listOf(PlayableSource(url = "https://cdn.alive/standby.m3u8"))
+                    },
+                    onMiss = { standbyMiss = true },
+                ),
+            ),
+        )
+        assertEquals("https://cdn.alive/standby.m3u8", hit.single().url)
+        assertEquals(true, shadowMiss)
+        assertEquals(false, standbyMiss)
+        assertEquals(
+            1,
+            PlayableWarmCache.peek(8, 3, "sub", PlayableWarmCache.LANE_SHADOW, nowMs = 60L)?.size,
+        )
+    }
+
+    @Test
     fun liveEncodeKeepsUnwrapAndHlsFields() {
         val source = PlayableSource(
             url = "https://cdn.example/master.txt",

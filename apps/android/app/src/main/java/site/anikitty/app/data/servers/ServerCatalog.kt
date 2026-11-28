@@ -211,14 +211,45 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         anilistId = anilistId,
         episode = episode,
         audio = audio,
-        diskRecall = {
-            liveSources.recall(anilistId, episode, audio, PlayableWarmCache.LANE_SHADOW)
-                ?: liveSources.recall(anilistId, episode, audio, PlayableWarmCache.LANE_STANDBY)
-        },
-        onDiskMiss = {
-            liveSources.forget(anilistId, episode, audio, PlayableWarmCache.LANE_SHADOW)
-            liveSources.forget(anilistId, episode, audio, PlayableWarmCache.LANE_STANDBY)
-        },
+        // Probe each disk lane independently — a dead shadow must not wipe standby.
+        diskLanes = listOf(
+            DiskLaneRecall(
+                recall = {
+                    liveSources.recall(
+                        anilistId,
+                        episode,
+                        audio,
+                        PlayableWarmCache.LANE_SHADOW,
+                    )
+                },
+                onMiss = {
+                    liveSources.forget(
+                        anilistId,
+                        episode,
+                        audio,
+                        PlayableWarmCache.LANE_SHADOW,
+                    )
+                },
+            ),
+            DiskLaneRecall(
+                recall = {
+                    liveSources.recall(
+                        anilistId,
+                        episode,
+                        audio,
+                        PlayableWarmCache.LANE_STANDBY,
+                    )
+                },
+                onMiss = {
+                    liveSources.forget(
+                        anilistId,
+                        episode,
+                        audio,
+                        PlayableWarmCache.LANE_STANDBY,
+                    )
+                },
+            ),
+        ),
     )
 
     /** Persist a probed shadow/standby lane across process death. */
