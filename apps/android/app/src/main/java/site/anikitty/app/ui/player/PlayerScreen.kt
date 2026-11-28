@@ -408,6 +408,8 @@ fun PlayerScreen(
     var shadowArmedHost by remember(anilistId, episode) { mutableStateOf<String?>(null) }
     var recoveryNote by remember(anilistId, episode) { mutableStateOf<String?>(null) }
     var retriedSource by remember(sourceIndex, playlist) { mutableStateOf(false) }
+    /** One offline hold retry — separate from [retriedSource] so RetrySame cannot spend it. */
+    var offlineRetried by remember(anilistId, episode, sourceIndex) { mutableStateOf(false) }
     var skipTimes by remember { mutableStateOf(SkipTimes()) }
     var didSeekStart by remember { mutableStateOf(false) }
     var resumeAtMs by remember { mutableLongStateOf(startPositionMs) }
@@ -1276,8 +1278,9 @@ fun PlayerScreen(
     val freshResolve = remember(anilistId, episode, playAttempt) { java.util.concurrent.atomic.AtomicBoolean(false) }
     var refreshingSources by remember(anilistId, episode) { mutableStateOf(false) }
 
-    fun shadowReadyNow(): Boolean {
-        if (!liveShadowSwapAllowed(playbackLocal, playingOffline)) return false
+    fun shadowReadyNow(leaveOffline: Boolean = false): Boolean {
+        if (!leaveOffline && !liveShadowSwapAllowed(playbackLocal, playingOffline)) return false
+        if (leaveOffline && playbackLocal) return false
         val age = if (shadowAt <= 0L) Long.MAX_VALUE else System.currentTimeMillis() - shadowAt
         return shadowList.isNotEmpty() && shadowStandbyReady(
             playingHost = playbackHost(source?.url.orEmpty()),
@@ -1287,8 +1290,8 @@ fun PlayerScreen(
     }
 
     /** Hand the playhead to the probed runner-up. No resolve, no second probe. */
-    fun swapToShadow(resumeMs: Long): Boolean {
-        if (!shadowReadyNow()) return false
+    fun swapToShadow(resumeMs: Long, leaveOffline: Boolean = false): Boolean {
+        if (!shadowReadyNow(leaveOffline = leaveOffline)) return false
         val next = shadowList
         if (next.isEmpty() || next.map { it.url } == playlist.map { it.url }) return false
         val host = playbackHost(source?.url.orEmpty())
@@ -1300,6 +1303,7 @@ fun PlayerScreen(
         shadowHost = null
         shadowAt = 0L
         shadowArmedHost = null
+        offlineRetried = false
         resumeAtMs = resumeMs
         positionMs = resumeMs
         playhead.ms = resumeMs
@@ -1454,11 +1458,10 @@ fun PlayerScreen(
                 }
             }
             SourceRecovery.NextSource -> {
-                // Offline / HLS-cache: one seek/prepare like RetrySame. A second
-                // failure falls through so a corrupt/evicted download can leave
-                // for a live sibling or shadow instead of looping forever.
-                if (!fromCast && offlinePlaybackHoldsSource(playingOffline) && !retriedSource) {
-                    retriedSource = true
+                // Offline / HLS-cache: one dedicated seek/prepare. A second failure
+                // leaves via armed shadow (leaveOffline) or a live sibling.
+                if (!fromCast && offlinePlaybackHoldsSource(playingOffline) && !offlineRetried) {
+                    offlineRetried = true
                     runCatching {
                         target?.seekTo(decision.resumeMs.coerceAtLeast(0L))
                         target?.prepare()
@@ -1466,16 +1469,18 @@ fun PlayerScreen(
                     }
                     return
                 }
+                val leaveOffline = !fromCast && offlinePlaybackHoldsSource(playingOffline) && offlineRetried
                 val failedHost = playbackHost(
                     (if (fromCast) latestSources.getOrNull(latestSourceIndex) else source)?.url.orEmpty(),
                 )
                 if (failedHost.isNotEmpty()) PlaybackHostHealth.note(failedHost, ok = false)
-                if (swapToShadow(decision.resumeMs)) return
+                if (swapToShadow(decision.resumeMs, leaveOffline = leaveOffline)) return
                 if (fromCast) {
                     failCastSource(message, liveMs)
                 } else {
                     val next = nextIndexSkippingDead(fromCast = false)
                     if (next != null) {
+                        offlineRetried = false
                         resumeAtMs = decision.resumeMs
                         positionMs = decision.resumeMs
                         playhead.ms = decision.resumeMs
@@ -1993,6 +1998,7 @@ fun PlayerScreen(
                 if (playbackState == Player.STATE_READY) {
                     durationMs = activePlayer?.duration?.coerceAtLeast(0L) ?: 0L
                     error = null
+                    offlineRetried = false
                     // Local ExoPlayer stays ready while Chromecast plays. Do not
                     // cancel the cast end countdown from that player.
                     if (playbackEnded && !isCasting) {

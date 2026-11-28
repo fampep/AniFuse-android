@@ -18,6 +18,9 @@ class ShadowStandbyTest {
         assertFalse(liveShadowSwapAllowed(playbackLocal = true, playingOffline = false))
         assertTrue(offlinePlaybackHoldsSource(playingOffline = true))
         assertFalse(offlinePlaybackHoldsSource(playingOffline = false))
+        assertTrue(liveShadowLeaveOfflineAllowed(playbackLocal = false, leaveOffline = true))
+        assertFalse(liveShadowLeaveOfflineAllowed(playbackLocal = true, leaveOffline = true))
+        assertFalse(liveShadowLeaveOfflineAllowed(playbackLocal = false, leaveOffline = false))
     }
 
     @Test
