@@ -306,7 +306,8 @@ internal fun AniListProfileCard(
     val days = auth.minutesWatched / 1440
     val score = if (auth.meanScore <= 0f) "—" else auth.meanScore.toInt().toString()
     val glassSyncLabel = cloudSyncStatusLabel(syncLabel, pendingPushCount)
-    val syncing = cloudSyncIsBusy(glassSyncLabel)
+    // Phase busy only — SYNC · N must not disable the Sync control.
+    val syncing = cloudSyncIsBusy(syncLabel)
     val onBanner = !auth.bannerUrl.isNullOrBlank()
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(

@@ -30,11 +30,14 @@ internal fun cloudSyncStatusLabel(syncLabel: String?, pendingCount: Int): String
     return aniListPendingPushPill(pendingCount) ?: "Connected"
 }
 
+/**
+ * True only for an in-flight drain / import phase. Idle `SYNC · N` is owed
+ * work, not a busy lock — Cloud Sync must stay tappable so the user can drain.
+ */
 internal fun cloudSyncIsBusy(syncLabel: String?): Boolean =
     syncLabel == "Syncing…" ||
         syncLabel?.startsWith("Pushing") == true ||
-        syncLabel?.startsWith("Importing") == true ||
-        syncLabel?.startsWith("SYNC ·") == true
+        syncLabel?.startsWith("Importing") == true
 
 internal fun cloudSyncPhaseLabel(phase: AniListSyncPhase): String = when (phase) {
     AniListSyncPhase.Pushing -> "Pushing marks…"

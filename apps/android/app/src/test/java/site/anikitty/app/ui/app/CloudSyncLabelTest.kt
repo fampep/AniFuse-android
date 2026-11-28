@@ -37,7 +37,7 @@ class CloudSyncLabelTest {
             "Pushing marks…",
             cloudSyncStatusLabel(syncLabel = "Pushing marks…", pendingCount = 4),
         )
-        assertTrue(cloudSyncIsBusy("SYNC · 2"))
+        assertFalse(cloudSyncIsBusy("SYNC · 2"))
         assertEquals("SYNC · 2", cloudSyncStatusLabel("SYNC · 2"))
     }
 }

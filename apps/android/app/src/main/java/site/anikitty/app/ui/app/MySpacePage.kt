@@ -167,7 +167,8 @@ fun MySpaceFeed(
     var bulkBusy by remember { mutableStateOf(false) }
     var bulkNote by remember { mutableStateOf<String?>(null) }
     val glassSyncLabel = cloudSyncStatusLabel(syncLabel, pendingPushCount)
-    val syncing = cloudSyncIsBusy(glassSyncLabel)
+    // Phase busy only — SYNC · N must not disable the Sync control.
+    val syncing = cloudSyncIsBusy(syncLabel)
     val selection = ShowSelection(
         active = selecting,
         ids = selectedIds,
