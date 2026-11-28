@@ -861,23 +861,28 @@ fun PlayerScreen(
                 return@LaunchedEffect
             }
             val seed = playerPrefs.getInt("last_video_bitrate", 1_500_000)
-            val cap = abrFailoverCapBitrate(seed)
-            val holdMs = abrFailoverHoldMs(seed)
-            abrPhase = AbrFailoverPhase.Cap
-            meter?.reseed(abrFailoverReseedBitrate(seed))
-            val previous = selector.parameters
-            selector.parameters = previous.buildUpon().setMaxVideoBitrate(cap).build()
-            delay(holdMs)
-            if (trackSelector !== selector) return@LaunchedEffect
+            // Race dock / resolve may already know this CDN is hot — do not
+            // punish a proven pipe with a full Cap dwell from the dead host.
+            val hostRtt = PlaybackHostHealth.latencyMs(playbackHost)
+            val soft = abrFailoverReleaseBitrate(seed)
+            if (!abrFailoverSkipCap(hostRtt)) {
+                val cap = abrFailoverCapBitrate(seed)
+                abrPhase = AbrFailoverPhase.Cap
+                meter?.reseed(abrFailoverReseedBitrate(seed))
+                selector.parameters = selector.parameters.buildUpon()
+                    .setMaxVideoBitrate(cap)
+                    .build()
+                delay(abrFailoverHoldMs(seed, hostRtt))
+                if (trackSelector !== selector) return@LaunchedEffect
+            }
             // Soft release, then a second climb — uncapping immediately thrash-climbs
             // on a cold meter after a CDN swap.
             abrPhase = AbrFailoverPhase.Soft
-            val soft = abrFailoverReleaseBitrate(seed)
             meter?.reseed(soft.toLong())
             selector.parameters = selector.parameters.buildUpon()
                 .setMaxVideoBitrate(soft)
                 .build()
-            delay(abrFailoverReleaseHoldMs())
+            delay(abrFailoverReleaseHoldMs(hostRtt))
             if (trackSelector !== selector) return@LaunchedEffect
             abrPhase = AbrFailoverPhase.Climb
             val climb = abrFailoverClimbBitrate(seed)
@@ -885,7 +890,7 @@ fun PlayerScreen(
             selector.parameters = selector.parameters.buildUpon()
                 .setMaxVideoBitrate(climb)
                 .build()
-            delay(abrFailoverClimbHoldMs())
+            delay(abrFailoverClimbHoldMs(hostRtt))
             if (trackSelector === selector) {
                 meter?.clearReseed()
                 selector.parameters = selector.parameters.buildUpon()
