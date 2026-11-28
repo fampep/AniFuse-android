@@ -48,9 +48,15 @@ class MmaniServer(
         require(episode > 0) { "episode required" }
         if (audio.equals("dub", ignoreCase = true)) error(DUB)
 
-        val boot = bootSession()
-        val episodesBody = ajaxGet(boot, "episodes&epid=$anilistId")
-            ?: error(if (boot.reachable) MISSING else BLOCKED)
+        var boot = bootSession()
+        var episodesBody = ajaxGet(boot, "episodes&epid=$anilistId")
+        if (episodesBody == null) {
+            // Cached token / dead origin — clear and try mirrors once.
+            clearBoot(boot.token)
+            boot = bootSession()
+            episodesBody = ajaxGet(boot, "episodes&epid=$anilistId")
+                ?: error(if (boot.reachable) MISSING else BLOCKED)
+        }
         val servers = mmaniEpisodeServers(episodesBody)
         if (servers.isEmpty()) error(MISSING)
 
@@ -58,8 +64,12 @@ class MmaniServer(
         val ep = mmaniPickEpisode(lane.episodes, episode) ?: error(MISSING)
         cache?.putShow(ID, anilistId, ep.link, "${boot.origin}/up/")
 
-        val eplinkBody = ajaxGet(boot, "eplink&data=${ep.link}")
-            ?: error(MISSING)
+        var eplinkBody = ajaxGet(boot, "eplink&data=${ep.link}")
+        if (eplinkBody == null) {
+            clearBoot(boot.token)
+            boot = bootSession()
+            eplinkBody = ajaxGet(boot, "eplink&data=${ep.link}") ?: error(MISSING)
+        }
         val embeds = mmaniEplinkSources(eplinkBody)
         if (embeds.isEmpty()) error(MISSING)
 
@@ -125,6 +135,14 @@ class MmaniServer(
         return Boot(origins.first().trimEnd('/'), "", reachable = reachable)
     }
 
+    private fun clearBoot(token: String?) {
+        if (token.isNullOrBlank()) {
+            kfToken.set(null)
+            return
+        }
+        kfToken.compareAndSet(token, null)
+    }
+
     private fun ajaxGet(boot: Boot, query: String): String? {
         if (boot.token.isBlank()) return null
         val url = "${boot.origin}/ajax.php?$query"
@@ -138,10 +156,15 @@ class MmaniServer(
             .header("X-KF-Req", boot.token)
             .header("Cache-Control", "no-store")
             .build()
-        val body = execute(request) ?: return null
+        val body = execute(request)
+        if (body == null) {
+            // HTTP/network failure — drop cached token so mirrors can boot.
+            clearBoot(boot.token)
+            return null
+        }
         // Stale KF token → Forbidden JSON; drop cache so the next resolve reboots.
         if (mmaniAjaxForbidden(body)) {
-            kfToken.compareAndSet(boot.token, null)
+            clearBoot(boot.token)
             return null
         }
         return body
@@ -340,6 +363,7 @@ internal fun mmaniAjaxForbidden(body: String): Boolean {
     if (!trimmed.startsWith("{")) return false
     val obj = runCatching { JSONObject(trimmed) }.getOrNull() ?: return false
     val msg = obj.optString("msg").ifBlank { obj.optString("message") }
-    return obj.optBoolean("status") == false ||
-        msg.contains("Forbidden", ignoreCase = true)
+    if (msg.contains("Forbidden", ignoreCase = true)) return true
+    // optBoolean defaults to false when absent — only treat explicit status:false.
+    return obj.has("status") && !obj.optBoolean("status", true)
 }

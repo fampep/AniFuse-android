@@ -94,6 +94,10 @@ class MmaniPlaybackTest {
     @Test
     fun ajaxForbiddenDetectsStaleKfToken() {
         assertTrue(mmaniAjaxForbidden("""{"status":false,"msg":"Forbidden"}"""))
+        assertTrue(mmaniAjaxForbidden("""{"status":false,"msg":"nope"}"""))
+        // Missing status must not look forbidden — would evict a valid KF token.
+        assertFalse(mmaniAjaxForbidden("""{}"""))
+        assertFalse(mmaniAjaxForbidden("""{"message":"ok"}"""))
         assertFalse(mmaniAjaxForbidden("""[{"server_name":"S-sub","id":10,"server_data":[]}]"""))
     }
 }
