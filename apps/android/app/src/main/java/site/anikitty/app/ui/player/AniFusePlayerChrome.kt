@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ClosedCaption
+import androidx.compose.material.icons.outlined.Equalizer
 import androidx.compose.material.icons.outlined.Forward10
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Lock
@@ -63,7 +64,8 @@ import site.anikitty.app.ui.theme.KittyHaptics
  * Phone theater chrome — Plex-inspired transport geometry, AniFuse glass skin.
  *
  * Center row: Previous · −10 · Play/Pause · +10 · Next
- * Bottom: scrubber + Plex elapsed/−remaining clock, then glass dock (Episodes / Sources / Subs / Speed).
+ * Bottom: scrubber + Plex elapsed/−remaining clock, then glass dock
+ * (Episodes / Sources / Quality / Subs / Speed).
  */
 @Composable
 internal fun AniFusePlayerChrome(
@@ -72,6 +74,7 @@ internal fun AniFusePlayerChrome(
     statusPill: String,
     playing: Boolean,
     speedLabel: String,
+    qualityLabel: String,
     showEpisodes: Boolean,
     showPrevious: Boolean,
     showNext: Boolean,
@@ -93,6 +96,7 @@ internal fun AniFusePlayerChrome(
     onEpisodes: () -> Unit,
     onPrevious: () -> Unit,
     onSources: () -> Unit,
+    onQuality: () -> Unit,
     onSubtitles: () -> Unit,
     onSpeed: () -> Unit,
     onNext: () -> Unit,
@@ -257,6 +261,7 @@ internal fun AniFusePlayerChrome(
                         )
                     }
                     ActionPill(Icons.Outlined.Layers, "Sources", onSources)
+                    ActionPill(Icons.Outlined.Equalizer, qualityLabel, onQuality)
                     ActionPill(Icons.Outlined.ClosedCaption, "Subs", onSubtitles)
                     ActionPill(Icons.Outlined.Speed, speedLabel, onSpeed)
                 }

@@ -4217,6 +4217,7 @@ fun PlayerScreen(
                         ).joinToString(" · "),
                         playing = playing,
                         speedLabel = speedLabel(playbackSpeed),
+                        qualityLabel = shortQuality(qualityLabel),
                         showEpisodes = !isMovie && onPickEpisode != null && totalEpisodes > 1,
                         showPrevious = chromeShowsPreviousEpisode(
                             showEpisodes = !isMovie && onPickEpisode != null && totalEpisodes > 1,
@@ -4258,6 +4259,11 @@ fun PlayerScreen(
                         onPrevious = { goPreviousEpisode() },
                         onSources = {
                             sourcePanelFocus = true
+                            panel = PlayerMenuPage.Quality
+                            controlsVisible = true
+                        },
+                        onQuality = {
+                            sourcePanelFocus = false
                             panel = PlayerMenuPage.Quality
                             controlsVisible = true
                         },
