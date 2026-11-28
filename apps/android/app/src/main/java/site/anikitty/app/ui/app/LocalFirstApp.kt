@@ -348,14 +348,12 @@ fun LocalFirstApp(
                         "anikitty_watch",
                         android.content.Context.MODE_PRIVATE,
                     ).getString("audio", "sub")?.takeIf { it == "dub" } ?: "sub"
-                    scope.launch {
-                        site.anikitty.app.data.servers.warmFrontierContinues(
-                            catalog = streamServers,
-                            targets = result.frontierWarms,
-                            audio = audio,
-                            appContext = context.applicationContext,
-                        )
-                    }
+                    site.anikitty.app.data.servers.launchWarmFrontierContinues(
+                        catalog = streamServers,
+                        targets = result.frontierWarms,
+                        audio = audio,
+                        appContext = context.applicationContext,
+                    )
                 }
             }.onFailure { e ->
                 syncLabel = friendlyFailure(e.message)
@@ -707,14 +705,12 @@ fun LocalFirstApp(
                                         "anikitty_watch",
                                         android.content.Context.MODE_PRIVATE,
                                     ).getString("audio", "sub")?.takeIf { it == "dub" } ?: "sub"
-                                    scope.launch {
-                                        site.anikitty.app.data.servers.warmFrontierContinues(
-                                            catalog = streamServers,
-                                            targets = result.frontierWarms,
-                                            audio = audio,
-                                            appContext = context.applicationContext,
-                                        )
-                                    }
+                                    site.anikitty.app.data.servers.launchWarmFrontierContinues(
+                                        catalog = streamServers,
+                                        targets = result.frontierWarms,
+                                        audio = audio,
+                                        appContext = context.applicationContext,
+                                    )
                                 }
                                 aniListSyncResultLabel(result)
                             }.getOrElse { e -> friendlyFailure(e.message) }

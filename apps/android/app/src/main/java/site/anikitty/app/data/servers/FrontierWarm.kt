@@ -4,15 +4,28 @@
 package site.anikitty.app.data.servers
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import site.anikitty.app.data.anilist.FrontierWarmTarget
 
 /** Cap parallel frontier warms so a big Sync does not stampede resolvers. */
 internal const val FRONTIER_WARM_PARALLEL = 2
+
+/**
+ * Process-level scope for Continue re-warm after AniList Sync.
+ * Settings Sync must not tie warm to [androidx.compose.runtime.rememberCoroutineScope]
+ * — leaving Settings cancels that scope and leaves Continue cold after dropTitle.
+ */
+internal val FrontierWarmProcessScope: CoroutineScope =
+    CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 /** Title hint for Player API lookup — MAL when known. */
 internal fun frontierStreamHint(title: String, malId: Int?): String {
@@ -108,5 +121,27 @@ internal suspend fun warmFrontierContinues(
                 }
             }
         }.awaitAll()
+    }
+}
+
+/**
+ * Fire-and-forget Continue re-warm on a scope that outlives Settings / Home
+ * composition. Callers must not use [androidx.compose.runtime.rememberCoroutineScope].
+ */
+internal fun launchWarmFrontierContinues(
+    catalog: ServerCatalog,
+    targets: List<FrontierWarmTarget>,
+    audio: String,
+    appContext: Context? = null,
+    scope: CoroutineScope = FrontierWarmProcessScope,
+): Job {
+    if (targets.isEmpty()) return Job().also { it.complete() }
+    return scope.launch {
+        warmFrontierContinues(
+            catalog = catalog,
+            targets = targets,
+            audio = audio,
+            appContext = appContext,
+        )
     }
 }

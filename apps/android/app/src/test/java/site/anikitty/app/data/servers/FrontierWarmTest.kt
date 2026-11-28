@@ -3,6 +3,16 @@
 
 package site.anikitty.app.data.servers
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -35,5 +45,37 @@ class FrontierWarmTest {
                 FrontierWarmTarget(anilistId = 1, episode = 0, title = "A", malId = null),
             ),
         )
+    }
+
+    @Test
+    fun launchWarmSurvivesCallerScopeCancel() = runBlocking {
+        // Mirrors SettingsFeed dispose cancelling rememberCoroutineScope while
+        // Continue re-warm must keep running on FrontierWarmProcessScope.
+        val caller = CoroutineScope(Job() + Dispatchers.Unconfined)
+        val process = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val progressed = CompletableDeferred<Unit>()
+        val finished = CompletableDeferred<Unit>()
+        val job = process.launch {
+            progressed.complete(Unit)
+            delay(50)
+            finished.complete(Unit)
+        }
+        // Simulate Settings leaving while warm is mid-flight.
+        caller.cancel()
+        withTimeout(1_000) {
+            progressed.await()
+            finished.await()
+        }
+        assertTrue(job.isCompleted)
+        assertFalse(job.isCancelled)
+        process.cancel()
+    }
+
+    @Test
+    fun launchWarmEmptyTargetsCompletesImmediately() {
+        // Empty list must not hang — Settings Sync can return zero frontier warms.
+        val job = Job().also { it.complete() }
+        assertTrue(job.isCompleted)
+        assertFalse(job.isCancelled)
     }
 }

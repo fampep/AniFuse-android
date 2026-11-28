@@ -764,14 +764,13 @@ internal fun SettingsFeed(
                                                         android.content.Context.MODE_PRIVATE,
                                                     ).getString("audio", "sub")
                                                         ?.takeIf { it == "dub" } ?: "sub"
-                                                    scope.launch {
-                                                        site.anikitty.app.data.servers.warmFrontierContinues(
-                                                            catalog = catalog,
-                                                            targets = result.frontierWarms,
-                                                            audio = audio,
-                                                            appContext = context.applicationContext,
-                                                        )
-                                                    }
+                                                    // Process scope — SettingsFeed dispose must not cancel Continue re-warm.
+                                                    site.anikitty.app.data.servers.launchWarmFrontierContinues(
+                                                        catalog = catalog,
+                                                        targets = result.frontierWarms,
+                                                        audio = audio,
+                                                        appContext = context.applicationContext,
+                                                    )
                                                 }
                                                 aniListSyncResultLabel(result)
                                             }.getOrElse { e -> friendlyFailure(e.message) },
