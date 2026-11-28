@@ -96,6 +96,9 @@ fun GlassScrubber(
     val playhead = remember { Color.White }
     var focused by remember { mutableStateOf(false) }
     var latestFraction by remember { mutableFloatStateOf(clamped) }
+    val markerEdges = remember(skipTimes, durationMs) {
+        scrubMarkerEdges(skipTimes, durationMs)
+    }
 
     fun jumpBy(deltaMs: Long) {
         if (durationMs <= 0L) return
@@ -206,7 +209,11 @@ fun GlassScrubber(
                                         break
                                     }
                                     change.consume()
-                                    latest = fractionAt(change.position.x)
+                                    val next = fractionAt(change.position.x)
+                                    if (scrubCrossedMarker(latest, next, markerEdges)) {
+                                        KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
+                                    }
+                                    latest = next
                                     latestFraction = latest
                                     latestOnScrub(latest)
                                 }
