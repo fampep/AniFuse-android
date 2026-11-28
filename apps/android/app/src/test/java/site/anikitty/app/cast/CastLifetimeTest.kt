@@ -48,6 +48,36 @@ class CastLifetimeTest {
         )
         assertEquals(playing, castLoadedAfterKeep(keep = true, playingItem = playing))
         assertNull(castLoadedAfterKeep(keep = false, playingItem = playing))
+        assertTrue(
+            castRelayRestoreMayPublish(
+                restoreEpoch = 2,
+                currentEpoch = 2,
+                expectedSettled = 3,
+                settledTicket = 3,
+                activeLoadTicket = 0,
+                hasPlayingItem = true,
+            ),
+        )
+        assertFalse(
+            castRelayRestoreMayPublish(
+                restoreEpoch = 2,
+                currentEpoch = 3,
+                expectedSettled = 3,
+                settledTicket = 3,
+                activeLoadTicket = 0,
+                hasPlayingItem = true,
+            ),
+        )
+        assertFalse(
+            castRelayRestoreMayPublish(
+                restoreEpoch = 2,
+                currentEpoch = 2,
+                expectedSettled = 3,
+                settledTicket = 3,
+                activeLoadTicket = 4,
+                hasPlayingItem = true,
+            ),
+        )
     }
 
     @Test

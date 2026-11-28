@@ -104,6 +104,9 @@ class CastSessionHelper private constructor(
     /** Ticket whose MediaItem was handed to CastPlayer — errors before this are uncommitted. */
     private val mediaCommittedTicket = AtomicInteger(0)
 
+    /** Cancels an in-flight keep-path relay restore when a newer load starts. */
+    private val restoreEpoch = AtomicInteger(0)
+
     private val ticketItem = AtomicReference<Pair<Int, CastItemKey>?>(null)
     private val ticketSource = AtomicReference<Pair<Int, PlayableSource>?>(null)
     private var screenProgress: CastProgressTarget? = null
@@ -364,6 +367,8 @@ class CastSessionHelper private constructor(
         onReady: () -> Unit,
         onError: (String) -> Unit,
     ): CastLoadHooks {
+        // Cancel any keep-path restore before mutating the relay for this load.
+        restoreEpoch.incrementAndGet()
         val ticket = generation.incrementAndGet()
         activeLoadTicket.set(ticket)
         val item = CastItemKey(
@@ -420,9 +425,8 @@ class CastSessionHelper private constructor(
      */
     private fun abortLoad(ticket: Int, mediaCommitted: Boolean): Boolean {
         if (!activeLoadTicket.compareAndSet(ticket, 0)) return false
+        // Drop the follow-up callback. loadSettled=true makes any late settle* no-op.
         disarmWatchLoad()
-        // Invalidate the aborted ticket's receiver callbacks before any restore.
-        generation.incrementAndGet()
         val keep = castKeepPlayingAfterDrop(
             settledTicket = settledTicket.get(),
             abortedTicket = ticket,
@@ -433,9 +437,13 @@ class CastSessionHelper private constructor(
             casting = true
             loadedItem = castLoadedAfterKeep(keep = true, playingItem = playingItem)
             mediaCommittedTicket.set(0)
+            val settled = settledTicket.get()
+            val epoch = restoreEpoch.incrementAndGet()
             thread(name = "anikitty-cast-restore", isDaemon = true) {
-                restoreSettledRelay()
+                restoreSettledRelay(epoch = epoch, expectedSettled = settled)
             }
+            // Re-arm ended detection for the episode still on the TV.
+            rearmSettledWatch(settled)
             val host = playableHost(playingItem!!.url).ifBlank { null }
             if (host != null) {
                 PlaybackHostHealth.notePlaying(host, CastDownloadYieldOwner)
@@ -443,6 +451,7 @@ class CastSessionHelper private constructor(
             CastPlaybackService.demoteIfIdle()
             return true
         }
+        restoreEpoch.incrementAndGet()
         casting = false
         playingItem = null
         loadedItem = null
@@ -467,13 +476,59 @@ class CastSessionHelper private constructor(
         statusCallback = null
     }
 
+    /**
+     * After a keep, the follow-up watchLoad is gone. Listen again for the
+     * settled ticket finishing so autoplay / cast-service end still fire.
+     */
+    private fun rearmSettledWatch(ticket: Int) {
+        if (ticket == 0 || closed.get()) return
+        val client = castContext.sessionManager.currentCastSession?.remoteMediaClient ?: return
+        loadSettled.set(true)
+        endedNotified.set(false)
+        statusCallback?.let { previous -> runCatching { client.unregisterCallback(previous) } }
+        val callback = object : RemoteMediaClient.Callback() {
+            override fun onStatusUpdated() {
+                if (closed.get() || settledTicket.get() != ticket) return
+                if (activeLoadTicket.get() != 0) return
+                val status = client.mediaStatus ?: return
+                if (castPlaybackFinished(status.playerState, status.idleReason)) {
+                    notifySettledPlaybackEnded(ticket)
+                }
+            }
+        }
+        statusCallback = callback
+        client.registerCallback(callback)
+    }
+
+    private fun notifySettledPlaybackEnded(ticket: Int) {
+        if (!endedNotified.compareAndSet(false, true)) return
+        Log.i(TAG, "Cast settled item finished")
+        main.post {
+            if (closed.get() || settledTicket.get() != ticket) return@post
+            if (activeLoadTicket.get() != 0) return@post
+            playbackEndedListener.current?.invoke()
+            serviceWatch?.onItemFinished()
+        }
+    }
+
     /** Prepare already pointed the relay at the failed follow-up — put the live episode back. */
-    private fun restoreSettledRelay() {
+    private fun restoreSettledRelay(epoch: Int, expectedSettled: Int) {
         val prev = settledSource ?: return
         runCatching {
             val playback = relay.prepare(prev)
             main.post {
-                if (closed.get() || playingItem == null) return@post
+                if (closed.get()) return@post
+                if (!castRelayRestoreMayPublish(
+                        restoreEpoch = epoch,
+                        currentEpoch = restoreEpoch.get(),
+                        expectedSettled = expectedSettled,
+                        settledTicket = settledTicket.get(),
+                        activeLoadTicket = activeLoadTicket.get(),
+                        hasPlayingItem = playingItem != null,
+                    )
+                ) {
+                    return@post
+                }
                 relay.publish(playback)
             }
         }.onFailure { Log.w(TAG, "Cast relay restore failed", it) }
@@ -718,6 +773,7 @@ class CastSessionHelper private constructor(
 
     fun stopCasting() {
         generation.incrementAndGet()
+        restoreEpoch.incrementAndGet()
         activeLoadTicket.set(0)
         loadHooks.set(null)
         disarmWatchLoad()
@@ -745,6 +801,7 @@ class CastSessionHelper private constructor(
     fun release() {
         closed.set(true)
         generation.incrementAndGet()
+        restoreEpoch.incrementAndGet()
         activeLoadTicket.set(0)
         setAvailabilityListener(null)
         setPlaybackEndedListener(null)

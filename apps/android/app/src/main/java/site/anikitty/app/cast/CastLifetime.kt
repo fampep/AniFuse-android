@@ -108,6 +108,20 @@ internal fun castLoadedAfterKeep(
     playingItem: CastItemKey?,
 ): CastItemKey? = if (keep) playingItem else null
 
+/** Late keep-path publish must not overwrite a newer load's relay allowlist. */
+internal fun castRelayRestoreMayPublish(
+    restoreEpoch: Int,
+    currentEpoch: Int,
+    expectedSettled: Int,
+    settledTicket: Int,
+    activeLoadTicket: Int,
+    hasPlayingItem: Boolean,
+): Boolean = restoreEpoch == currentEpoch &&
+    expectedSettled != 0 &&
+    expectedSettled == settledTicket &&
+    activeLoadTicket == 0 &&
+    hasPlayingItem
+
 /** The playback service, not the player, hears session end and item end. */
 internal interface CastServiceWatch {
     fun onSessionEnded()
