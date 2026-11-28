@@ -194,7 +194,14 @@ class AniListSync(
         if (anilistId <= 0 || episode < 0) return false
         val startedAt = System.currentTimeMillis()
         val plan = aniListPushPlan(episode, totalEpisodes)
-        val saved = aniList.saveProgress(token, anilistId, plan.progress, plan.status)
+        // Mark/auto-mark is user-facing — do not yield to Home shelf pacing.
+        val saved = aniList.saveProgress(
+            accessToken = token,
+            mediaId = anilistId,
+            progress = plan.progress,
+            status = plan.status,
+            interactive = true,
+        )
         if (!saved) {
             pendingPushes.upsert(
                 PendingAniListPush(

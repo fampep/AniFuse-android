@@ -192,6 +192,16 @@ class CastAttachTest {
         assertTrue(castHandoffChromeVisible(casting = false, handoff = true, pending = false))
         assertTrue(castHandoffChromeVisible(casting = false, handoff = false, pending = true))
         assertFalse(castHandoffChromeVisible(casting = false, handoff = false, pending = false))
+        // Connecting chrome must not mute or freeze phone transport.
+        assertTrue(castHandoffChromeVisible(casting = false, handoff = true, pending = true))
+        assertFalse(
+            castPhoneShouldStayQuiet(
+                casting = false,
+                handoff = true,
+                pending = true,
+                receiverReady = false,
+            ),
+        )
     }
 
     @Test
