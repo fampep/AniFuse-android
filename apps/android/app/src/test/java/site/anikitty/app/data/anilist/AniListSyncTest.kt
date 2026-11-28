@@ -168,6 +168,13 @@ class AniListSyncTest {
             history(episode = 2, positionMs = 0L, durationMs = 0L).copy(anilistId = 3),
         )
         assertEquals(listOf(1, 3), frontierAdvanceIds(merged, previous))
+        val warms = frontierWarmTargets(merged, listOf(1, 3))
+        assertEquals(2, warms.size)
+        assertEquals(1, warms[0].anilistId)
+        assertEquals(7, warms[0].episode)
+        assertEquals(3, warms[1].anilistId)
+        assertEquals(2, warms[1].episode)
+        assertTrue(frontierWarmTargets(merged, emptyList()).isEmpty())
     }
 
     @Test
@@ -180,6 +187,19 @@ class AniListSyncTest {
             "Synced 12 · pushed 3 · 2 fresher from AniList",
             aniListSyncResultLabel(
                 AniListSync.Result(imported = 12, username = "x", pushed = 3, frontierDrops = 2),
+            ),
+        )
+        assertEquals(
+            "Synced 12 · 1 fresher · warming 1 from AniList",
+            aniListSyncResultLabel(
+                AniListSync.Result(
+                    imported = 12,
+                    username = "x",
+                    frontierDrops = 1,
+                    frontierWarms = listOf(
+                        FrontierWarmTarget(1, 5, "Title", null),
+                    ),
+                ),
             ),
         )
     }

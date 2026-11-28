@@ -758,6 +758,21 @@ internal fun SettingsFeed(
                                                     forceRefresh = true,
                                                     onPhase = { onSyncLabel(cloudSyncPhaseLabel(it)) },
                                                 )
+                                                if (result.frontierWarms.isNotEmpty()) {
+                                                    val audio = context.getSharedPreferences(
+                                                        "anikitty_watch",
+                                                        android.content.Context.MODE_PRIVATE,
+                                                    ).getString("audio", "sub")
+                                                        ?.takeIf { it == "dub" } ?: "sub"
+                                                    scope.launch {
+                                                        site.anikitty.app.data.servers.warmFrontierContinues(
+                                                            catalog = catalog,
+                                                            targets = result.frontierWarms,
+                                                            audio = audio,
+                                                            appContext = context.applicationContext,
+                                                        )
+                                                    }
+                                                }
                                                 aniListSyncResultLabel(result)
                                             }.getOrElse { e -> friendlyFailure(e.message) },
                                         )

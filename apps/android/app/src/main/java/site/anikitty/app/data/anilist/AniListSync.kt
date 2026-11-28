@@ -31,6 +31,8 @@ class AniListSync(
         val pushed: Int = 0,
         /** Titles whose Continue episode jumped — warm/disk recalls were cleared. */
         val frontierDrops: Int = 0,
+        /** Continue episodes to re-warm after frontier drops (same rows). */
+        val frontierWarms: List<FrontierWarmTarget> = emptyList(),
     )
 
     /**
@@ -104,11 +106,13 @@ class AniListSync(
             PlayableWarmCache.dropTitle(anilistId)
             onTitleFrontierAdvance(anilistId)
         }
+        val frontierWarms = frontierWarmTargets(merged, advanced)
         return Result(
             imported = merged.size,
             username = identity.username,
             pushed = drained,
             frontierDrops = advanced.size,
+            frontierWarms = frontierWarms,
         )
     }
 
@@ -454,6 +458,42 @@ internal fun frontierAdvanceIds(
     if (shouldDropWarmOnFrontierAdvance(previous, row.episode)) row.anilistId else null
 }
 
+/** One Continue episode to re-warm after a frontier drop. */
+data class FrontierWarmTarget(
+    val anilistId: Int,
+    val episode: Int,
+    val title: String,
+    val malId: Int?,
+)
+
+/**
+ * Map advanced ids to Continue cue episodes so background warm fills the hole
+ * left by [PlayableWarmCache.dropTitle].
+ */
+internal fun frontierWarmTargets(
+    merged: List<WatchHistoryEntity>,
+    advancedIds: Collection<Int>,
+): List<FrontierWarmTarget> {
+    if (advancedIds.isEmpty()) return emptyList()
+    val want = advancedIds.toHashSet()
+    return merged.mapNotNull { row ->
+        if (row.anilistId !in want) return@mapNotNull null
+        val episode = frontierWarmEpisode(row)
+        if (row.anilistId <= 0 || episode <= 0) return@mapNotNull null
+        FrontierWarmTarget(
+            anilistId = row.anilistId,
+            episode = episode,
+            title = row.title,
+            malId = row.malId,
+        )
+    }
+}
+
+/** Continue-card episode for a freshly imported frontier row. */
+internal fun frontierWarmEpisode(row: WatchHistoryEntity): Int =
+    site.anikitty.app.data.local.continueCue(row)?.episode?.coerceAtLeast(1)
+        ?: row.episode.coerceAtLeast(1)
+
 /** Glass Sync phases — drain first, then MediaList import. */
 enum class AniListSyncPhase {
     Pushing,
@@ -465,6 +505,7 @@ internal fun aniListSyncResultLabel(result: AniListSync.Result): String {
     val extras = buildList {
         if (result.pushed > 0) add("pushed ${result.pushed}")
         if (result.frontierDrops > 0) add("${result.frontierDrops} fresher")
+        if (result.frontierWarms.isNotEmpty()) add("warming ${result.frontierWarms.size}")
     }
     return if (extras.isEmpty()) {
         "Synced ${result.imported} from AniList"
