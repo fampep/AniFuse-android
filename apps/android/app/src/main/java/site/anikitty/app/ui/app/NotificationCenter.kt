@@ -133,12 +133,20 @@ internal suspend fun localInboxNotes(context: Context): List<InboxNote> = withCo
  * Network notes only. Airing and the release check run together and each
  * gives up quickly, so a dead CDN or a rate limit cannot hold the list.
  */
+/**
+ * Drop airing noise the person already finished. [watchedThrough] is the
+ * local frontier (completed count); the schedule episode must be ahead of it.
+ */
+internal fun airingInboxKeep(scheduleEpisode: Int, watchedThrough: Int): Boolean =
+    scheduleEpisode > watchedThrough.coerceAtLeast(0)
+
 internal suspend fun remoteInboxNotes(
     context: Context,
     aniList: AniListClient,
     history: List<WatchHistoryEntity>,
 ): List<InboxNote> = coroutineScope {
     val followed = history.map { it.anilistId }.toSet()
+    val watchedById = history.associate { it.anilistId to it.episode }
     val airing = async {
         if (followed.isEmpty()) {
             emptyList()
@@ -153,6 +161,12 @@ internal suspend fun remoteInboxNotes(
                     )
                 }.getOrDefault(emptyList())
                     .filter { it.anime.id in followed }
+                    .filter { slot ->
+                        airingInboxKeep(
+                            scheduleEpisode = slot.episode,
+                            watchedThrough = watchedById[slot.anime.id] ?: 0,
+                        )
+                    }
                     .take(12)
                     .map { slot ->
                         InboxNote(

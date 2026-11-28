@@ -106,13 +106,19 @@ internal fun LiveTimeline(
         loader.warm()
     }
     var frame by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-    LaunchedEffect(scrubbing, scrubValue, durationMs, loader) {
-        if (!scrubbing || durationMs <= 0L) {
+    val scrubMs = if (scrubbing && durationMs > 0L) {
+        (scrubValue.coerceIn(0f, 1f) * durationMs).toLong()
+    } else {
+        -1L
+    }
+    val scrubBucket = if (scrubMs >= 0L) scrubPreviewBucketMs(scrubMs) else -1L
+    // Key on the bucket, not every scrub pixel — long drags stay zero-jank.
+    LaunchedEffect(scrubbing, scrubBucket, durationMs, loader) {
+        if (!scrubbing || scrubBucket < 0L || durationMs <= 0L) {
             frame = null
             return@LaunchedEffect
         }
-        val ms = (scrubValue.coerceIn(0f, 1f) * durationMs).toLong()
-        frame = loader.frame(ms)
+        frame = loader.frame(scrubBucket)
     }
     Box(modifier) {
         GlassScrubber(
