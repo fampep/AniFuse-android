@@ -618,6 +618,22 @@ private fun CloudSyncBlock(
                         modifier = Modifier
                             .size(48.dp)
                             .clip(CircleShape)
+                            .then(
+                                if (syncing) {
+                                    Modifier
+                                        .stageGlassPlate(shape = CircleShape, elevated = true)
+                                        .background(
+                                            Brush.verticalGradient(
+                                                listOf(
+                                                    Color.White.copy(alpha = 0.14f),
+                                                    Color.Transparent,
+                                                ),
+                                            ),
+                                        )
+                                } else {
+                                    Modifier
+                                },
+                            )
                             .clickable(enabled = !syncing, onClick = onSync),
                         contentAlignment = Alignment.Center,
                     ) {

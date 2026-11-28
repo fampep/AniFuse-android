@@ -22,7 +22,12 @@ class AniListSync(
         val username: String?,
     )
 
-    suspend fun pull(): Result {
+    /**
+     * @param forceRefresh interactive Sync must bypass the 2-minute MediaList
+     * cache so another device's progress lands immediately. Periodic background
+     * pulls keep the warm body.
+     */
+    suspend fun pull(forceRefresh: Boolean = false): Result {
         val token = auth.accessToken ?: error("AniList not linked")
         // Drain before import so AniList reflects our queue and pending rows
         // still protect merge if a push failed. Never race drain with the list.
@@ -37,7 +42,11 @@ class AniListSync(
             AniListPullIdentity(viewer.id, viewer.name)
         }
 
-        val entries = aniList.mediaListEntries(token, identity.userId)
+        val entries = aniList.mediaListEntries(
+            accessToken = token,
+            userId = identity.userId,
+            forceRefresh = forceRefresh,
+        )
         val now = System.currentTimeMillis()
         val entryIds = entries.map { it.media.id }.distinct()
         val existingById = if (entryIds.isEmpty()) {

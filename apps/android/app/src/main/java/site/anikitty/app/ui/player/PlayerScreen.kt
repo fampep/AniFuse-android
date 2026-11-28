@@ -3344,36 +3344,61 @@ fun PlayerScreen(
         }
         AnimatedVisibility(
             visible = holdBoost,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = fadeIn(tween(90)) + scaleIn(
+                initialScale = 0.88f,
+                animationSpec = spring(dampingRatio = 0.70f, stiffness = Spring.StiffnessMedium),
+            ),
+            exit = fadeOut(tween(140)) + scaleOut(targetScale = 0.94f, animationSpec = tween(140)),
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .padding(top = 18.dp),
         ) {
+            val boostShape = RoundedCornerShape(999.dp)
             Row(
                 modifier = Modifier
-                    .stageGlassPlate(shape = RoundedCornerShape(999.dp), elevated = true)
+                    .shadow(
+                        elevation = 18.dp,
+                        shape = boostShape,
+                        ambientColor = Color.Black.copy(alpha = 0.55f),
+                        spotColor = Color.Black.copy(alpha = 0.4f),
+                    )
+                    .clip(boostShape)
+                    .background(Color(0xE6101012))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.18f), Color.Transparent),
+                        ),
+                    )
+                    .border(1.dp, Color.White.copy(alpha = 0.34f), boostShape)
                     .clearAndSetSemantics {
                         contentDescription = "Playing at double speed"
                         liveRegion = LiveRegionMode.Polite
                     }
-                    .padding(horizontal = 16.dp, vertical = 9.dp),
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     Icons.Outlined.PlayCircle,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(17.dp),
                 )
-                Spacer(Modifier.width(6.dp))
+                Spacer(modifier.width(7.dp))
                 Text(
-                    "2× speed",
+                    "2×",
                     color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    letterSpacing = 0.2.sp,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 15.sp,
+                    letterSpacing = 0.8.sp,
+                )
+                Spacer(modifier.width(6.dp))
+                Text(
+                    "HOLD",
+                    color = Color.White.copy(alpha = 0.62f),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.2.sp,
                 )
             }
         }

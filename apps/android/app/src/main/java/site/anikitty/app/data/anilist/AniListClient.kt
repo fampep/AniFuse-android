@@ -179,10 +179,17 @@ class AniListClient(
     suspend fun mediaListEntries(
         accessToken: String,
         userId: Int,
+        forceRefresh: Boolean = false,
     ): List<AniListMediaListEntry> = withContext(Dispatchers.IO) {
-        val cacheKey = "mediaList:v1:$userId"
-        cache?.get(cacheKey, AniListCache.TTL_LIST_MS)?.let { cached ->
-            return@withContext parseMediaListBody(cached)
+        val cacheKey = mediaListCacheKey(userId)
+        if (forceRefresh) {
+            // Interactive Sync must not import a 2-minute-stale MediaList after
+            // another device moved progress.
+            cache?.invalidate(cacheKey)
+        } else {
+            cache?.get(cacheKey, AniListCache.TTL_LIST_MS)?.let { cached ->
+                return@withContext parseMediaListBody(cached)
+            }
         }
         val graphql = """
             query (${'$'}userId: Int, ${'$'}type: MediaType) {
@@ -1196,3 +1203,6 @@ class AniListClient(
         }
     }
 }
+
+/** Disk/memory key for the authenticated MediaList Collection body. */
+internal fun mediaListCacheKey(userId: Int): String = "mediaList:v1:$userId"

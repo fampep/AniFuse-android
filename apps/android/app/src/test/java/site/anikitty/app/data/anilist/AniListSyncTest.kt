@@ -105,6 +105,12 @@ class AniListSyncTest {
         )
     }
 
+    @Test
+    fun mediaListCacheKeyIsStablePerUser() {
+        assertEquals("mediaList:v1:42", mediaListCacheKey(42))
+        assertEquals("mediaList:v1:7", mediaListCacheKey(7))
+    }
+
     private fun merge(local: WatchHistoryEntity?, remoteProgress: Int, pending: Int?) = mergedPullEntry(
         existing = local,
         anilistId = 7,

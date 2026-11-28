@@ -767,7 +767,7 @@ internal fun SettingsFeed(
                                         onSyncLabel("Syncing…")
                                         onSyncLabel(
                                             runCatching {
-                                                val result = aniListSync.pull()
+                                                val result = aniListSync.pull(forceRefresh = true)
                                                 "Synced ${result.imported} titles"
                                             }.getOrElse { e -> friendlyFailure(e.message) },
                                         )

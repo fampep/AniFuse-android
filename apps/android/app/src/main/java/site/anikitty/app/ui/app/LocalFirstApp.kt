@@ -677,7 +677,7 @@ fun LocalFirstApp(
                         scope.launch {
                             syncLabel = "Syncing…"
                             syncLabel = runCatching {
-                                val result = aniListSync.pull()
+                                val result = aniListSync.pull(forceRefresh = true)
                                 "Synced ${result.imported} from AniList"
                             }.getOrElse { e -> friendlyFailure(e.message) }
                         }
