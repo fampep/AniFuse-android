@@ -72,6 +72,9 @@ object PipAutoEnter {
     @Volatile
     private var lastHeight: Int = 0
 
+    @Volatile
+    private var lastSourceRect: Rect? = null
+
     fun update(
         activity: Activity,
         allowed: Boolean,
@@ -85,6 +88,9 @@ object PipAutoEnter {
         if (videoWidth > 0 && videoHeight > 0) {
             lastWidth = videoWidth
             lastHeight = videoHeight
+        }
+        if (sourceRect != null && !sourceRect.isEmpty) {
+            lastSourceRect = Rect(sourceRect)
         }
         if (!supported) return
         runCatching {
@@ -111,6 +117,7 @@ object PipAutoEnter {
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setAutoEnterEnabled(autoEnter)
+            builder.setSeamlessResizeEnabled(true)
         }
         return builder.build()
     }
@@ -118,11 +125,14 @@ object PipAutoEnter {
     fun onUserLeaveHint(activity: Activity) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return
         if (!allowed || activity.isInPictureInPictureMode) return
-        val params = PictureInPictureParams.Builder()
+        val builder = PictureInPictureParams.Builder()
             .setAspectRatio(pipAspect(lastWidth, lastHeight))
             .setActions(pipActions(activity))
-            .build()
-        runCatching { activity.enterPictureInPictureMode(params) }
+        val rect = lastSourceRect
+        if (rect != null && !rect.isEmpty) {
+            builder.setSourceRectHint(rect)
+        }
+        runCatching { activity.enterPictureInPictureMode(builder.build()) }
     }
 }
 

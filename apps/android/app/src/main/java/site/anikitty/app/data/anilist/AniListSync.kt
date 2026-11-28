@@ -27,10 +27,17 @@ class AniListSync(
         // Drain before import so AniList reflects our queue and pending rows
         // still protect merge if a push failed. Never race drain with the list.
         drainPendingPushes()
-        val viewer = aniList.viewer(token) ?: error("Could not load AniList profile")
-        auth.saveViewer(token, viewer)
+        // Warm installs already know the user — skip Viewer so MediaList is the
+        // only paced GraphQL hop on the critical sync path.
+        val identity = if (auth.userId > 0) {
+            AniListPullIdentity(auth.userId, auth.username)
+        } else {
+            val viewer = aniList.viewer(token) ?: error("Could not load AniList profile")
+            auth.saveViewer(token, viewer)
+            AniListPullIdentity(viewer.id, viewer.name)
+        }
 
-        val entries = aniList.mediaListEntries(token, viewer.id)
+        val entries = aniList.mediaListEntries(token, identity.userId)
         val now = System.currentTimeMillis()
         val entryIds = entries.map { it.media.id }.distinct()
         val existingById = if (entryIds.isEmpty()) {
@@ -54,7 +61,7 @@ class AniListSync(
             )
         }
         if (merged.isNotEmpty()) historyDao.upsertAll(merged)
-        return Result(imported = merged.size, username = viewer.name)
+        return Result(imported = merged.size, username = identity.username)
     }
 
     /**
@@ -208,4 +215,20 @@ internal fun mergedPullEntry(
         listStatus = if (keepLocal) existing!!.listStatus ?: remoteStatus else remoteStatus,
         malId = malId ?: existing?.malId,
     )
+}
+
+/** Cached Viewer fields used to skip a GraphQL hop on warm AniList pulls. */
+internal data class AniListPullIdentity(
+    val userId: Int,
+    val username: String?,
+)
+
+internal fun aniListPullIdentity(
+    cachedUserId: Int,
+    cachedUsername: String?,
+    viewer: AniListViewer?,
+): AniListPullIdentity? {
+    if (cachedUserId > 0) return AniListPullIdentity(cachedUserId, cachedUsername)
+    if (viewer != null) return AniListPullIdentity(viewer.id, viewer.name)
+    return null
 }

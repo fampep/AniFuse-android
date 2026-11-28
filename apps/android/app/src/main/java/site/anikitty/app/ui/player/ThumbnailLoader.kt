@@ -42,6 +42,11 @@ internal class ThumbnailLoader(
         localFrame(positionMs)
     }
 
+    /** Prefetch the VTT index so the first scrub already has cues. */
+    suspend fun warm() = withContext(Dispatchers.IO) {
+        ensureIndex()
+    }
+
     private suspend fun ensureIndex() {
         if (indexed) return
         val now = android.os.SystemClock.elapsedRealtime()

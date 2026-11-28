@@ -67,26 +67,27 @@ internal fun SeekPreview(
                 .width(cardWidth),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(cardHeight)
-                    .shadow(
-                        elevation = 18.dp,
-                        shape = frameShape,
-                        ambientColor = Color.Black.copy(alpha = 0.55f),
-                        spotColor = Color.Black.copy(alpha = 0.4f),
-                    )
-                    .clip(frameShape)
-                    .background(Color(0xCC101012))
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
-                        ),
-                    )
-                    .border(1.dp, Color.White.copy(alpha = 0.28f), frameShape),
-            ) {
-                if (frame != null) {
+            // Empty plate is noise — time chip alone until the VTT frame lands.
+            if (frame != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(cardHeight)
+                        .shadow(
+                            elevation = 18.dp,
+                            shape = frameShape,
+                            ambientColor = Color.Black.copy(alpha = 0.55f),
+                            spotColor = Color.Black.copy(alpha = 0.4f),
+                        )
+                        .clip(frameShape)
+                        .background(Color(0xCC101012))
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
+                            ),
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.28f), frameShape),
+                ) {
                     Image(
                         bitmap = frame.asImageBitmap(),
                         contentDescription = null,

@@ -1742,9 +1742,9 @@ fun PlayerScreen(
             val connecting = helper.isSessionConnecting()
             if (!castPending && !connecting) return@LaunchedEffect
             castPending = true
-            // ~3s of 120ms polls — remoteMediaClient usually appears in under 1s.
-            repeat(25) {
-                delay(120)
+            // ~1s of 100ms polls — remoteMediaClient usually appears in under 500ms.
+            repeat(10) {
+                delay(100)
                 if (castClientGaveUp) return@LaunchedEffect
                 if (helper.isSessionAvailable()) {
                     applyCastAttach(sessionUp = true)
@@ -2606,7 +2606,7 @@ fun PlayerScreen(
             PipControls.onSeek = null
         }
     }
-    LaunchedEffect(autoPip, activity, renderedHeight) {
+    LaunchedEffect(autoPip, activity, renderedHeight, playerViewRef) {
         val host = activity ?: return@LaunchedEffect
         val rect = android.graphics.Rect()
         playerViewRef?.getGlobalVisibleRect(rect)

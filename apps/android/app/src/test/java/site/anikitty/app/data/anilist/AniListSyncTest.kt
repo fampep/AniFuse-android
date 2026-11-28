@@ -90,6 +90,21 @@ class AniListSyncTest {
         assertEquals("CURRENT", merged.listStatus)
     }
 
+    @Test
+    fun warmPullSkipsViewerWhenUserIdIsCached() {
+        val warm = aniListPullIdentity(
+            cachedUserId = 42,
+            cachedUsername = "fampep",
+            viewer = null,
+        )
+        assertEquals(42, warm!!.userId)
+        assertEquals("fampep", warm.username)
+        assertEquals(
+            null,
+            aniListPullIdentity(cachedUserId = 0, cachedUsername = null, viewer = null),
+        )
+    }
+
     private fun merge(local: WatchHistoryEntity?, remoteProgress: Int, pending: Int?) = mergedPullEntry(
         existing = local,
         anilistId = 7,

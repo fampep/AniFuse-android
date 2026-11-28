@@ -204,7 +204,8 @@ class AniListClient(
                     .put("type", "ANIME"),
             )
             .toString()
-        val body = execute(payload, accessToken, background = true)
+        // Interactive — list pull must not yield to Home shelf traffic.
+        val body = execute(payload, accessToken, background = false)
         val lists = JSONObject(body)
             .optJSONObject("data")
             ?.optJSONObject("MediaListCollection")

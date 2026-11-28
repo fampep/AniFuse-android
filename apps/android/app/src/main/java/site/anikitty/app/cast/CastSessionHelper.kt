@@ -427,8 +427,8 @@ class CastSessionHelper private constructor(
         val client = castContext.sessionManager.currentCastSession?.remoteMediaClient
         if (client == null) {
             // Session often reports connected a beat before remoteMediaClient
-            // exists. Re-arm on the main looper instead of failing the first tap.
-            if (waitAttempt >= 20 || closed.get() || ticket != generation.get()) {
+            // exists. Cap the wait — PlayerScreen also polls, so keep this short.
+            if (waitAttempt >= 8 || closed.get() || ticket != generation.get()) {
                 error("Chromecast is not connected")
             }
             Log.i(TAG, "Cast start deferred; waiting for remoteMediaClient ($waitAttempt)")
@@ -442,7 +442,7 @@ class CastSessionHelper private constructor(
                         fireLoadError(it.message ?: "Cast failed")
                     }
                 }
-            }, 120L)
+            }, 100L)
             return
         }
         watchLoad(client, ticket)

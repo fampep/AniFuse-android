@@ -98,6 +98,9 @@ internal fun LiveTimeline(
     val loader = remember(thumbnails?.url, mediaUrl) {
         ThumbnailLoader(context, thumbnails, mediaUrl)
     }
+    LaunchedEffect(loader) {
+        loader.warm()
+    }
     var frame by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     LaunchedEffect(scrubbing, scrubValue, durationMs, loader) {
         if (!scrubbing || durationMs <= 0L) {
