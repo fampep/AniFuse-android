@@ -11,9 +11,14 @@ class RaceDockPulseTest {
     @Test
     fun leadWinsOverEveryPulse() {
         assertEquals(
-            "LEAD",
+            "LEAD · 40ms",
             raceDockPulseLabel(selected = true, cold = true, score = -1, latencyMs = 40L),
         )
+        assertEquals(
+            "LEAD",
+            raceDockPulseLabel(selected = true, cold = false, score = 0, latencyMs = null),
+        )
+        assertEquals("LEAD · 12ms", raceDockLeadLabel(12L))
     }
 
     @Test

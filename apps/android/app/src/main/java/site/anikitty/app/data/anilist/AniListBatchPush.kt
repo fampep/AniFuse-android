@@ -15,7 +15,7 @@ internal data class AniListBatchPushItem(
 
 /** Chunk size that stays under AniList's complexity budget while cutting ~700ms×N waits. */
 /** Alias batch size — one paced HTTP call covers this many progress rows. */
-internal const val ANILIST_PUSH_CHUNK = 10
+internal const val ANILIST_PUSH_CHUNK = 14
 
 internal fun pendingPushChunks(
     count: Int,
@@ -27,6 +27,15 @@ internal fun pendingPushChunks(
         start until minOf(count, start + size)
     }
 }
+
+/**
+ * Freshest binge marks go first so a long offline queue does not stall the
+ * episode the person just finished behind dozens of older titles.
+ */
+internal fun <T> pendingPushesForDrain(
+    rows: List<T>,
+    updatedAtOf: (T) -> Long,
+): List<T> = rows.sortedByDescending(updatedAtOf)
 
 /**
  * Builds a multi-alias SaveMediaListEntry mutation.

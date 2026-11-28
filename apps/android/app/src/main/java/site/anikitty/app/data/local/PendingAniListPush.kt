@@ -21,7 +21,7 @@ data class PendingAniListPush(
 
 @Dao
 interface PendingAniListPushDao {
-    @Query("SELECT * FROM pending_anilist_push")
+    @Query("SELECT * FROM pending_anilist_push ORDER BY updatedAtEpochMs DESC")
     suspend fun all(): List<PendingAniListPush>
 
     @Query("SELECT * FROM pending_anilist_push WHERE anilistId = :anilistId LIMIT 1")

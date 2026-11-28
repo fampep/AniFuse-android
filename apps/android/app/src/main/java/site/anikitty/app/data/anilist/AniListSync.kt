@@ -72,7 +72,7 @@ class AniListSync(
     suspend fun drainPendingPushes(): Int {
         val token = auth.accessToken ?: return 0
         if (token.isBlank()) return 0
-        val rows = pendingPushes.all()
+        val rows = pendingPushesForDrain(pendingPushes.all()) { it.updatedAtEpochMs }
         if (rows.isEmpty()) return 0
         var sent = 0
         for (range in pendingPushChunks(rows.size)) {

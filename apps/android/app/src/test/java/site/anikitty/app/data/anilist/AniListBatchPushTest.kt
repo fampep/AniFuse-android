@@ -13,6 +13,18 @@ class AniListBatchPushTest {
         assertEquals(emptyList<IntRange>(), pendingPushChunks(0))
         assertEquals(listOf(0 until 4), pendingPushChunks(4, chunkSize = 6))
         assertEquals(listOf(0 until 6, 6 until 10), pendingPushChunks(10, chunkSize = 6))
+        assertEquals(14, ANILIST_PUSH_CHUNK)
+    }
+
+    @Test
+    fun drainOrdersFreshestFirst() {
+        data class Row(val id: Int, val at: Long)
+        assertEquals(
+            listOf(3, 1, 2),
+            pendingPushesForDrain(
+                listOf(Row(1, 100), Row(2, 50), Row(3, 200)),
+            ) { it.at }.map { it.id },
+        )
     }
 
     @Test
