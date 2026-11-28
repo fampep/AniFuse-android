@@ -166,7 +166,10 @@ fun GlassScrubber(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(32.dp)
-                .pointerInput(durationMs, trackWidthPx) {
+                // markerEdges in the key restarts the gesture when late skip
+                // stamps land — rememberUpdatedState alone is not enough on
+                // some OEM gesture loops that cache the first awaitEachGesture.
+                .pointerInput(durationMs, trackWidthPx, markerEdges) {
                     awaitEachGesture {
                         val down = awaitFirstDown()
                         val slop = viewConfiguration.touchSlop

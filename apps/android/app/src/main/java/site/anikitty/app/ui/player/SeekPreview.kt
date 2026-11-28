@@ -54,6 +54,7 @@ internal fun SeekPreview(
     frame: Bitmap?,
     modifier: Modifier = Modifier,
     chapterLabel: String? = null,
+    chapterKind: String? = null,
 ) {
     BoxWithConstraints(
         modifier
@@ -138,6 +139,7 @@ internal fun SeekPreview(
                 label = "seekPreviewChapter",
             ) { label ->
                 if (label != null) {
+                    val kind = chapterKind
                     Box(
                         modifier = Modifier
                             .padding(top = 6.dp)
@@ -145,10 +147,13 @@ internal fun SeekPreview(
                             .background(Color(0xE6101012))
                             .background(
                                 Brush.verticalGradient(
-                                    listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
+                                    listOf(
+                                        Color.White.copy(alpha = seekChapterGlassSheen(kind)),
+                                        Color.Transparent,
+                                    ),
                                 ),
                             )
-                            .border(1.dp, Color.White.copy(alpha = 0.34f), chipShape)
+                            .border(1.dp, seekChapterGlassBorder(kind), chipShape)
                             .padding(horizontal = 10.dp, vertical = 3.dp),
                     ) {
                         Text(

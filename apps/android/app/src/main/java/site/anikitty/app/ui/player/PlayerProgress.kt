@@ -144,6 +144,7 @@ internal fun LiveTimeline(
                 timeLabel = formatClockPadded(shown),
                 frame = frame,
                 chapterLabel = scrubChapterLabel(skipTimes, shown),
+                chapterKind = scrubChapterKind(skipTimes, shown),
             )
         }
     }
