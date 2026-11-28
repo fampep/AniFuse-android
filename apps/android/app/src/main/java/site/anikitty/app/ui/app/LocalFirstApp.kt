@@ -343,6 +343,18 @@ fun LocalFirstApp(
             runCatching {
                 val result = aniListSync.pull()
                 syncLabel = aniListSyncResultLabel(result)
+                if (result.frontierWarms.isNotEmpty()) {
+                    val audio = context.getSharedPreferences(
+                        "anikitty_watch",
+                        android.content.Context.MODE_PRIVATE,
+                    ).getString("audio", "sub")?.takeIf { it == "dub" } ?: "sub"
+                    site.anikitty.app.data.servers.launchWarmFrontierContinues(
+                        catalog = streamServers,
+                        targets = result.frontierWarms,
+                        audio = audio,
+                        appContext = context.applicationContext,
+                    )
+                }
             }.onFailure { e ->
                 syncLabel = friendlyFailure(e.message)
             }
@@ -688,6 +700,18 @@ fun LocalFirstApp(
                                     forceRefresh = true,
                                     onPhase = { syncLabel = cloudSyncPhaseLabel(it) },
                                 )
+                                if (result.frontierWarms.isNotEmpty()) {
+                                    val audio = context.getSharedPreferences(
+                                        "anikitty_watch",
+                                        android.content.Context.MODE_PRIVATE,
+                                    ).getString("audio", "sub")?.takeIf { it == "dub" } ?: "sub"
+                                    site.anikitty.app.data.servers.launchWarmFrontierContinues(
+                                        catalog = streamServers,
+                                        targets = result.frontierWarms,
+                                        audio = audio,
+                                        appContext = context.applicationContext,
+                                    )
+                                }
                                 aniListSyncResultLabel(result)
                             }.getOrElse { e -> friendlyFailure(e.message) }
                         }
