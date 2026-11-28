@@ -2645,8 +2645,9 @@ fun PlayerScreen(
         var stallBuffered = -1L
         var stallSince = 0L
         var watchedCastUrl: String? = null
-        // After failCastSource walks mirrors, only READY (not leftover BUFFERING)
-        // re-arms the stall clock for the successor.
+        // After failCastSource walks mirrors, wait until Cast media identity
+        // matches the new URL (and load is not in flight) before BUFFERING
+        // can re-arm — leftover predecessor BUFFERING must not burn the budget.
         var awaitSuccessorReady = false
         val p = activePlayer
         while (p != null) {
@@ -2657,6 +2658,7 @@ fun PlayerScreen(
                 val rawPos = clock.positionMs
                 val rawDur = clock.durationMs
                 val castUrl = latestSources.getOrNull(latestSourceIndex)?.url
+                val urlChanged = !castUrl.isNullOrBlank() && castUrl != watchedCastUrl
                 val arm = castStallArmAfterSourceChange(
                     prevUrl = watchedCastUrl,
                     nextUrl = castUrl,
@@ -2664,28 +2666,41 @@ fun PlayerScreen(
                     stallBuffered = stallBuffered,
                     stallSince = stallSince,
                 )
-                if (arm.castItemStarted != castItemStarted ||
-                    arm.stallBuffered != stallBuffered ||
-                    arm.stallSince != stallSince
-                ) {
-                    castItemStarted = arm.castItemStarted
-                    stallBuffered = arm.stallBuffered
-                    stallSince = arm.stallSince
-                    if (castUrl != null && castUrl != watchedCastUrl) {
-                        awaitSuccessorReady = true
-                        castFailUrl[0] = null
-                    }
+                castItemStarted = arm.castItemStarted
+                stallBuffered = arm.stallBuffered
+                stallSince = arm.stallSince
+                // Always reset await on URL change — even when already disarmed
+                // so a prior load pulse cannot satisfy the next walk.
+                if (urlChanged) {
+                    awaitSuccessorReady = true
+                    castFailUrl[0] = null
                 }
                 watchedCastUrl = castUrl
+                val helperNow = castHelper
+                val loadInFlight = helperNow?.isLoadInFlight() == true
+                val mediaMatches = !castUrl.isNullOrBlank() && helperNow != null && run {
+                    val live = helperNow.playingItem?.takeIf { !helperNow.isLoadInFlight() }
+                        ?: helperNow.loadedItem
+                    live?.url == castUrl
+                }
                 if (isCasting && !castClockStale) {
-                    if (awaitSuccessorReady) {
-                        if (clock.state == Player.STATE_READY) {
-                            castItemStarted = true
-                            awaitSuccessorReady = false
-                        }
+                    val successor = castSuccessorRearm(
+                        awaitSuccessor = awaitSuccessorReady,
+                        playbackState = clock.state,
+                        stateReady = Player.STATE_READY,
+                        stateBuffering = Player.STATE_BUFFERING,
+                        loadInFlight = loadInFlight,
+                        mediaMatchesSuccessor = mediaMatches,
+                    )
+                    if (successor != null) {
+                        castItemStarted = successor.castItemStarted
+                        stallBuffered = successor.stallBuffered
+                        stallSince = successor.stallSince
+                        awaitSuccessorReady = false
                     } else if (
-                        clock.state == Player.STATE_READY ||
-                        clock.state == Player.STATE_BUFFERING
+                        !awaitSuccessorReady &&
+                        (clock.state == Player.STATE_READY ||
+                            clock.state == Player.STATE_BUFFERING)
                     ) {
                         castItemStarted = true
                     }
@@ -2746,43 +2761,56 @@ fun PlayerScreen(
                             sourceIndex = next
                         }
                     }
-                } else if (
-                    castTrickleStallAllowed(
-                        isCasting = isCasting,
-                        castItemStarted = castItemStarted,
-                        castClockStale = castClockStale,
-                        seekingOrLoadInFlight = castPending ||
-                            castSeekSuppressesStall(
-                                seekArmedAtMs = castSeekArmedAt,
-                                nowMs = System.currentTimeMillis(),
-                            ),
-                    )
-                ) {
-                    // CastPlayer soft-stall — same trickle detector, wider budget.
-                    // Cast bufferedPosition tracks playhead, not a growing buffer,
-                    // so seek/load windows stay gated above.
-                    val buffered = clock.bufferedMs
-                    val stalled = clock.playWhenReady &&
-                        !clock.playing &&
-                        clock.state == Player.STATE_BUFFERING
-                    val budget = castStallBudgetMs(shadowReadyNow())
-                    val tick = trickleStallTick(
-                        prevBuffered = stallBuffered,
-                        stallSince = stallSince,
-                        nowBuffered = buffered,
-                        nowMs = System.currentTimeMillis(),
-                        stalled = stalled,
-                        budgetMs = budget,
-                    )
-                    stallBuffered = tick.stallBuffered
-                    stallSince = tick.stallSince
-                    val canWalk = latestSources.size > latestSourceIndex + 1
-                    if (tick.trip && (shadowReadyNow() || canWalk)) {
-                        stallSince = 0L
-                        failCastSource(
-                            message = "Stream stalled on Chromecast",
-                            liveMs = maxOf(pos, resumeAtMs),
+                } else if (isCasting) {
+                    val nowMs = System.currentTimeMillis()
+                    val seekSuppressing = castPending ||
+                        castSeekSuppressesStall(
+                            seekArmedAtMs = castSeekArmedAt,
+                            nowMs = nowMs,
                         )
+                    // Wipe pre-seek stall so the first post-grace tick starts a
+                    // fresh budget instead of tripping on an aged stallSince.
+                    if (seekSuppressing) {
+                        val cleared = castSeekGraceClearsStall(
+                            seekSuppressing = true,
+                            stallBuffered = stallBuffered,
+                            stallSince = stallSince,
+                        )
+                        stallBuffered = cleared.stallBuffered
+                        stallSince = cleared.stallSince
+                    } else if (
+                        castTrickleStallAllowed(
+                            isCasting = true,
+                            castItemStarted = castItemStarted,
+                            castClockStale = castClockStale,
+                            seekingOrLoadInFlight = false,
+                        )
+                    ) {
+                        // CastPlayer soft-stall — same trickle detector, wider budget.
+                        // Cast bufferedPosition tracks playhead, not a growing buffer.
+                        val buffered = clock.bufferedMs
+                        val stalled = clock.playWhenReady &&
+                            !clock.playing &&
+                            clock.state == Player.STATE_BUFFERING
+                        val budget = castStallBudgetMs(shadowReadyNow())
+                        val tick = trickleStallTick(
+                            prevBuffered = stallBuffered,
+                            stallSince = stallSince,
+                            nowBuffered = buffered,
+                            nowMs = nowMs,
+                            stalled = stalled,
+                            budgetMs = budget,
+                        )
+                        stallBuffered = tick.stallBuffered
+                        stallSince = tick.stallSince
+                        val canWalk = latestSources.size > latestSourceIndex + 1
+                        if (tick.trip && (shadowReadyNow() || canWalk)) {
+                            stallSince = 0L
+                            failCastSource(
+                                message = "Stream stalled on Chromecast",
+                                liveMs = maxOf(pos, resumeAtMs),
+                            )
+                        }
                     }
                 }
                 val d = if (trustCastClock) rawDur else 0L

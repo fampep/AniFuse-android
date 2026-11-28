@@ -9,7 +9,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -51,24 +50,28 @@ class FrontierWarmTest {
     fun launchWarmSurvivesCallerScopeCancel() = runBlocking {
         // Mirrors SettingsFeed dispose cancelling rememberCoroutineScope while
         // Continue re-warm must keep running on FrontierWarmProcessScope.
+        // Gate (not delay) so CI load cannot flake the mid-flight window.
         val caller = CoroutineScope(Job() + Dispatchers.Unconfined)
-        val process = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val processJob = SupervisorJob()
+        val process = CoroutineScope(processJob + Dispatchers.Unconfined)
         val progressed = CompletableDeferred<Unit>()
+        val gate = CompletableDeferred<Unit>()
         val finished = CompletableDeferred<Unit>()
         val job = process.launch {
             progressed.complete(Unit)
-            delay(50)
+            gate.await()
             finished.complete(Unit)
         }
         // Simulate Settings leaving while warm is mid-flight.
+        withTimeout(1_000) { progressed.await() }
         caller.cancel()
-        withTimeout(1_000) {
-            progressed.await()
-            finished.await()
-        }
+        assertTrue(job.isActive)
+        assertFalse(job.isCancelled)
+        gate.complete(Unit)
+        withTimeout(1_000) { finished.await() }
         assertTrue(job.isCompleted)
         assertFalse(job.isCancelled)
-        process.cancel()
+        processJob.cancel()
     }
 
     @Test
