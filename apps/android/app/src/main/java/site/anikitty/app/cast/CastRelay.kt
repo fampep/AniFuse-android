@@ -99,8 +99,12 @@ class CastRelay(context: Context) {
     private var multicast: WifiManager.MulticastLock? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
-    fun prepare(next: PlayableSource, maxHeight: Int? = null): RelayPlayback {
-        val host = lanIpv4() ?: error("Connect the phone and Chromecast to the same Wi-Fi")
+    /**
+     * Bind UA / headers / unwrap factories before Cast session is Ready so
+     * [prepare] does not pay that setup on the critical handoff path.
+     * Safe to call repeatedly; does not open the LAN relay socket.
+     */
+    fun bindTransport(next: PlayableSource, maxHeight: Int? = null) {
         source = next
         maxVideoHeight = maxHeight?.takeIf { it > 0 }
         httpFactory.setUserAgent(
@@ -123,6 +127,30 @@ class CastRelay(context: Context) {
             else -> SegmentStripDataSource.DEFAULT_STRIP_BYTES
         }
         stripBytes.set(strip)
+    }
+
+    /**
+     * Touch the upstream playlist URL while Cast is still Connecting —
+     * primes DNS/TLS/CDN auth with the bound headers. Does not start the
+     * LAN relay (rewrite needs a live port).
+     */
+    fun warmUpstream(next: PlayableSource): Boolean {
+        bindTransport(next)
+        val upstream = factory.createDataSource()
+        return try {
+            upstream.open(DataSpec(Uri.parse(next.url)))
+            val peek = ByteArray(1)
+            readInto(upstream, peek) >= 0
+        } catch (_: Exception) {
+            false
+        } finally {
+            runCatching { upstream.close() }
+        }
+    }
+
+    fun prepare(next: PlayableSource, maxHeight: Int? = null): RelayPlayback {
+        val host = lanIpv4() ?: error("Connect the phone and Chromecast to the same Wi-Fi")
+        bindTransport(next, maxHeight)
         val fresh = LinkedHashSet<String>()
         collecting.set(fresh)
         allow(next.url)

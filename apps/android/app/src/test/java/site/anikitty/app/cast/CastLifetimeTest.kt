@@ -271,4 +271,98 @@ class CastLifetimeTest {
         assertTrue(slot.clear("episode-2"))
         assertEquals(null, slot.current)
     }
+
+    @Test
+    fun castWarmMatchesOnlyTheSameUrl() {
+        assertTrue(castWarmMatches("https://cdn/a.m3u8", "https://cdn/a.m3u8"))
+        assertFalse(castWarmMatches("https://cdn/a.m3u8", "https://cdn/b.m3u8"))
+        assertFalse(castWarmMatches(null, "https://cdn/a.m3u8"))
+        assertFalse(castWarmMatches("", "https://cdn/a.m3u8"))
+        assertFalse(castWarmMatches("https://cdn/a.m3u8", ""))
+    }
+
+    @Test
+    fun castWarmMustNotStompSettledFactories() {
+        // Connecting — warm is free.
+        assertTrue(
+            castWarmMayBind(
+                casting = false,
+                settledUrl = null,
+                nextUrl = "https://cdn/a.m3u8",
+                loadInFlight = false,
+            ),
+        )
+        // Same URL as settled — warm is fine (idempotent bind).
+        assertTrue(
+            castWarmMayBind(
+                casting = true,
+                settledUrl = "https://cdn/a.m3u8",
+                nextUrl = "https://cdn/a.m3u8",
+                loadInFlight = false,
+            ),
+        )
+        // Pending switch while TV still plays settled — must not rewrite factories.
+        assertFalse(
+            castWarmMayBind(
+                casting = true,
+                settledUrl = "https://cdn/settled.m3u8",
+                nextUrl = "https://cdn/next.m3u8",
+                loadInFlight = false,
+            ),
+        )
+        // casting=false but settled still set (stale flag / teardown race) —
+        // settledUrl wins; do not rewrite factories for a different URL.
+        assertFalse(
+            castWarmMayBind(
+                casting = false,
+                settledUrl = "https://cdn/settled.m3u8",
+                nextUrl = "https://cdn/next.m3u8",
+                loadInFlight = false,
+            ),
+        )
+        // Same settled URL with casting=false is still a safe idempotent warm.
+        assertTrue(
+            castWarmMayBind(
+                casting = false,
+                settledUrl = "https://cdn/a.m3u8",
+                nextUrl = "https://cdn/a.m3u8",
+                loadInFlight = false,
+            ),
+        )
+        // settleReady flipped casting before writing settledSource — refuse.
+        assertFalse(
+            castWarmMayBind(
+                casting = true,
+                settledUrl = null,
+                nextUrl = "https://cdn/next.m3u8",
+                loadInFlight = false,
+            ),
+        )
+        // Load already owns prepareGate path — warm stays out.
+        assertFalse(
+            castWarmMayBind(
+                casting = false,
+                settledUrl = null,
+                nextUrl = "https://cdn/a.m3u8",
+                loadInFlight = true,
+            ),
+        )
+    }
+
+    @Test
+    fun castTheaterWarmHintSurfacesHandoffProgress() {
+        assertNull(castTheaterWarmHint(pending = false, connecting = true, warmReady = false))
+        assertEquals(
+            "Warming stream…",
+            castTheaterWarmHint(pending = true, connecting = true, warmReady = false),
+        )
+        assertEquals(
+            "Starting on your TV…",
+            castTheaterWarmHint(pending = true, connecting = true, warmReady = true),
+        )
+        assertEquals(
+            "Connecting to your TV",
+            castTheaterWarmHint(pending = true, connecting = false, warmReady = false),
+        )
+    }
 }

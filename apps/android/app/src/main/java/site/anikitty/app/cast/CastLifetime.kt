@@ -150,6 +150,52 @@ internal fun castRelayRestoreMayPrepare(
 internal fun castRelayPrepareStillOwns(claim: Int, prepareEpoch: Int, closed: Boolean): Boolean =
     !closed && claim == prepareEpoch
 
+/** Warm cache hits only when the cast load URL is unchanged. */
+internal fun castWarmMatches(warmUrl: String?, nextUrl: String): Boolean {
+    if (warmUrl.isNullOrBlank() || nextUrl.isBlank()) return false
+    return warmUrl == nextUrl
+}
+
+/**
+ * Warm may [CastRelay.bindTransport] only when it cannot stomp a live settled
+ * episode's unwrap factories. A pending switch after a failed follow-up must
+ * wait for [CastSessionHelper.load] → prepare under [prepareGate].
+ *
+ * [settledUrl] is authoritative even when [casting] still reads false (IO thread
+ * vs [settleReady] / stop teardown ordering). [casting] with a blank settled
+ * URL covers the [settleReady] window that flips casting before writing settled.
+ */
+internal fun castWarmMayBind(
+    casting: Boolean,
+    settledUrl: String?,
+    nextUrl: String,
+    loadInFlight: Boolean,
+): Boolean {
+    if (nextUrl.isBlank()) return false
+    if (loadInFlight) return false
+    if (!settledUrl.isNullOrBlank()) {
+        return castWarmMatches(settledUrl, nextUrl)
+    }
+    // settleReady sets casting before settledSource — refuse until settled lands.
+    if (casting) return false
+    return true
+}
+
+/**
+ * Theater status while Cast is connecting — surface warm work so the gap
+ * before the TV starts is not a frozen "Connecting…" spinner.
+ */
+internal fun castTheaterWarmHint(
+    pending: Boolean,
+    connecting: Boolean,
+    warmReady: Boolean,
+): String? = when {
+    !pending -> null
+    warmReady -> "Starting on your TV…"
+    connecting -> "Warming stream…"
+    else -> "Connecting to your TV"
+}
+
 /**
  * A discarded prepare may have reopened the socket after [CastRelay.stop].
  * Tear down only when closed, or when our claim is stale and no newer load

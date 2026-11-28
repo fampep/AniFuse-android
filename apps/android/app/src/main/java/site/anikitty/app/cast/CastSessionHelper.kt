@@ -114,6 +114,13 @@ class CastSessionHelper private constructor(
     /** Cancels an in-flight keep-path relay restore when a newer load starts. */
     private val restoreEpoch = AtomicInteger(0)
 
+    /** Last URL [warmForCast] primed — reused when [load] hits the same stream. */
+    @Volatile private var warmUrl: String? = null
+
+    /** True after a successful upstream peek while Cast was still Connecting. */
+    @Volatile var upstreamWarmed: Boolean = false
+        private set
+
     /**
      * Invalidates in-flight [CastRelay.prepare] without waiting on [prepareGate].
      * Bumped by load / stop / release; a stale claim must [CastRelay.stop] again
@@ -402,6 +409,43 @@ class CastSessionHelper private constructor(
         return true
     }
 
+    /**
+     * Bind transport + peek the upstream playlist while Cast is Connecting so
+     * [load] → [CastRelay.prepare] does not pay cold DNS/TLS/CDN on handoff.
+     * Serialized on [prepareGate] with prepare/restore. Never rewrites factories
+     * for a different URL while a settled episode is still on the TV.
+     */
+    fun warmForCast(source: PlayableSource): Boolean {
+        if (closed.get()) return false
+        if (castWarmMatches(warmUrl, source.url) && upstreamWarmed) return true
+        if (!castWarmMayBind(
+                casting = casting,
+                settledUrl = settledSource?.url,
+                nextUrl = source.url,
+                loadInFlight = activeLoadTicket.get() != 0,
+            )
+        ) {
+            return false
+        }
+        synchronized(prepareGate) {
+            if (closed.get()) return false
+            if (!castWarmMayBind(
+                    casting = casting,
+                    settledUrl = settledSource?.url,
+                    nextUrl = source.url,
+                    loadInFlight = activeLoadTicket.get() != 0,
+                )
+            ) {
+                return false
+            }
+            if (castWarmMatches(warmUrl, source.url) && upstreamWarmed) return true
+            val ok = runCatching { relay.warmUpstream(source) }.getOrDefault(false)
+            warmUrl = source.url
+            upstreamWarmed = ok
+            return ok
+        }
+    }
+
     internal fun load(
         source: PlayableSource,
         title: String,
@@ -421,6 +465,7 @@ class CastSessionHelper private constructor(
         activeLoadTicket.set(ticket)
         loadLivePosition = livePositionMs
         val ceiling = castHeightKey(maxVideoHeight)
+        // Transport bind stays inside prepareClaimed / prepareGate — never here.
         val item = CastItemKey(
             anilistId = anilistId,
             episode = episode,
@@ -926,6 +971,8 @@ class CastSessionHelper private constructor(
         mediaCommittedTicket.set(0)
         ticketItem.set(null)
         ticketSource.set(null)
+        warmUrl = null
+        upstreamWarmed = false
         clearProgress()
         PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
         CastPlaybackService.demoteIfIdle()
