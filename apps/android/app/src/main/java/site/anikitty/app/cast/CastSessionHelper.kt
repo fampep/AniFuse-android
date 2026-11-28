@@ -25,6 +25,7 @@ import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaQueueItem
 import com.google.android.gms.cast.MediaStatus
 import com.google.android.gms.cast.MediaTrack
+import com.google.android.gms.cast.TextTrackStyle
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
@@ -75,6 +76,9 @@ class CastSessionHelper private constructor(
     var heldSubtitleLabel: String?
         get() = captionLabel.get()
         set(value) { captionLabel.set(value) }
+
+    /** Last caption studio look pushed (or held) for the Default Media Receiver. */
+    @Volatile private var heldTextTrackStyle: TextTrackStyle? = null
 
     private val closed = AtomicBoolean(false)
     private val loadSettled = AtomicBoolean(false)
@@ -353,6 +357,16 @@ class CastSessionHelper private constructor(
         heldSubtitleLabel = label
         if (!casting) return
         pushActiveTextTracks()
+    }
+
+    /**
+     * Push phone caption studio look to the Chromecast. Safe before the first
+     * load — the style is held and applied when playback settles.
+     */
+    fun applyTextTrackStyle(style: TextTrackStyle) {
+        heldTextTrackStyle = style
+        if (!casting) return
+        pushTextTrackStyle()
     }
 
     /**
@@ -763,6 +777,17 @@ class CastSessionHelper private constructor(
         runCatching { client.setActiveMediaTracks(next) }
             .onFailure { Log.w(TAG, "Cast subtitle select failed", it) }
         Log.i(TAG, "Cast captions active=${next.toList()} on=${heldSubtitlesOn}")
+        pushTextTrackStyle(client)
+    }
+
+    private fun pushTextTrackStyle(
+        client: RemoteMediaClient? =
+            castContext.sessionManager.currentCastSession?.remoteMediaClient,
+    ) {
+        val style = heldTextTrackStyle ?: return
+        val remote = client ?: return
+        runCatching { remote.setTextTrackStyle(style) }
+            .onFailure { Log.w(TAG, "Cast text track style failed", it) }
     }
 
     /**
@@ -861,6 +886,7 @@ class CastSessionHelper private constructor(
         main.post {
             if (closed.get() || ticket != generation.get()) return@post
             pushActiveTextTracks()
+            pushTextTrackStyle()
             fireLoadReady()
         }
     }

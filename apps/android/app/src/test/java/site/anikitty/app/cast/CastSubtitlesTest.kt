@@ -172,4 +172,38 @@ class CastSubtitlesTest {
             lines.any { it == "Access-Control-Allow-Private-Network: true" },
         )
     }
+
+    @Test
+    fun textTrackStyleMapsCaptionStudio() {
+        assertEquals(1.0f, castFontScaleFromSp(18f), 0.001f)
+        assertEquals(0.5f, castFontScaleFromSp(9f), 0.001f)
+        assertEquals(2.5f, castFontScaleFromSp(80f), 0.001f)
+        assertEquals(
+            com.google.android.gms.cast.TextTrackStyle.EDGE_TYPE_OUTLINE,
+            castMapEdgeType(1),
+        )
+        assertEquals(
+            com.google.android.gms.cast.TextTrackStyle.FONT_FAMILY_SERIF,
+            castMapFontFamily("Serif"),
+        )
+        val style = castTextTrackStyle(
+            foregroundColor = 0xFFF2F2F2.toInt(),
+            backgroundColor = 0,
+            windowColor = 0x8C000000.toInt(),
+            edgeType = 1,
+            sizeSp = 18f,
+            bold = true,
+            italic = true,
+            typeface = "Sans",
+        )
+        assertEquals(1.0f, style.fontScale, 0.001f)
+        assertEquals(
+            com.google.android.gms.cast.TextTrackStyle.FONT_STYLE_BOLD_ITALIC,
+            style.fontStyle,
+        )
+        assertEquals(
+            com.google.android.gms.cast.TextTrackStyle.WINDOW_TYPE_NORMAL,
+            style.windowType,
+        )
+    }
 }

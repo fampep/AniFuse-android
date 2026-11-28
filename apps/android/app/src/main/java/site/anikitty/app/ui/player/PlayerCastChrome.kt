@@ -6,8 +6,6 @@
 package site.anikitty.app.ui.player
 
 import androidx.annotation.OptIn
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,25 +26,56 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.PlayerChrome
+
+/** Compact status line for AniFuse cast chrome / TalkBack. */
+internal fun castTheaterStatusPill(
+    connecting: Boolean,
+    buffering: Boolean,
+    isMovie: Boolean,
+    episode: Int,
+    title: String,
+): String {
+    val state = when {
+        connecting -> "Connecting"
+        buffering -> "Buffering"
+        else -> "Casting"
+    }
+    val what = if (isMovie) title else "EP $episode · $title"
+    return "$state · $what"
+}
+
+/**
+ * Dock pills on phone cast theater (Plex glass). Mute stays cast-only —
+ * Sources / Quality / Subs match local AniFuse chrome.
+ */
+internal fun castChromeDockLabels(
+    showEpisodes: Boolean,
+    qualityLabel: String,
+    speedLabel: String,
+    muted: Boolean,
+): List<String> = buildList {
+    if (showEpisodes) add("Episodes")
+    add("Sources")
+    add(qualityLabel)
+    add("Subs")
+    add(if (muted) "Unmute" else "Mute")
+    add(speedLabel)
+}
 
 @Composable
 internal fun CastStatusBadge(
@@ -57,13 +86,11 @@ internal fun CastStatusBadge(
     connecting: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(16.dp)
     val line = if (isMovie) title else "EP $episode · $title"
     Row(
         modifier = modifier
-            .clip(shape)
-            .background(Color.Black.copy(alpha = 0.72f))
-            .border(1.dp, Color.White.copy(alpha = 0.22f), shape)
+            .stageGlassPlate(shape = shape, elevated = true)
             .clearAndSetSemantics {
                 contentDescription = castStatusDescription(
                     buffering,
