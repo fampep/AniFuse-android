@@ -125,6 +125,9 @@ class CastSubtitlesTest {
         // CastPlayer drops the playhead on replace — seek stamp must stay non-negative.
         assertEquals(0L, castLateCaptionSeekMs(-12L))
         assertEquals(90_000L, castLateCaptionSeekMs(90_000L))
+        // Sidecar attach alone leaves the TV caption-dark — must re-select.
+        assertTrue(castLateCaptionShouldActivateTracks(attached = true))
+        assertFalse(castLateCaptionShouldActivateTracks(attached = false))
     }
 
     @Test

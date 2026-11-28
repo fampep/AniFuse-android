@@ -199,6 +199,12 @@ internal fun castCanReplaceMediaItem(
 /** Playhead to stamp after a Cast caption replace (never negative). */
 internal fun castLateCaptionSeekMs(positionMs: Long): Long = positionMs.coerceAtLeast(0L)
 
+/**
+ * Replace/setMediaItem attaches sidecar files but does not select them.
+ * Callers must re-activate text tracks after a successful late push.
+ */
+internal fun castLateCaptionShouldActivateTracks(attached: Boolean): Boolean = attached
+
 /** Pick an active text-track id from the live cast session tracks. */
 internal fun castPickTextTrackId(
     tracks: List<MediaTrack>,

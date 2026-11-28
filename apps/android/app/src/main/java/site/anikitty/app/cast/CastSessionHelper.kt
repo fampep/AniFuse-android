@@ -372,6 +372,13 @@ class CastSessionHelper private constructor(
         }
         castPlayer.volume = heldVolume
         castPlayer.playWhenReady = true
+        // Replace attaches sidecar files but does not select them — without
+        // this the TV stays caption-dark until the user toggles captions.
+        pushActiveTextTracks()
+        // Track IDs often appear one status tick after replace; re-select then.
+        main.post {
+            if (!closed.get() && casting) pushActiveTextTracks()
+        }
         return true
     }
 

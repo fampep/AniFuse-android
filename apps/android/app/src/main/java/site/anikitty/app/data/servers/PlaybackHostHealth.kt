@@ -19,13 +19,17 @@ internal object PlaybackHostHealth {
     const val HOLD_MS = 3L * 60L * 1000L
     private const val FILE_NAME = "host-health.txt"
     private const val MAX = 64
+    /** Disk line prefix for provider→CDN maps (host mark lines stay unprefixed). */
+    private const val CDN_MAP_PREFIX = ">"
 
     private val lock = Any()
     private val marks = LinkedHashMap<String, Mark>(MAX, 0.75f, true)
     /** Last playable CDN host per provider id — ranks the race window by CDN, not siteUrl. */
-    private val providerCdns = LinkedHashMap<String, String>(MAX, 0.75f, true)
+    private val providerCdns = LinkedHashMap<String, ProviderCdn>(MAX, 0.75f, true)
     private var dir: File? = null
     private var lastBody: String? = null
+
+    data class ProviderCdn(val host: String, val atMs: Long)
 
     @Volatile
     private var playing: String? = null
@@ -109,16 +113,26 @@ internal object PlaybackHostHealth {
     }
 
     /** Bind a provider id to the CDN host that just played so the next race ranks by CDN. */
-    fun noteProviderCdn(providerId: String, host: String) {
+    fun noteProviderCdn(
+        providerId: String,
+        host: String,
+        nowMs: Long = System.currentTimeMillis(),
+    ) {
         val id = providerId.trim().lowercase()
         val key = host.trim().lowercase()
         if (id.isEmpty() || key.isEmpty()) return
         synchronized(lock) {
-            providerCdns[id] = key
+            val stale = providerCdns.filterValues { nowMs - it.atMs > HOLD_MS }.keys
+            stale.forEach { providerCdns.remove(it) }
+            val previous = providerCdns[id]
+            providerCdns[id] = ProviderCdn(host = key, atMs = nowMs)
             while (providerCdns.size > MAX) {
-                val oldest = providerCdns.keys.firstOrNull() ?: break
+                val oldest = providerCdns.entries.minByOrNull { it.value.atMs }?.key ?: break
                 providerCdns.remove(oldest)
             }
+            // New provider binding only — remaps / refreshes keep coalesce joinable.
+            if (previous == null) generation += 1L
+            persistLocked()
         }
     }
 
@@ -151,7 +165,9 @@ internal object PlaybackHostHealth {
         nowMs: Long = System.currentTimeMillis(),
     ): Int {
         val id = providerId.trim().lowercase()
-        val cdn = synchronized(lock) { providerCdns[id] }
+        val cdn = synchronized(lock) {
+            providerCdns[id]?.takeIf { nowMs - it.atMs <= HOLD_MS }?.host
+        }
         val cdnScore = if (cdn != null) score(cdn, nowMs) else 0
         if (cdnScore != 0) return cdnScore
         return score(playableHost(siteUrl.orEmpty()), nowMs)
@@ -164,8 +180,9 @@ internal object PlaybackHostHealth {
         nowMs: Long = System.currentTimeMillis(),
     ): Long? {
         val id = providerId.trim().lowercase()
-        val host = synchronized(lock) { providerCdns[id] }
-            ?: playableHost(siteUrl.orEmpty()).ifBlank { null }
+        val host = synchronized(lock) {
+            providerCdns[id]?.takeIf { nowMs - it.atMs <= HOLD_MS }?.host
+        } ?: playableHost(siteUrl.orEmpty()).ifBlank { null }
             ?: return null
         val mark = synchronized(lock) { marks[host] } ?: return null
         if (nowMs - mark.atMs > HOLD_MS || !mark.ok) return null
@@ -203,6 +220,19 @@ internal object PlaybackHostHealth {
         val nowMs = System.currentTimeMillis()
         runCatching {
             file.readLines().forEach { line ->
+                if (line.startsWith(CDN_MAP_PREFIX)) {
+                    val parts = line.removePrefix(CDN_MAP_PREFIX).split('\t')
+                    if (parts.size < 3) return@forEach
+                    val id = parts[0].trim().lowercase()
+                    val host = parts[1].trim().lowercase()
+                    val at = parts[2].toLongOrNull() ?: return@forEach
+                    if (id.isEmpty() || host.isEmpty() || nowMs - at > HOLD_MS) return@forEach
+                    val previous = providerCdns[id]
+                    if (previous == null || at >= previous.atMs) {
+                        providerCdns[id] = ProviderCdn(host = host, atMs = at)
+                    }
+                    return@forEach
+                }
                 val parts = line.split('\t')
                 if (parts.size < 4) return@forEach
                 val host = parts[0].trim().lowercase()
@@ -220,9 +250,13 @@ internal object PlaybackHostHealth {
 
     private fun persistLocked() {
         val root = dir ?: return
-        val body = marks.entries.joinToString("\n") { (host, mark) ->
+        val markLines = marks.entries.map { (host, mark) ->
             "$host\t${mark.atMs}\t${if (mark.ok) 1 else 0}\t${mark.latencyMs}"
         }
+        val mapLines = providerCdns.entries.map { (id, map) ->
+            "$CDN_MAP_PREFIX$id\t${map.host}\t${map.atMs}"
+        }
+        val body = (markLines + mapLines).joinToString("\n")
         if (body == lastBody) return
         lastBody = body
         runCatching {

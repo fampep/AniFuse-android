@@ -85,6 +85,41 @@ class PlaybackHostHealthTest {
     }
 
     @Test
+    fun providerCdnMappingSurvivesProcessDeath() {
+        val dir = File.createTempFile("hosts-cdn", "").apply {
+            delete()
+            mkdirs()
+        }
+        val now = System.currentTimeMillis()
+        PlaybackHostHealth.detach()
+        PlaybackHostHealth.attach(dir)
+        PlaybackHostHealth.note("cdn.persist", ok = true, latencyMs = 55L, nowMs = now)
+        PlaybackHostHealth.note("site.persist", ok = false, nowMs = now)
+        PlaybackHostHealth.noteProviderCdn("anipm", "cdn.persist", nowMs = now)
+        PlaybackHostHealth.detach()
+        PlaybackHostHealth.attach(dir)
+        assertTrue(
+            PlaybackHostHealth.scoreProvider("anipm", "https://site.persist/", nowMs = now) > 0,
+        )
+        assertEquals(
+            55L,
+            PlaybackHostHealth.providerLatencyMs("anipm", "https://site.persist/", nowMs = now),
+        )
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun noteProviderCdnOnlyAdvancesGenerationForNewProviders() {
+        PlaybackHostHealth.detach()
+        val before = PlaybackHostHealth.ledgerGeneration()
+        PlaybackHostHealth.noteProviderCdn("anipm", "cdn.a", nowMs = 1_000L)
+        val afterInsert = PlaybackHostHealth.ledgerGeneration()
+        assertTrue(afterInsert > before)
+        PlaybackHostHealth.noteProviderCdn("anipm", "cdn.b", nowMs = 1_100L)
+        assertEquals(afterInsert, PlaybackHostHealth.ledgerGeneration())
+    }
+
+    @Test
     fun providerScoreUsesCdnNotSiteUrl() {
         PlaybackHostHealth.detach()
         PlaybackHostHealth.note("cdn.good", ok = true, latencyMs = 50L, nowMs = 1_000L)
