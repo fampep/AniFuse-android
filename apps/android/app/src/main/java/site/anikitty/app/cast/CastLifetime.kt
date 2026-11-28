@@ -150,6 +150,27 @@ internal fun castRelayRestoreMayPrepare(
 internal fun castRelayPrepareStillOwns(claim: Int, prepareEpoch: Int, closed: Boolean): Boolean =
     !closed && claim == prepareEpoch
 
+/** Warm cache hits only when the cast load URL is unchanged. */
+internal fun castWarmMatches(warmUrl: String?, nextUrl: String): Boolean {
+    if (warmUrl.isNullOrBlank() || nextUrl.isBlank()) return false
+    return warmUrl == nextUrl
+}
+
+/**
+ * Theater status while Cast is connecting — surface warm work so the gap
+ * before the TV starts is not a frozen "Connecting…" spinner.
+ */
+internal fun castTheaterWarmHint(
+    pending: Boolean,
+    connecting: Boolean,
+    warmReady: Boolean,
+): String? = when {
+    !pending -> null
+    warmReady -> "Starting on your TV…"
+    connecting -> "Warming stream…"
+    else -> "Connecting to your TV"
+}
+
 /**
  * A discarded prepare may have reopened the socket after [CastRelay.stop].
  * Tear down only when closed, or when our claim is stale and no newer load

@@ -50,9 +50,11 @@ internal fun castStatusDescription(
     episode: Int,
     title: String,
     connecting: Boolean = false,
+    warmReady: Boolean = false,
 ): String {
     val state = when {
-        connecting -> "Connecting to your TV"
+        connecting && warmReady -> "Starting on your TV"
+        connecting -> "Warming stream"
         buffering -> "Buffering on your TV"
         else -> "Casting to your TV"
     }

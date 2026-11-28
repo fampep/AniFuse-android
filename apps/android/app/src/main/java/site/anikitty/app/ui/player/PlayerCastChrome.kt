@@ -49,9 +49,11 @@ internal fun castTheaterStatusPill(
     isMovie: Boolean,
     episode: Int,
     title: String,
+    warmReady: Boolean = false,
 ): String {
     val state = when {
-        connecting -> "Connecting"
+        connecting && warmReady -> "Starting"
+        connecting -> "Warming"
         buffering -> "Buffering"
         else -> "Casting"
     }
@@ -84,6 +86,7 @@ internal fun CastStatusBadge(
     isMovie: Boolean,
     buffering: Boolean = false,
     connecting: Boolean = false,
+    warmReady: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(16.dp)
@@ -98,6 +101,7 @@ internal fun CastStatusBadge(
                     episode,
                     title,
                     connecting = connecting,
+                    warmReady = warmReady,
                 )
             }
             .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -113,7 +117,8 @@ internal fun CastStatusBadge(
         Column {
             Text(
                 when {
-                    connecting -> "Connecting to your TV"
+                    connecting && warmReady -> "Starting on your TV…"
+                    connecting -> "Warming stream…"
                     buffering -> "Buffering on your TV"
                     else -> "Casting to your TV"
                 },

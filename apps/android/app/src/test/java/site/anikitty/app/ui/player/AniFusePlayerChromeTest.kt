@@ -66,13 +66,24 @@ class AniFusePlayerChromeTest {
             ),
         )
         assertEquals(
-            "Connecting · A movie",
+            "Warming · A movie",
             castTheaterStatusPill(
                 connecting = true,
                 buffering = false,
                 isMovie = true,
                 episode = 1,
                 title = "A movie",
+            ),
+        )
+        assertEquals(
+            "Starting · EP 2 · Title",
+            castTheaterStatusPill(
+                connecting = true,
+                buffering = false,
+                isMovie = false,
+                episode = 2,
+                title = "Title",
+                warmReady = true,
             ),
         )
         assertEquals(

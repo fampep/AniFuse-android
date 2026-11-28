@@ -271,4 +271,30 @@ class CastLifetimeTest {
         assertTrue(slot.clear("episode-2"))
         assertEquals(null, slot.current)
     }
+
+    @Test
+    fun castWarmMatchesOnlyTheSameUrl() {
+        assertTrue(castWarmMatches("https://cdn/a.m3u8", "https://cdn/a.m3u8"))
+        assertFalse(castWarmMatches("https://cdn/a.m3u8", "https://cdn/b.m3u8"))
+        assertFalse(castWarmMatches(null, "https://cdn/a.m3u8"))
+        assertFalse(castWarmMatches("", "https://cdn/a.m3u8"))
+        assertFalse(castWarmMatches("https://cdn/a.m3u8", ""))
+    }
+
+    @Test
+    fun castTheaterWarmHintSurfacesHandoffProgress() {
+        assertNull(castTheaterWarmHint(pending = false, connecting = true, warmReady = false))
+        assertEquals(
+            "Warming stream…",
+            castTheaterWarmHint(pending = true, connecting = true, warmReady = false),
+        )
+        assertEquals(
+            "Starting on your TV…",
+            castTheaterWarmHint(pending = true, connecting = true, warmReady = true),
+        )
+        assertEquals(
+            "Connecting to your TV",
+            castTheaterWarmHint(pending = true, connecting = false, warmReady = false),
+        )
+    }
 }

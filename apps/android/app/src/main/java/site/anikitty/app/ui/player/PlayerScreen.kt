@@ -139,6 +139,7 @@ import site.anikitty.app.cast.castReceiverNeedsSeek
 import site.anikitty.app.cast.castTransportOwnsPlayer
 import site.anikitty.app.cast.releaseCastHandoff
 import site.anikitty.app.cast.castClientRetryDelayMs
+import site.anikitty.app.cast.castTheaterWarmHint
 import site.anikitty.app.cast.reduceCastAttach
 import site.anikitty.app.cast.reduceCastGiveUp
 import site.anikitty.app.cast.safeSeekTarget
@@ -230,8 +231,10 @@ import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import site.anikitty.app.AnikittyApp
@@ -510,6 +513,8 @@ fun PlayerScreen(
     var castHint by remember { mutableStateOf<String?>(null) }
     /** A Chromecast is up, but the episode stream was not ready to load yet. */
     var castPending by remember { mutableStateOf(false) }
+    /** Upstream playlist peek finished while Cast was still Connecting. */
+    var castWarmReady by remember { mutableStateOf(false) }
     /** The current session already loaded this source, so a later callback does not restart it. */
     var castAttachStarted by remember { mutableStateOf(false) }
     /** Identity of the load already sent. A quality, audio, or failover change replaces it. */
@@ -2132,6 +2137,31 @@ fun PlayerScreen(
             return@LaunchedEffect
         }
         applyCastAttach(sessionUp = true)
+    }
+
+    // While Cast is Connecting, bind headers and peek the playlist so prepare
+    // does not pay cold CDN TLS on the handoff critical path.
+    LaunchedEffect(castHelper, castPending, source?.url, isCasting, castClientGaveUp) {
+        if (castClientGaveUp || isCasting || !castPending) {
+            if (isCasting) castWarmReady = false
+            return@LaunchedEffect
+        }
+        val helper = castHelper ?: return@LaunchedEffect
+        val src = source ?: return@LaunchedEffect
+        castWarmReady = false
+        castHint = castTheaterWarmHint(
+            pending = true,
+            connecting = helper.isSessionConnecting() || castPending,
+            warmReady = false,
+        )
+        val ok = withContext(Dispatchers.IO) { helper.warmForCast(src) }
+        if (!castAlive.get() || isCasting || !castPending) return@LaunchedEffect
+        castWarmReady = ok
+        castHint = castTheaterWarmHint(
+            pending = true,
+            connecting = helper.isSessionConnecting() || castPending,
+            warmReady = ok,
+        )
     }
 
     // Watch history often arrives after the first composition. An attach that
@@ -3954,6 +3984,7 @@ fun PlayerScreen(
                 isMovie = isMovie,
                 connecting = !isCasting,
                 buffering = buffering,
+                warmReady = castWarmReady && !isCasting,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .windowInsetsPadding(WindowInsets.statusBars)
@@ -4488,6 +4519,7 @@ fun PlayerScreen(
                                 isMovie = isMovie,
                                 episode = episode,
                                 title = title,
+                                warmReady = castWarmReady && !isCasting,
                             )
                         } else {
                             glassTheaterStatusWithShadow(
