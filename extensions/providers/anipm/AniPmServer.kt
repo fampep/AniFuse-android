@@ -29,11 +29,11 @@ import java.util.concurrent.TimeUnit
  * 2. `POST /api/session` `{ malId, episode }` → short-lived token
  * 3. Play `/playlists/{mal}_ep{n}/{sub|dub}.direct.pls?t=…` on the same origin
  *
- * Live hosts: AnimePapa (Player API apex that OkHttp can reach), then the
- * brand mirrors `anipm.pk` / `ani.pm` / `ani.nz`. One Race card — never a
- * second site. Brand edges often CF-challenge app clients; Papa is the
- * same Player API stack and ships the playlist. Media3 needs
- * [AnipmXorDataSource] for PNG byte-range XOR trailers.
+ * Live hosts are only ani.pm brand mirrors: `anipm.pk` / `ani.pm` / `ani.nz`.
+ * One Race card — never a second site. [AnimePapa](https://animepapa.cyou)
+ * is a **different** product (separate SDK `Animepapa.Player` / CF zone);
+ * HinataTV embeds Papa. Do not race Papa under the ani.pm card.
+ * Media3 needs [AnipmXorDataSource] for PNG byte-range XOR trailers.
  */
 class AniPmServer(
     private val cache: ResolveCache? = null,
@@ -42,7 +42,7 @@ class AniPmServer(
     override val server = StreamServer(
         id = ID,
         name = "ani.pm",
-        description = "On-device ani.pm resolve via AnimePapa Player API + brand mirrors. One card.",
+        description = "On-device ani.pm resolve (anipm.pk / ani.pm / ani.nz mirrors). One card.",
         iconUrl = "https://www.google.com/s2/favicons?domain=ani.pm&sz=128",
         siteUrl = SITE,
     )
@@ -295,17 +295,16 @@ class AniPmServer(
         /** Canonical brand / store URL. */
         const val SITE = "https://ani.pm"
         /**
-         * AnimePapa hosts the first-party Player API that Media3 can open.
-         * Shared with HinataTV — session tokens warm across both cards.
+         * AnimePapa embed host used by HinataTV only — **not** an ani.pm
+         * origin. Separate brand (`Animepapa.Player` SDK, own CF zone).
          */
         const val PAPA = "https://animepapa.cyou"
         /**
-         * Live playback origins. Papa first: brand edges (`anipm.pk` /
-         * `ani.pm` / `ani.nz`) often return a CF challenge to OkHttp while
-         * Papa answers lookup + `/api/session` + HLS. `ani.nz` stays a
-         * mirror only — never a second Race card.
+         * Live ani.pm playback origins only. `anipm.pk` is the CF apex;
+         * `ani.pm` is the brand; `ani.nz` is a brand mirror — never a
+         * second Race card. AnimePapa is intentionally absent.
          */
-        val ORIGINS = listOf(PAPA, "https://anipm.pk", "https://ani.pm", "https://ani.nz")
+        val ORIGINS = listOf("https://anipm.pk", "https://ani.pm", "https://ani.nz")
         const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"

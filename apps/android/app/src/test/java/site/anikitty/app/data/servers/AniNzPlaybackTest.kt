@@ -122,7 +122,7 @@ class AniNzPlaybackTest {
         // Standalone Race card is gone — ani.nz is an AniPm ORIGINS mirror only.
         assertEquals("anipm", FlixCrypto.migrateServerId("aninz"))
         assertTrue(AniPmServer.ORIGINS.contains("https://ani.nz"))
-        assertTrue(AniPmServer.ORIGINS.contains(AniPmServer.PAPA))
+        assertFalse(AniPmServer.ORIGINS.contains(AniPmServer.PAPA))
         assertFalse(AniPmServer.ORIGINS.contains("https://an.nz"))
     }
 }
