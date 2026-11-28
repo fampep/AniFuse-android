@@ -10,12 +10,12 @@ import org.junit.Test
 
 class NextEpisodeWarmTest {
     @Test
-    fun warmsAfterFiftyFivePercentOnARealEpisode() {
+    fun warmsAfterFortyTwoPercentOnARealEpisode() {
         assertFalse(shouldWarmNextEpisode(10_000L, 1_200_000L, hasNext = true, alreadyWarmed = false))
-        assertFalse(shouldWarmNextEpisode(640_000L, 1_200_000L, hasNext = true, alreadyWarmed = false))
-        assertTrue(shouldWarmNextEpisode(700_000L, 1_200_000L, hasNext = true, alreadyWarmed = false))
-        assertFalse(shouldWarmNextEpisode(700_000L, 1_200_000L, hasNext = true, alreadyWarmed = true))
-        assertFalse(shouldWarmNextEpisode(700_000L, 1_200_000L, hasNext = false, alreadyWarmed = false))
+        assertFalse(shouldWarmNextEpisode(500_000L, 1_200_000L, hasNext = true, alreadyWarmed = false))
+        assertTrue(shouldWarmNextEpisode(510_000L, 1_200_000L, hasNext = true, alreadyWarmed = false))
+        assertFalse(shouldWarmNextEpisode(510_000L, 1_200_000L, hasNext = true, alreadyWarmed = true))
+        assertFalse(shouldWarmNextEpisode(510_000L, 1_200_000L, hasNext = false, alreadyWarmed = false))
         assertFalse(shouldWarmNextEpisode(40_000L, 50_000L, hasNext = true, alreadyWarmed = false))
     }
 
@@ -24,11 +24,11 @@ class NextEpisodeWarmTest {
         val duration = 1_200_000L
         assertEquals(
             StreamWarmAction.None,
-            streamWarmAction(640_000L, duration, hasNext = true, nextWarmed = false, creditsArmed = false),
+            streamWarmAction(500_000L, duration, hasNext = true, nextWarmed = false, creditsArmed = false),
         )
         assertEquals(
             StreamWarmAction.ResolveNext,
-            streamWarmAction(700_000L, duration, hasNext = true, nextWarmed = false, creditsArmed = false),
+            streamWarmAction(510_000L, duration, hasNext = true, nextWarmed = false, creditsArmed = false),
         )
         assertEquals(
             StreamWarmAction.None,
@@ -36,15 +36,15 @@ class NextEpisodeWarmTest {
         )
         assertEquals(
             StreamWarmAction.ArmCredits,
-            streamWarmAction(950_000L, duration, hasNext = true, nextWarmed = true, creditsArmed = false),
+            streamWarmAction(840_000L, duration, hasNext = true, nextWarmed = true, creditsArmed = false),
         )
         assertEquals(
             StreamWarmAction.ResolveNext,
-            streamWarmAction(950_000L, duration, hasNext = true, nextWarmed = false, creditsArmed = true),
+            streamWarmAction(840_000L, duration, hasNext = true, nextWarmed = false, creditsArmed = true),
         )
         assertEquals(
             StreamWarmAction.ArmCredits,
-            streamWarmAction(950_000L, duration, hasNext = false, nextWarmed = false, creditsArmed = false),
+            streamWarmAction(840_000L, duration, hasNext = false, nextWarmed = false, creditsArmed = false),
         )
         assertEquals(
             StreamWarmAction.None,

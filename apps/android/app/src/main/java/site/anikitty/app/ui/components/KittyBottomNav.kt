@@ -139,6 +139,15 @@ fun KittyBottomNav(
                     spotColor = Color.Black.copy(alpha = if (nightDock) 0.55f else 0.12f),
                 )
                 .stageFrosted(shape)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = if (nightDock) 0.10f else 0.06f),
+                            Color.Transparent,
+                        ),
+                    ),
+                    shape,
+                )
                 .padding(horizontal = 6.dp, vertical = 6.dp),
         ) {
             if (tabs.isNotEmpty()) {
@@ -149,8 +158,8 @@ fun KittyBottomNav(
                         snap()
                     } else {
                         spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMediumLow,
+                            dampingRatio = 0.72f,
+                            stiffness = Spring.StiffnessMedium,
                         )
                     },
                     label = "dockSlide",
@@ -166,12 +175,13 @@ fun KittyBottomNav(
                         .background(
                             Brush.verticalGradient(
                                 listOf(
-                                    Color.White.copy(alpha = if (nightDock) 0.14f else 0.10f),
+                                    Color.White.copy(alpha = if (nightDock) 0.22f else 0.14f),
                                     Color.Transparent,
+                                    Color.White.copy(alpha = if (nightDock) 0.06f else 0.04f),
                                 ),
                             ),
                         )
-                        .border(0.5.dp, Color.White.copy(alpha = 0.32f), RoundedCornerShape(22.dp)),
+                        .border(0.5.dp, Color.White.copy(alpha = 0.40f), RoundedCornerShape(22.dp)),
                 )
             }
             Row(
@@ -186,12 +196,12 @@ fun KittyBottomNav(
                         label = "navTint",
                     )
                     val scale by animateFloatAsState(
-                        targetValue = if (selected) 1.08f else 1f,
+                        targetValue = if (selected) 1.12f else 1f,
                         animationSpec = if (reduced) {
                             snap()
                         } else {
                             spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                dampingRatio = 0.68f,
                                 stiffness = Spring.StiffnessMedium,
                             )
                         },

@@ -180,6 +180,10 @@ class AniListClient(
         accessToken: String,
         userId: Int,
     ): List<AniListMediaListEntry> = withContext(Dispatchers.IO) {
+        val cacheKey = "mediaList:v1:$userId"
+        cache?.get(cacheKey, AniListCache.TTL_LIST_MS)?.let { cached ->
+            return@withContext parseMediaListBody(cached)
+        }
         val graphql = """
             query (${'$'}userId: Int, ${'$'}type: MediaType) {
               MediaListCollection(userId: ${'$'}userId, type: ${'$'}type) {
@@ -206,12 +210,17 @@ class AniListClient(
             .toString()
         // Interactive — list pull must not yield to Home shelf traffic.
         val body = execute(payload, accessToken, background = false)
+        cache?.put(cacheKey, body)
+        parseMediaListBody(body)
+    }
+
+    private fun parseMediaListBody(body: String): List<AniListMediaListEntry> {
         val lists = JSONObject(body)
             .optJSONObject("data")
             ?.optJSONObject("MediaListCollection")
             ?.optJSONArray("lists")
-            ?: return@withContext emptyList()
-        buildList {
+            ?: return emptyList()
+        return buildList {
             for (i in 0 until lists.length()) {
                 val list = lists.optJSONObject(i) ?: continue
                 val listStatus = list.optString("status").ifBlank { "CURRENT" }
@@ -259,7 +268,9 @@ class AniListClient(
             .toString()
         runCatching {
             val body = execute(payload, accessToken, background = true)
-            JSONObject(body).optJSONObject("data")?.optJSONObject("SaveMediaListEntry") != null
+            val ok = JSONObject(body).optJSONObject("data")?.optJSONObject("SaveMediaListEntry") != null
+            if (ok) cache?.invalidatePrefix("mediaList:")
+            ok
         }.getOrDefault(false)
     }
 
@@ -276,7 +287,9 @@ class AniListClient(
         runCatching {
             val body = execute(payload, accessToken, background = true)
             val okIndexes = parseSaveProgressBatchSuccess(body, expected = items.size)
-            okIndexes.mapNotNullTo(LinkedHashSet()) { index -> items.getOrNull(index)?.mediaId }
+            val accepted = okIndexes.mapNotNullTo(LinkedHashSet()) { index -> items.getOrNull(index)?.mediaId }
+            if (accepted.isNotEmpty()) cache?.invalidatePrefix("mediaList:")
+            accepted
         }.getOrDefault(emptySet())
     }
 

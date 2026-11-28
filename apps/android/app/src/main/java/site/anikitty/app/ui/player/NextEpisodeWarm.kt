@@ -6,17 +6,17 @@ package site.anikitty.app.ui.player
 /**
  * When the playhead crosses this fraction of the runtime, the next episode's
  * resolver race should already be in flight so autoplay never waits on a cold CDN.
- * 55% leaves ~11 minutes on a typical 24m episode for resolve + caption prefetch.
+ * 42% leaves ~14 minutes on a typical 24m episode for resolve + caption prefetch.
  */
-internal const val NEXT_EPISODE_WARM_FRACTION = 0.55f
+internal const val NEXT_EPISODE_WARM_FRACTION = 0.42f
 
 /** Credits window: re-check the next file and arm a standby CDN for this one. */
-internal const val CREDITS_STANDBY_FRACTION = 0.78f
+internal const val CREDITS_STANDBY_FRACTION = 0.70f
 
 internal enum class StreamWarmAction { None, ResolveNext, ArmCredits }
 
 /**
- * 55% starts the next episode's resolve. 78% revalidates it and arms a
+ * 42% starts the next episode's resolve. 70% revalidates it and arms a
  * different host for the file already playing, so a credits-time 403 is not
  * a cold race. A short clip never warms.
  */
