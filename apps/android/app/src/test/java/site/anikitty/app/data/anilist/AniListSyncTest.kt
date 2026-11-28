@@ -159,6 +159,24 @@ class AniListSyncTest {
         )
     }
 
+    @Test
+    fun drainFlushKeepsLivePlayheadFromFreshRoom() {
+        // Stale snapshot at accept time had no scrub; a playhead landed while
+        // GraphQL retries ran. Flush must re-merge against the fresh row.
+        val live = history(episode = 5, positionMs = 88_000L, durationMs = 1_400_000L)
+        val plans = listOf(
+            AniListDrainHistoryPlan(anilistId = 7, progress = 5, status = "CURRENT"),
+            AniListDrainHistoryPlan(anilistId = 7, progress = 5, status = "CURRENT"),
+        )
+        val collapsed = drainHistoryPlansById(plans).values.toList()
+        assertEquals(1, collapsed.size)
+        val writes = drainHistoryWritesFromFresh(collapsed, mapOf(7 to live))
+        assertEquals(1, writes.size)
+        assertEquals(5, writes[0].episode)
+        assertEquals(88_000L, writes[0].positionMs)
+        assertEquals("CURRENT", writes[0].listStatus)
+    }
+
     private fun merge(local: WatchHistoryEntity?, remoteProgress: Int, pending: Int?) = mergedPullEntry(
         existing = local,
         anilistId = 7,

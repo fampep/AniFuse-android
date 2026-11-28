@@ -131,72 +131,85 @@ class AniListSync(
                 )
             }
             val accepted = aniList.saveProgressBatch(token, items, interactive = interactive)
-            val historyWrites = ArrayList<WatchHistoryEntity>(chunk.size)
-            for (row in chunk) {
-                if (row.anilistId !in accepted) continue
-                sent++
-                val queued = pendingPushes.get(row.anilistId)
-                if (queued != null && shouldDeletePendingPush(queued.updatedAtEpochMs, startedAt)) {
-                    pendingPushes.delete(row.anilistId)
-                }
-                val existing = historyDao.get(row.anilistId) ?: continue
-                val plan = aniListPushPlan(row.episode, row.totalEpisodes)
-                historyWrites += historyAfterAniListPush(existing, plan.progress, plan.status)
-            }
-            // Partial batch: rebatch rejects once, then cap singles so Sync
-            // cannot burn N×700ms on a poisoned chunk.
-            val rejectedRows = pendingPushRejected(chunk, accepted) { it.anilistId }
-            if (pendingPushPartialSuccess(chunk.size, accepted.size) && rejectedRows.isNotEmpty()) {
-                val rejectedItems = rejectedRows.map { row ->
+            // Queue (id, progress, status) only — never snapshot entities across
+            // GraphQL retries. Flush re-reads Room so a live playhead saved in
+            // the window is kept by historyAfterAniListPush.
+            val historyPlans = ArrayList<AniListDrainHistoryPlan>(chunk.size)
+            try {
+                for (row in chunk) {
+                    if (row.anilistId !in accepted) continue
+                    sent++
+                    val queued = pendingPushes.get(row.anilistId)
+                    if (queued != null && shouldDeletePendingPush(queued.updatedAtEpochMs, startedAt)) {
+                        pendingPushes.delete(row.anilistId)
+                    }
                     val plan = aniListPushPlan(row.episode, row.totalEpisodes)
-                    AniListBatchPushItem(
-                        mediaId = row.anilistId,
-                        progress = plan.progress,
-                        status = plan.status,
-                    )
+                    historyPlans += AniListDrainHistoryPlan(row.anilistId, plan.progress, plan.status)
                 }
-                val plan = pendingPushRetryPlan(rejectedItems)
-                if (plan.rebatch.isNotEmpty()) {
-                    val retryStarted = System.currentTimeMillis()
-                    val reAccepted = aniList.saveProgressBatch(
-                        token,
-                        plan.rebatch,
-                        interactive = interactive,
-                    )
-                    for (row in rejectedRows) {
-                        if (row.anilistId !in reAccepted) continue
+                // Partial batch: rebatch rejects once, then cap singles so Sync
+                // cannot burn N×700ms on a poisoned chunk.
+                val rejectedRows = pendingPushRejected(chunk, accepted) { it.anilistId }
+                if (pendingPushPartialSuccess(chunk.size, accepted.size) && rejectedRows.isNotEmpty()) {
+                    val rejectedItems = rejectedRows.map { row ->
+                        val plan = aniListPushPlan(row.episode, row.totalEpisodes)
+                        AniListBatchPushItem(
+                            mediaId = row.anilistId,
+                            progress = plan.progress,
+                            status = plan.status,
+                        )
+                    }
+                    val plan = pendingPushRetryPlan(rejectedItems)
+                    if (plan.rebatch.isNotEmpty()) {
+                        val retryStarted = System.currentTimeMillis()
+                        val reAccepted = aniList.saveProgressBatch(
+                            token,
+                            plan.rebatch,
+                            interactive = interactive,
+                        )
+                        for (row in rejectedRows) {
+                            if (row.anilistId !in reAccepted) continue
+                            sent++
+                            val queued = pendingPushes.get(row.anilistId)
+                            if (queued != null && shouldDeletePendingPush(queued.updatedAtEpochMs, retryStarted)) {
+                                pendingPushes.delete(row.anilistId)
+                            }
+                            val pushPlan = aniListPushPlan(row.episode, row.totalEpisodes)
+                            historyPlans += AniListDrainHistoryPlan(
+                                row.anilistId,
+                                pushPlan.progress,
+                                pushPlan.status,
+                            )
+                        }
+                    }
+                    for (item in plan.singles) {
+                        val row = rejectedRows.firstOrNull { it.anilistId == item.mediaId } ?: continue
+                        val retryStarted = System.currentTimeMillis()
+                        val ok = aniList.saveProgress(
+                            accessToken = token,
+                            mediaId = item.mediaId,
+                            progress = item.progress,
+                            status = item.status,
+                            interactive = interactive,
+                        )
+                        if (!ok) continue
                         sent++
                         val queued = pendingPushes.get(row.anilistId)
                         if (queued != null && shouldDeletePendingPush(queued.updatedAtEpochMs, retryStarted)) {
                             pendingPushes.delete(row.anilistId)
                         }
-                        val existing = historyDao.get(row.anilistId) ?: continue
-                        val pushPlan = aniListPushPlan(row.episode, row.totalEpisodes)
-                        historyWrites += historyAfterAniListPush(existing, pushPlan.progress, pushPlan.status)
+                        historyPlans += AniListDrainHistoryPlan(
+                            row.anilistId,
+                            item.progress,
+                            item.status,
+                        )
                     }
+                    // plan.deferred stays queued for the next drain.
                 }
-                for (item in plan.singles) {
-                    val row = rejectedRows.firstOrNull { it.anilistId == item.mediaId } ?: continue
-                    val retryStarted = System.currentTimeMillis()
-                    val ok = aniList.saveProgress(
-                        accessToken = token,
-                        mediaId = item.mediaId,
-                        progress = item.progress,
-                        status = item.status,
-                        interactive = interactive,
-                    )
-                    if (!ok) continue
-                    sent++
-                    val queued = pendingPushes.get(row.anilistId)
-                    if (queued != null && shouldDeletePendingPush(queued.updatedAtEpochMs, retryStarted)) {
-                        pendingPushes.delete(row.anilistId)
-                    }
-                    val existing = historyDao.get(row.anilistId) ?: continue
-                    historyWrites += historyAfterAniListPush(existing, item.progress, item.status)
-                }
-                // plan.deferred stays queued for the next drain.
+            } finally {
+                // Retries that throw must still land accepted marks — pending
+                // rows were already deleted above.
+                flushDrainHistoryPlans(historyDao, historyPlans)
             }
-            if (historyWrites.isNotEmpty()) historyDao.upsertAll(historyWrites)
             // Total misses stay queued for the next drain.
         }
         return sent
@@ -239,6 +252,54 @@ class AniListSync(
         historyDao.upsert(historyAfterAniListPush(existing, plan.progress, plan.status))
         return true
     }
+}
+
+/** Accepted drain mark waiting for a fresh Room merge at flush. */
+internal data class AniListDrainHistoryPlan(
+    val anilistId: Int,
+    val progress: Int,
+    val status: String,
+)
+
+/**
+ * Re-read history at flush so a playhead that landed during GraphQL retries
+ * is not overwritten by a stale snapshot. Last plan per id wins.
+ */
+internal suspend fun flushDrainHistoryPlans(
+    historyDao: WatchHistoryDao,
+    plans: List<AniListDrainHistoryPlan>,
+) {
+    if (plans.isEmpty()) return
+    val latest = drainHistoryPlansById(plans)
+    val fresh = historyDao.getByIds(latest.keys.toList()).associateBy { it.anilistId }
+    val writes = drainHistoryWritesFromFresh(latest.values.toList(), fresh)
+    if (writes.isNotEmpty()) historyDao.upsertAll(writes)
+}
+
+/** Collapse duplicate accepts so one Room write lands per title. */
+internal fun drainHistoryPlansById(
+    plans: List<AniListDrainHistoryPlan>,
+): Map<Int, AniListDrainHistoryPlan> {
+    val latest = LinkedHashMap<Int, AniListDrainHistoryPlan>(plans.size)
+    for (plan in plans) latest[plan.anilistId] = plan
+    return latest
+}
+
+/**
+ * Apply accepted progress onto **fresh** Room rows. A live scrub that landed
+ * after the GraphQL round-trip is preserved by [historyAfterAniListPush].
+ */
+internal fun drainHistoryWritesFromFresh(
+    plans: List<AniListDrainHistoryPlan>,
+    freshById: Map<Int, WatchHistoryEntity>,
+): List<WatchHistoryEntity> {
+    if (plans.isEmpty()) return emptyList()
+    val writes = ArrayList<WatchHistoryEntity>(plans.size)
+    for (plan in plans) {
+        val existing = freshById[plan.anilistId] ?: continue
+        writes += historyAfterAniListPush(existing, plan.progress, plan.status)
+    }
+    return writes
 }
 
 /** What one finished-episode count becomes on AniList. */
