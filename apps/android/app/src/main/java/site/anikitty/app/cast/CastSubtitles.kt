@@ -6,6 +6,7 @@ package site.anikitty.app.cast
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import com.google.android.gms.cast.MediaTrack
+import com.google.android.gms.cast.TextTrackStyle
 import site.anikitty.app.data.servers.SubtitleTrack
 
 /**
@@ -222,4 +223,68 @@ internal fun castPickTextTrackId(
         wantLang != null && track.language?.trim()?.lowercase()?.substringBefore('-') == wantLang
     } ?: text.first()
     return longArrayOf(pick.id)
+}
+
+/**
+ * Map phone caption studio values onto Chromecast [TextTrackStyle].
+ * Edge constants match Media3 [androidx.media3.ui.CaptionStyleCompat].
+ */
+internal fun castTextTrackStyle(
+    foregroundColor: Int,
+    backgroundColor: Int,
+    windowColor: Int,
+    edgeType: Int,
+    sizeSp: Float,
+    bold: Boolean,
+    italic: Boolean,
+    typeface: String,
+    baselineSp: Float = 18f,
+): TextTrackStyle {
+    val style = TextTrackStyle()
+    style.setForegroundColor(foregroundColor)
+    style.setBackgroundColor(backgroundColor)
+    style.setWindowColor(windowColor)
+    // Avoid android.graphics.Color so JVM unit tests stay mock-free.
+    val windowAlpha = (windowColor ushr 24) and 0xff
+    style.setWindowType(
+        if (windowAlpha == 0) {
+            TextTrackStyle.WINDOW_TYPE_NONE
+        } else {
+            TextTrackStyle.WINDOW_TYPE_NORMAL
+        },
+    )
+    style.setEdgeColor(0xFF000000.toInt())
+    style.setEdgeType(castMapEdgeType(edgeType))
+    style.setFontScale(castFontScaleFromSp(sizeSp, baselineSp))
+    style.setFontGenericFamily(castMapFontFamily(typeface))
+    style.setFontStyle(
+        when {
+            bold && italic -> TextTrackStyle.FONT_STYLE_BOLD_ITALIC
+            bold -> TextTrackStyle.FONT_STYLE_BOLD
+            italic -> TextTrackStyle.FONT_STYLE_ITALIC
+            else -> TextTrackStyle.FONT_STYLE_NORMAL
+        },
+    )
+    return style
+}
+
+internal fun castMapEdgeType(captionEdge: Int): Int = when (captionEdge) {
+    0 -> TextTrackStyle.EDGE_TYPE_NONE
+    1 -> TextTrackStyle.EDGE_TYPE_OUTLINE
+    2 -> TextTrackStyle.EDGE_TYPE_DROP_SHADOW
+    3 -> TextTrackStyle.EDGE_TYPE_RAISED
+    4 -> TextTrackStyle.EDGE_TYPE_DEPRESSED
+    else -> TextTrackStyle.EDGE_TYPE_OUTLINE
+}
+
+internal fun castMapFontFamily(typeface: String): Int = when (typeface.trim().lowercase()) {
+    "serif" -> TextTrackStyle.FONT_FAMILY_SERIF
+    "mono", "monospace" -> TextTrackStyle.FONT_FAMILY_MONOSPACED_SANS_SERIF
+    else -> TextTrackStyle.FONT_FAMILY_SANS_SERIF
+}
+
+/** Chromecast fontScale is relative to the receiver default (~1.0). */
+internal fun castFontScaleFromSp(sizeSp: Float, baselineSp: Float = 18f): Float {
+    val base = baselineSp.coerceAtLeast(1f)
+    return (sizeSp / base).coerceIn(0.5f, 2.5f)
 }

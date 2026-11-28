@@ -54,6 +54,48 @@ class AniFusePlayerChromeTest {
     }
 
     @Test
+    fun castTheaterStatusAndDockMatchGlassChrome() {
+        assertEquals(
+            "Casting · EP 4 · Title",
+            castTheaterStatusPill(
+                connecting = false,
+                buffering = false,
+                isMovie = false,
+                episode = 4,
+                title = "Title",
+            ),
+        )
+        assertEquals(
+            "Connecting · A movie",
+            castTheaterStatusPill(
+                connecting = true,
+                buffering = false,
+                isMovie = true,
+                episode = 1,
+                title = "A movie",
+            ),
+        )
+        assertEquals(
+            listOf("Episodes", "Sources", "1080p", "Subs", "Mute", "1.25x"),
+            castChromeDockLabels(
+                showEpisodes = true,
+                qualityLabel = "1080p",
+                speedLabel = "1.25x",
+                muted = false,
+            ),
+        )
+        assertEquals(
+            listOf("Sources", "Auto", "Subs", "Unmute", "Normal"),
+            castChromeDockLabels(
+                showEpisodes = false,
+                qualityLabel = "Auto",
+                speedLabel = "Normal",
+                muted = true,
+            ),
+        )
+    }
+
+    @Test
     fun episodeSkipDiscIconInvertsOnSelectedDisc() {
         val enabled = episodeSkipDiscIconTint(enabled = true)
         assertEquals(0f, enabled.red, 0.001f)

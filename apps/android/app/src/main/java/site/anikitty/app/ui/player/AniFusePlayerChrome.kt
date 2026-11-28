@@ -26,6 +26,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.ClosedCaption
 import androidx.compose.material.icons.outlined.Equalizer
 import androidx.compose.material.icons.outlined.Forward10
@@ -66,6 +68,7 @@ import site.anikitty.app.ui.theme.KittyHaptics
  * Center row: Previous · −10 · Play/Pause · +10 · Next
  * Bottom: scrubber + Plex elapsed/−remaining clock, then glass dock
  * (Episodes / Sources / Quality / Subs / Speed).
+ * [castMode] keeps the same glass dock and adds Mute for the TV speaker.
  */
 @Composable
 internal fun AniFusePlayerChrome(
@@ -103,6 +106,9 @@ internal fun AniFusePlayerChrome(
     onScrub: (Float) -> Unit,
     onScrubFinished: (Float) -> Unit,
     modifier: Modifier = Modifier,
+    castMode: Boolean = false,
+    muted: Boolean = false,
+    onMute: (() -> Unit)? = null,
 ) {
     Box(modifier.fillMaxSize()) {
         Box(
@@ -263,6 +269,15 @@ internal fun AniFusePlayerChrome(
                     ActionPill(Icons.Outlined.Layers, "Sources", onSources)
                     ActionPill(Icons.Outlined.Equalizer, qualityLabel, onQuality)
                     ActionPill(Icons.Outlined.ClosedCaption, "Subs", onSubtitles)
+                    if (castMode && onMute != null) {
+                        ActionPill(
+                            if (muted) Icons.AutoMirrored.Outlined.VolumeOff
+                            else Icons.AutoMirrored.Outlined.VolumeUp,
+                            if (muted) "Unmute" else "Mute",
+                            onMute,
+                            emphasized = muted,
+                        )
+                    }
                     ActionPill(Icons.Outlined.Speed, speedLabel, onSpeed)
                 }
             }

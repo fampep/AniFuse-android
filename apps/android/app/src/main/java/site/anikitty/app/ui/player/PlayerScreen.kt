@@ -2338,6 +2338,30 @@ fun PlayerScreen(
         applyAudioSelection(selector, selectedAudioId, audioOptions)
     }
 
+    LaunchedEffect(subStyle, isCasting, castHelper) {
+        if (!isCasting) return@LaunchedEffect
+        val helper = castHelper ?: return@LaunchedEffect
+        val alpha = (subStyle.bgAlpha.coerceIn(0f, 1f) * 255).toInt().coerceIn(0, 255)
+        val (bg, window) = when (subStyle.bgMode) {
+            SubBgMode.None -> AndroidColor.TRANSPARENT to AndroidColor.TRANSPARENT
+            SubBgMode.Soft -> AndroidColor.TRANSPARENT to AndroidColor.argb((alpha * 0.7f).toInt(), 0, 0, 0)
+            SubBgMode.Blur -> AndroidColor.argb((alpha * 0.62f).toInt(), 0, 0, 0) to
+                AndroidColor.argb(alpha, 0, 0, 0)
+            SubBgMode.Solid -> AndroidColor.argb(alpha, 0, 0, 0) to AndroidColor.TRANSPARENT
+        }
+        helper.applyTextTrackStyle(
+            site.anikitty.app.cast.castTextTrackStyle(
+                foregroundColor = subStyle.color,
+                backgroundColor = bg,
+                windowColor = window,
+                edgeType = subStyle.edgeType,
+                sizeSp = subStyle.sizeSp,
+                bold = subStyle.bold,
+                italic = subStyle.italic,
+                typeface = subStyle.typeface.name,
+            ),
+        )
+    }
     LaunchedEffect(subStyle, playerViewRef) {
         applyCaptionStyle(playerViewRef, subStyle)
         context.getSharedPreferences("anikitty_player", 0).edit()
@@ -3659,7 +3683,17 @@ fun PlayerScreen(
             )
         }
 
-        if (castScreenUp && (!isCasting || !theater || !controlsVisible || controlsLocked)) {
+        // Glass badge when chrome is down / connecting. Phone cast chrome owns
+        // the status pill while controls are visible.
+        val castBadgeNeeded = castScreenUp && (
+            television ||
+                !isCasting ||
+                !theater ||
+                !controlsVisible ||
+                controlsLocked ||
+                panel != PlayerMenuPage.None
+            )
+        if (castBadgeNeeded) {
             CastStatusBadge(
                 episode = episode,
                 title = title,
@@ -4180,9 +4214,9 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                // Phone local playback: AniFuse chrome only. Opening a menu
-                // hides chrome under PlayerMenuFrame — never the old capsules.
-                val phoneChrome = !television && !castScreenUp && panel == PlayerMenuPage.None
+                // Phone theater (local + cast): AniFuse glass chrome only.
+                // Opening a menu hides chrome under PlayerMenuFrame.
+                val phoneChrome = !television && panel == PlayerMenuPage.None
                 if (phoneChrome) {
                     val res = shortQuality(qualityLabel)
                     val mode = if (audio == "dub") "DUB" else "SUB"
@@ -4193,11 +4227,21 @@ fun PlayerScreen(
                         } else {
                             "Episode $episode of $totalEpisodes"
                         },
-                        statusPill = listOfNotNull(
-                            source?.serverName?.takeIf { it.isNotBlank() },
-                            "$res · $mode",
-                            abrFailoverStatusPill(abrPhase),
-                        ).joinToString(" · "),
+                        statusPill = if (castScreenUp) {
+                            castTheaterStatusPill(
+                                connecting = !isCasting,
+                                buffering = buffering,
+                                isMovie = isMovie,
+                                episode = episode,
+                                title = title,
+                            )
+                        } else {
+                            listOfNotNull(
+                                source?.serverName?.takeIf { it.isNotBlank() },
+                                "$res · $mode",
+                                abrFailoverStatusPill(abrPhase),
+                            ).joinToString(" · ")
+                        },
                         playing = playing,
                         speedLabel = speedLabel(playbackSpeed),
                         qualityLabel = shortQuality(qualityLabel),
@@ -4273,10 +4317,17 @@ fun PlayerScreen(
                             positionMs = target
                             scrubbing = false
                         },
+                        castMode = castScreenUp,
+                        muted = muted,
+                        onMute = if (castScreenUp) {
+                            { toggleMute() }
+                        } else {
+                            null
+                        },
                     )
                 }
-                // Old TV/cast wash — never under AniFuse phone chrome.
-                if (!phoneChrome && (television || castScreenUp)) {
+                // TV wash only — phone cast uses AniFuse glass chrome.
+                if (!phoneChrome && television) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -4290,8 +4341,8 @@ fun PlayerScreen(
                 )
                 }
 
-                // Title strip — TV / cast only (phone uses AniFuse chrome).
-                if (panel == PlayerMenuPage.None && (television || castScreenUp)) {
+                // Title strip — TV only (phone local + cast use AniFuse chrome).
+                if (panel == PlayerMenuPage.None && television) {
                     Row(
                         modifier = Modifier
                             .align(Alignment.TopStart)
@@ -4353,45 +4404,10 @@ fun PlayerScreen(
                         }
                     }
 
-                    // Hidden while the ended up-next card owns the center.
-                    if (!showEndAutoplay && !television && castScreenUp) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .size(72.dp)
-                            .playerFocusCue(CircleShape)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.55f))
-                            .border(1.dp, Color.White.copy(alpha = 0.28f), CircleShape)
-                            .clickable {
-                                if (swallowCenterClick) return@clickable
-                                val current = if (isCasting) castHelper?.castPlayer else player
-                                if (current != null && playbackEnded && onNextEpisode != null && !castHandoffInFlight()) {
-                                    goNextEpisode()
-                                } else {
-                                    toggleOnScreen()
-                                }
-                                controlsVisible = true
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                            contentDescription = centerTransportDescription(
-                            playing = playing,
-                            ended = playbackEnded,
-                            hasNext = onNextEpisode != null,
-                        ),
-                            tint = Color.White,
-                            modifier = Modifier.size(34.dp),
-                        )
-                    }
-                    }
                 }
 
-                // Capsules / Cast transport: TV and cast only — phone menus
-                // sit on PlayerMenuFrame without the old bottom chrome.
-                if (television || castScreenUp) {
+                // TV capsules only — phone cast dock lives on AniFuse glass chrome.
+                if (television) {
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -4432,59 +4448,11 @@ fun PlayerScreen(
 
                     Spacer(Modifier.height(16.dp))
 
-                    if (castScreenUp) {
-                        CastTransportRow(
-                            playing = playing,
-                            muted = muted,
-                            player = if (isCasting) castHelper?.castPlayer else null,
-                            scrubbing = scrubbing,
-                            scrubValue = scrubValue,
-                            durationMs = durationMs,
-                            showEpisodes = !isMovie && onPickEpisode != null && totalEpisodes > 1,
-                            castUnavailable = castRouteReason,
-                            onCastUnavailable = { castHint = it },
-                            speedLabel = speedLabel(playbackSpeed),
-                            onSpeed = {
-                                panel = if (panel == PlayerMenuPage.Speed) {
-                                    PlayerMenuPage.None
-                                } else {
-                                    PlayerMenuPage.Speed
-                                }
-                                controlsVisible = true
-                            },
-                            onPlayPause = {
-                                toggleOnScreen()
-                                controlsVisible = true
-                            },
-                            onMute = { toggleMute() },
-                            onSeekBack = { seekBy(-10_000) },
-                            onSeekForward = { seekBy(10_000) },
-                            onEpisodes = {
-                                if (panel == PlayerMenuPage.Episodes) {
-                                    panel = PlayerMenuPage.None
-                                    episodeJumpFocus = false
-                                } else {
-                                    episodeJumpFocus = false
-                                    panel = PlayerMenuPage.Episodes
-                                }
-                                controlsVisible = true
-                            },
-                            onSettings = {
-                                panel = if (panel == PlayerMenuPage.None) {
-                                    PlayerMenuPage.Root
-                                } else {
-                                    PlayerMenuPage.None
-                                }
-                                controlsVisible = true
-                            },
-                            onExitTheater = { leaveTheater() },
-                        )
-                    } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                             val playFocus = remember { FocusRequester() }
                             LaunchedEffect(television, controlsVisible, panel, controlsLocked, showEndAutoplay) {
                                 if (
@@ -4604,7 +4572,6 @@ fun PlayerScreen(
                                     modifier = Modifier.size(48.dp),
                                 )
                             }
-                        }
                     }
                 }
                 }
