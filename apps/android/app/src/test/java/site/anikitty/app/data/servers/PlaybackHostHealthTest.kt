@@ -74,6 +74,17 @@ class PlaybackHostHealthTest {
     }
 
     @Test
+    fun rememberedHostsPreferTheFreshestMarks() {
+        PlaybackHostHealth.detach()
+        PlaybackHostHealth.note("cdn.old", ok = true, latencyMs = 80L, nowMs = 1_000L)
+        PlaybackHostHealth.note("cdn.new", ok = true, latencyMs = 40L, nowMs = 2_000L)
+        assertEquals(
+            listOf("cdn.new", "cdn.old"),
+            PlaybackHostHealth.rememberedHosts(nowMs = 2_500L),
+        )
+    }
+
+    @Test
     fun aZeroLatencyOkNoteKeepsTheStampedResolveRtt() {
         PlaybackHostHealth.detach()
         PlaybackHostHealth.note("cdn.fast", ok = true, latencyMs = 420L, nowMs = 1_000L)

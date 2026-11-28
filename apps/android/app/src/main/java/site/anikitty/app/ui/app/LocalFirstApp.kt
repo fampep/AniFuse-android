@@ -347,6 +347,17 @@ fun LocalFirstApp(
         }
     }
 
+    // Warm Race dock / resolve ranking from remembered CDN hosts on cold open.
+    LaunchedEffect(Unit) {
+        delay(400)
+        while (true) {
+            runCatching {
+                site.anikitty.app.data.servers.HostHealthProbe.refreshRemembered()
+            }
+            delay(45_000L)
+        }
+    }
+
     // A failed progress push stays queued. Coming back online sends it
     // before the next list pull can treat the cloud copy as newer.
     DisposableEffect(aniListAuth.isLinked) {

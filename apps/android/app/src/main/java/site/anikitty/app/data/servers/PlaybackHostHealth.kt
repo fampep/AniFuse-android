@@ -55,6 +55,15 @@ internal object PlaybackHostHealth {
 
     fun playingHost(): String? = playing
 
+    /** CDN hosts still inside [HOLD_MS] — used by background health probes. */
+    fun rememberedHosts(nowMs: Long = System.currentTimeMillis()): List<String> =
+        synchronized(lock) {
+            marks.entries
+                .filter { nowMs - it.value.atMs <= HOLD_MS }
+                .sortedByDescending { it.value.atMs }
+                .map { it.key }
+        }
+
     fun attach(root: File) {
         synchronized(lock) {
             if (dir?.absolutePath == root.absolutePath && marks.isNotEmpty()) return

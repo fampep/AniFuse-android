@@ -162,9 +162,21 @@ fun ExtensionStoreFeed(
     val view = LocalView.current
     var healthTick by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
+        // Re-probe remembered CDN hosts so Race dock is hot on cold open,
+        // then refresh the chip labels on a short UI cadence.
+        runCatching {
+            site.anikitty.app.data.servers.HostHealthProbe.refreshRemembered()
+        }
+        healthTick++
         while (true) {
             delay(2_400)
             healthTick++
+            if (healthTick % 12 == 0) {
+                // ~30s — refresh latency without hammering edges.
+                runCatching {
+                    site.anikitty.app.data.servers.HostHealthProbe.refreshRemembered()
+                }
+            }
         }
     }
     val liveDock = remember(resolvers, bundledIds, selectedId, healthTick) {
