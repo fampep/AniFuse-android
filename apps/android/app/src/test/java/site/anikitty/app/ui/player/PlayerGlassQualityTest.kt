@@ -33,4 +33,47 @@ class PlayerGlassQualityTest {
         assertNull(glassSourceRttLabel(null))
         assertNull(glassSourceRttLabel(0L))
     }
+
+    @Test
+    fun sourcePulseAndShadowStandbyMatchRaceDock() {
+        assertEquals(
+            "LEAD · 40ms",
+            glassSourcePulseLabel(selected = true, latencyMs = 40L, score = 900),
+        )
+        assertEquals(
+            "42ms",
+            glassSourcePulseLabel(selected = false, latencyMs = 42L, score = 900),
+        )
+        assertEquals(
+            "HOT",
+            glassSourcePulseLabel(selected = false, latencyMs = null, score = 900),
+        )
+        assertEquals(
+            "DOWN",
+            glassSourcePulseLabel(selected = false, latencyMs = null, score = -1, cold = true),
+        )
+        assertEquals("STANDBY", glassShadowStandbyLabel(null))
+        assertEquals("STANDBY · 55ms", glassShadowStandbyLabel(55L))
+        assertEquals(
+            "AniPM · 1080p · SUB · failover",
+            glassShadowStandbyMeta("AniPM", "1080p", "SUB"),
+        )
+        assertEquals("Failover standby", glassShadowStandbyMeta(null, null, null))
+        assertEquals(
+            "ani.pm · 1080p · SUB · STANDBY · 55ms",
+            glassTheaterStatusWithShadow(
+                baseParts = listOf("ani.pm", "1080p · SUB"),
+                shadowReady = true,
+                standbyLatencyMs = 55L,
+            ),
+        )
+        assertEquals(
+            "ani.pm · 1080p · SUB",
+            glassTheaterStatusWithShadow(
+                baseParts = listOf("ani.pm", "1080p · SUB"),
+                shadowReady = false,
+                standbyLatencyMs = 55L,
+            ),
+        )
+    }
 }

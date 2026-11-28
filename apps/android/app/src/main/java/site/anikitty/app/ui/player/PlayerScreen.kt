@@ -264,10 +264,10 @@ import site.anikitty.app.data.servers.FlixUnwrapDataSource
 import site.anikitty.app.data.servers.PlaybackHttp
 import site.anikitty.app.data.servers.PlayableSource
 import site.anikitty.app.data.servers.PlayableWarmCache
+import site.anikitty.app.data.servers.HostHealthProbe
 import site.anikitty.app.data.servers.PlaybackHostHealth
 import site.anikitty.app.data.servers.playableHost
 import site.anikitty.app.data.servers.SegmentShadow
-import site.anikitty.app.data.servers.playableHost
 import site.anikitty.app.data.servers.SegmentStripDataSource
 import site.anikitty.app.data.servers.audioSwitchLabel
 import site.anikitty.app.data.servers.requestedAudioLanguage
@@ -525,6 +525,17 @@ fun PlayerScreen(
     var sleepNote by remember { mutableStateOf<String?>(null) }
 
     val source = playlist.getOrNull(sourceIndex)
+    LaunchedEffect(panel, source?.url, shadowHost) {
+        if (panel != PlayerMenuPage.Quality) return@LaunchedEffect
+        // Keep Sources RTT live while the glass sheet is open — LEAD / STANDBY
+        // badges must not freeze on the open-frame snapshot.
+        while (true) {
+            HostHealthProbe.kickRemembered(
+                preferredHost = playableHost(source?.url.orEmpty()).ifBlank { shadowHost },
+            )
+            delay(2_400L)
+        }
+    }
     // Provider sidecars first; SubtitleLibrary.peek fills gaps so warm
     // prefetches paint before a cold CDN listing arrives.
     var librarySubtitles by remember(anilistId, episode) {
@@ -3057,6 +3068,7 @@ fun PlayerScreen(
                         playlist.forEachIndexed { index, src ->
                             val host = playableHost(src.url)
                             val rtt = PlaybackHostHealth.latencyMs(host)
+                            val score = PlaybackHostHealth.score(host)
                             GlassSourceCard(
                                 title = src.label.ifBlank {
                                     src.serverName?.takeIf { it.isNotBlank() } ?: "Source ${index + 1}"
@@ -3068,9 +3080,35 @@ fun PlayerScreen(
                                     subtitleFallback = src.subtitles.joinToString(", ") { it.label }
                                         .takeIf { src.subtitles.isNotEmpty() },
                                 ),
-                                rttLabel = glassSourceRttLabel(rtt),
+                                rttLabel = glassSourcePulseLabel(
+                                    selected = index == sourceIndex,
+                                    latencyMs = rtt,
+                                    score = score,
+                                    cold = score < 0,
+                                ) ?: glassSourceRttLabel(rtt),
                                 selected = index == sourceIndex,
                                 onClick = { pickQuality(index) },
+                            )
+                        }
+                        // Armed shadow — visible failover, not a silent swap.
+                        if (shadowReadyNow() && shadowList.isNotEmpty()) {
+                            val standby = shadowList.first()
+                            val standbyRtt = PlaybackHostHealth.latencyMs(shadowHost.orEmpty())
+                            GlassSourceCard(
+                                title = standby.label.ifBlank {
+                                    standby.serverName?.takeIf { it.isNotBlank() } ?: "Standby"
+                                },
+                                meta = glassShadowStandbyMeta(
+                                    serverName = standby.serverName,
+                                    quality = standby.quality,
+                                    audio = standby.audio,
+                                ),
+                                rttLabel = glassShadowStandbyLabel(standbyRtt),
+                                selected = false,
+                                onClick = {
+                                    swapToShadow(positionMs.coerceAtLeast(0L))
+                                    panel = PlayerMenuPage.None
+                                },
                             )
                         }
                     }
@@ -4214,11 +4252,15 @@ fun PlayerScreen(
                                 title = title,
                             )
                         } else {
-                            listOfNotNull(
-                                source?.serverName?.takeIf { it.isNotBlank() },
-                                "$res · $mode",
-                                abrFailoverStatusPill(abrPhase),
-                            ).joinToString(" · ")
+                            glassTheaterStatusWithShadow(
+                                baseParts = listOfNotNull(
+                                    source?.serverName?.takeIf { it.isNotBlank() },
+                                    "$res · $mode",
+                                    abrFailoverStatusPill(abrPhase),
+                                ),
+                                shadowReady = shadowReadyNow(),
+                                standbyLatencyMs = PlaybackHostHealth.latencyMs(shadowHost.orEmpty()),
+                            )
                         },
                         playing = playing,
                         speedLabel = speedLabel(playbackSpeed),
