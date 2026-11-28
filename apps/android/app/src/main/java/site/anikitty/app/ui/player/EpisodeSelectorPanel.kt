@@ -166,7 +166,8 @@ internal fun EpisodeSelectorPanel(
                 Icon(
                     Icons.Outlined.SkipPrevious,
                     contentDescription = "Previous episode",
-                    tint = if (canPrev) Color.White else Color.White.copy(alpha = 0.28f),
+                    // Selected disc is white — invert the glyph (same as primary Play).
+                    tint = episodeSkipDiscIconTint(enabled = canPrev),
                 )
             }
             Column(
@@ -232,7 +233,7 @@ internal fun EpisodeSelectorPanel(
                 Icon(
                     Icons.Outlined.SkipNext,
                     contentDescription = "Next episode",
-                    tint = if (canNext) Color.White else Color.White.copy(alpha = 0.28f),
+                    tint = episodeSkipDiscIconTint(enabled = canNext),
                 )
             }
         }
@@ -388,6 +389,10 @@ internal fun EpisodeSelectorPanel(
         )
     }
 }
+
+/** Selected StageGlassDisc is white — enabled glyphs must invert to black. */
+internal fun episodeSkipDiscIconTint(enabled: Boolean): Color =
+    if (enabled) Color.Black else Color.White.copy(alpha = 0.28f)
 
 internal fun episodeSelectorMetaLine(
     total: Int,

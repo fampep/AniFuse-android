@@ -116,6 +116,13 @@ internal fun PlayerMenuPage.isStickyStylePage(): Boolean = when (this) {
     else -> false
 }
 
+/**
+ * Any open menu owns vertical/horizontal drags — sticky pages (Subs, Size, …)
+ * still must scroll their lists instead of stealing volume / brightness.
+ */
+internal fun playerMenuBlocksTheaterGestures(page: PlayerMenuPage): Boolean =
+    page != PlayerMenuPage.None
+
 private val LocalMenuCompact = staticCompositionLocalOf { false }
 
 /** One open menu page claims a single initial D-pad target. */

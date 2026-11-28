@@ -3395,19 +3395,12 @@ fun PlayerScreen(
                 )
             }
             .pointerInput(controlsLocked, panel) {
+                // Subs / Size / … are sticky for dismiss, but they still scroll —
+                // never install theater volume/brightness/scrub while a menu is open.
+                if (playerMenuBlocksTheaterGestures(panel)) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                     val start = down.position
-                    if (panel != PlayerMenuPage.None && !panel.isStickyStylePage()) {
-                        // A settings sheet is open: its own scrolling owns the
-                        // gesture. Wait out this press without touching volume
-                        // or brightness, and without stealing the drag.
-                        while (true) {
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                            if (event.changes.none { it.pressed }) break
-                        }
-                        return@awaitEachGesture
-                    }
                     val edgeZone = playerEdgeZone(start.x, size.width)
                     var dragged = false
                     var horizontal = false
@@ -4217,6 +4210,7 @@ fun PlayerScreen(
                         ).joinToString(" · "),
                         playing = playing,
                         speedLabel = speedLabel(playbackSpeed),
+                        qualityLabel = shortQuality(qualityLabel),
                         showEpisodes = !isMovie && onPickEpisode != null && totalEpisodes > 1,
                         showPrevious = chromeShowsPreviousEpisode(
                             showEpisodes = !isMovie && onPickEpisode != null && totalEpisodes > 1,
@@ -4258,6 +4252,11 @@ fun PlayerScreen(
                         onPrevious = { goPreviousEpisode() },
                         onSources = {
                             sourcePanelFocus = true
+                            panel = PlayerMenuPage.Quality
+                            controlsVisible = true
+                        },
+                        onQuality = {
+                            sourcePanelFocus = false
                             panel = PlayerMenuPage.Quality
                             controlsVisible = true
                         },

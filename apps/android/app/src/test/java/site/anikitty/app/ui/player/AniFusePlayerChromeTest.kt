@@ -52,4 +52,14 @@ class AniFusePlayerChromeTest {
         assertEquals(128, glassSkipBottomPaddingDp(chromeUp = true, casting = false).value.toInt())
         assertEquals(136, glassSkipBottomPaddingDp(chromeUp = true, casting = true).value.toInt())
     }
+
+    @Test
+    fun episodeSkipDiscIconInvertsOnSelectedDisc() {
+        val enabled = episodeSkipDiscIconTint(enabled = true)
+        assertEquals(0f, enabled.red, 0.001f)
+        assertEquals(0f, enabled.green, 0.001f)
+        assertEquals(0f, enabled.blue, 0.001f)
+        assertEquals(1f, enabled.alpha, 0.001f)
+        assertEquals(0.28f, episodeSkipDiscIconTint(enabled = false).alpha, 0.01f)
+    }
 }
