@@ -430,28 +430,34 @@ fun ExtensionStoreFeed(
                                         color = when {
                                             selected -> Color.White
                                             pulse == "DOWN" -> palette.faint
-                                            else -> palette.muted
+                                            else -> Color.White.copy(alpha = 0.78f)
                                         },
                                         fontWeight = FontWeight.Bold,
                                         fontSize = if (selected) 9.sp else 10.sp,
-                                        letterSpacing = if (selected) 0.5.sp else 0.sp,
-                                        modifier = if (selected) {
-                                            Modifier
-                                                .clip(pulseShape)
-                                                .background(Color(0xE6101012))
-                                                .background(
-                                                    Brush.verticalGradient(
-                                                        listOf(
-                                                            Color.White.copy(alpha = 0.18f),
-                                                            Color.Transparent,
+                                        letterSpacing = if (selected) 0.5.sp else 0.2.sp,
+                                        modifier = Modifier
+                                            .clip(pulseShape)
+                                            .background(
+                                                if (selected) Color(0xE6101012) else Color(0xCC141416),
+                                            )
+                                            .background(
+                                                Brush.verticalGradient(
+                                                    listOf(
+                                                        Color.White.copy(
+                                                            alpha = if (selected) 0.18f else 0.10f,
                                                         ),
+                                                        Color.Transparent,
                                                     ),
-                                                )
-                                                .border(1.dp, Color.White.copy(alpha = 0.34f), pulseShape)
-                                                .padding(horizontal = 7.dp, vertical = 2.dp)
-                                        } else {
-                                            Modifier
-                                        },
+                                                ),
+                                            )
+                                            .border(
+                                                1.dp,
+                                                Color.White.copy(
+                                                    alpha = if (selected) 0.34f else 0.20f,
+                                                ),
+                                                pulseShape,
+                                            )
+                                            .padding(horizontal = 7.dp, vertical = 2.dp),
                                     )
                                 }
                             }

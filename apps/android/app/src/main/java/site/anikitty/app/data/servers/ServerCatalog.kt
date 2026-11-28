@@ -305,6 +305,8 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
             if (leadHost.isNotEmpty()) {
                 PlaybackHostHealth.note(leadHost, ok = true, latencyMs = resolveMs)
                 PlaybackHostHealth.noteProviderCdn(resolver.server.id, leadHost)
+                // Invalidate empty/stale probe coalesce — Race dock needs edge RTT now.
+                HostHealthProbe.kickRemembered()
             }
             // Shadow / credits races pass avoidHost — never overwrite the playing live lane.
             val primaryRace = avoidHost.isNullOrBlank()

@@ -45,4 +45,14 @@ class HostHealthProbeTest {
         assertTrue(shouldReuseProbeFlight(flightActive = true))
         assertFalse(shouldReuseProbeFlight(flightActive = false))
     }
+
+    @Test
+    fun ledgerAdvanceInvalidatesAnActiveFlight() {
+        assertTrue(shouldInvalidateProbeFlight(true, flightGeneration = 1L, ledgerGeneration = 2L))
+        assertFalse(shouldInvalidateProbeFlight(true, flightGeneration = 2L, ledgerGeneration = 2L))
+        assertFalse(shouldInvalidateProbeFlight(false, flightGeneration = 1L, ledgerGeneration = 2L))
+        assertTrue(shouldStartProbeFlight(false, flightGeneration = -1L, ledgerGeneration = 0L))
+        assertTrue(shouldStartProbeFlight(true, flightGeneration = 1L, ledgerGeneration = 3L))
+        assertFalse(shouldStartProbeFlight(true, flightGeneration = 3L, ledgerGeneration = 3L))
+    }
 }

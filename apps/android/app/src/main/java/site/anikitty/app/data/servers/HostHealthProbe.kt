@@ -10,6 +10,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -66,15 +67,36 @@ internal const val HOST_PROBE_TIMEOUT_MS = 1_200L
 /** True when a second refresh should join the in-flight probe wave. */
 internal fun shouldReuseProbeFlight(flightActive: Boolean): Boolean = flightActive
 
+/**
+ * Empty/stale coalesce: a flight started before a resolve stamp must not
+ * poison joiners after [PlaybackHostHealth.ledgerGeneration] advances.
+ */
+internal fun shouldInvalidateProbeFlight(
+    flightActive: Boolean,
+    flightGeneration: Long,
+    ledgerGeneration: Long,
+): Boolean = flightActive && flightGeneration != ledgerGeneration
+
+internal fun shouldStartProbeFlight(
+    flightActive: Boolean,
+    flightGeneration: Long,
+    ledgerGeneration: Long,
+): Boolean = !flightActive ||
+    shouldInvalidateProbeFlight(flightActive, flightGeneration, ledgerGeneration)
+
 internal object HostHealthProbe {
     private val refreshGate = Mutex()
     private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile
     private var refreshFlight: Deferred<List<HostProbeSample>>? = null
+    @Volatile
+    private var refreshFlightGeneration: Long = -1L
 
     /**
      * Home, Extension Store, and cold Play used to stamp three parallel probe
      * waves. Coalesce into one flight so Race dock RTT is not thrashed.
+     * A resolve stamp that advances the ledger starts a fresh flight instead
+     * of joining an empty/stale wave.
      */
     suspend fun refreshRemembered(
         limit: Int = HOST_PROBE_LIMIT,
@@ -82,18 +104,37 @@ internal object HostHealthProbe {
         nowMs: Long = System.currentTimeMillis(),
     ): List<HostProbeSample> {
         val work = refreshGate.withLock {
-            refreshFlight?.takeIf { it.isActive }?.let { return@withLock it }
+            val active = refreshFlight?.takeIf { it.isActive }
+            val ledgerGen = PlaybackHostHealth.ledgerGeneration()
+            if (active != null &&
+                !shouldInvalidateProbeFlight(true, refreshFlightGeneration, ledgerGen)
+            ) {
+                return@withLock active
+            }
             refreshScope.async {
                 val hosts = PlaybackHostHealth.rememberedHosts(nowMs).take(limit)
                 if (hosts.isEmpty()) emptyList() else probeHosts(hosts, timeoutMs, nowMs)
-            }.also { refreshFlight = it }
+            }.also {
+                refreshFlight = it
+                refreshFlightGeneration = ledgerGen
+            }
         }
         return try {
             work.await()
         } finally {
             refreshGate.withLock {
-                if (refreshFlight === work) refreshFlight = null
+                if (refreshFlight === work) {
+                    refreshFlight = null
+                    refreshFlightGeneration = -1L
+                }
             }
+        }
+    }
+
+    /** Fire-and-forget after a resolve stamp so Race dock gets real CDN RTT. */
+    fun kickRemembered() {
+        refreshScope.launch {
+            runCatching { refreshRemembered() }
         }
     }
 

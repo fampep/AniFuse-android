@@ -16,6 +16,14 @@ class PlaybackHostHealthTest {
     }
 
     @Test
+    fun noteAdvancesLedgerGeneration() {
+        PlaybackHostHealth.detach()
+        val before = PlaybackHostHealth.ledgerGeneration()
+        PlaybackHostHealth.note("cdn.gen.example", ok = true, latencyMs = 40L, nowMs = 1_000L)
+        assertTrue(PlaybackHostHealth.ledgerGeneration() > before)
+    }
+
+    @Test
     fun aLeavingPlayerDoesNotClearTheHostTheNextEpisodeRecorded() {
         val first = Any()
         val next = Any()

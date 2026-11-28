@@ -33,6 +33,12 @@ internal object PlaybackHostHealth {
     @Volatile
     private var playingOwner: Any? = null
 
+    /** Bumps on every [note] so probe coalesce can drop empty/stale flights. */
+    @Volatile
+    private var generation: Long = 0L
+
+    fun ledgerGeneration(): Long = generation
+
     /**
      * The CDN [owner] is reading. A newer player can replace it. The owner that
      * left must not clear a host the next episode already recorded.
@@ -92,6 +98,7 @@ internal object PlaybackHostHealth {
                 val oldest = marks.entries.minByOrNull { it.value.atMs }?.key ?: break
                 marks.remove(oldest)
             }
+            generation += 1L
             persistLocked()
         }
     }
@@ -164,6 +171,7 @@ internal object PlaybackHostHealth {
         synchronized(lock) {
             marks.clear()
             providerCdns.clear()
+            generation += 1L
             lastBody = null
             val root = dir ?: return
             runCatching { File(root, FILE_NAME).delete() }
@@ -179,6 +187,7 @@ internal object PlaybackHostHealth {
             lastBody = null
             marks.clear()
             providerCdns.clear()
+            generation = 0L
         }
     }
 

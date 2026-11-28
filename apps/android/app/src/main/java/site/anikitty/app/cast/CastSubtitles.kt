@@ -124,6 +124,37 @@ internal fun castVolumeFromGesture(startLevel: Float, fingerDelta: Float): Float
 internal fun castVolumeNeedsWrite(previous: Float, next: Float): Boolean =
     kotlin.math.abs(previous.coerceIn(0f, 1f) - next.coerceIn(0f, 1f)) > 0.0005f
 
+/** Hold the last write briefly so a round-trip echo does not fight the finger. */
+internal const val CAST_DEVICE_VOLUME_HOLD_MS = 400L
+
+internal data class CastDeviceVolumeSnapshot(
+    val level: Float,
+    val fromSession: Boolean,
+)
+
+/**
+ * Prefer the live session volume once the post-write hold expires.
+ * A stale default hold must not mask the TV speaker forever.
+ */
+internal fun castDeviceVolumeSnapshot(
+    sessionLevel: Float?,
+    heldLevel: Float,
+    nowMs: Long,
+    lastWriteMs: Long,
+    holdMs: Long = CAST_DEVICE_VOLUME_HOLD_MS,
+): CastDeviceVolumeSnapshot {
+    val live = sessionLevel?.takeIf { it.isFinite() }?.coerceIn(0f, 1f)
+    return if (live != null && nowMs - lastWriteMs > holdMs) {
+        CastDeviceVolumeSnapshot(level = live, fromSession = true)
+    } else {
+        CastDeviceVolumeSnapshot(level = heldLevel.coerceIn(0f, 1f), fromSession = false)
+    }
+}
+
+/** Sync the hold when the snapshot came from the live session. */
+internal fun castHeldAfterRead(held: Float, snap: CastDeviceVolumeSnapshot): Float =
+    if (snap.fromSession) snap.level else held
+
 /** Stable identity for the sidecar list last given to the receiver. */
 internal fun castCaptionKey(tracks: List<SubtitleTrack>): String =
     tracks.joinToString("\n") { it.url }

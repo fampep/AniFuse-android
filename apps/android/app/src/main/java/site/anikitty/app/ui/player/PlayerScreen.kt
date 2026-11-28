@@ -1995,7 +1995,11 @@ fun PlayerScreen(
 
     LaunchedEffect(castHint) {
         val message = castHint ?: return@LaunchedEffect
-        if (message != "Connecting to your TV") {
+        // Glass pill is the primary surface — Toast only for hard failures.
+        val toastWorthy = message.contains("not connected", ignoreCase = true) ||
+            message.contains("failed", ignoreCase = true) ||
+            message.contains("Notifications", ignoreCase = true)
+        if (toastWorthy) {
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
         delay(4_200)
@@ -3885,18 +3889,23 @@ fun PlayerScreen(
             )
         }
 
-        if (!inPip && castHint != null) {
+        AnimatedVisibility(
+            visible = !inPip && castHint != null,
+            enter = fadeIn(tween(180)) + slideInVertically(tween(220)) { -it / 3 },
+            exit = fadeOut(tween(160)) + slideOutVertically(tween(180)) { -it / 4 },
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .padding(top = 72.dp, start = 20.dp, end = 20.dp),
+        ) {
             val hintShape = RoundedCornerShape(999.dp)
             Text(
-                castHint!!,
+                castHint.orEmpty(),
                 color = Color.White,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = 0.3.sp,
                 modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(top = 72.dp, start = 20.dp, end = 20.dp)
                     .shadow(
                         elevation = 14.dp,
                         shape = hintShape,

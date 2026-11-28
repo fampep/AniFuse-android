@@ -263,13 +263,14 @@ class CastSessionHelper private constructor(
         val session = castContext.sessionManager.currentCastSession
         val now = android.os.SystemClock.uptimeMillis()
         val sessionLevel = session?.let { runCatching { it.volume.toFloat() }.getOrNull() }
-            ?.takeIf { it.isFinite() }
-            ?.coerceIn(0f, 1f)
-        return if (sessionLevel != null && now - lastDeviceVolumeWriteMs > 400L) {
-            sessionLevel
-        } else {
-            heldDeviceVolume
-        }
+        val snap = castDeviceVolumeSnapshot(
+            sessionLevel = sessionLevel,
+            heldLevel = heldDeviceVolume,
+            nowMs = now,
+            lastWriteMs = lastDeviceVolumeWriteMs,
+        )
+        heldDeviceVolume = castHeldAfterRead(heldDeviceVolume, snap)
+        return snap.level
     }
 
     private fun setDeviceVolume(level: Float, unmuteIfRaising: Boolean): Float {

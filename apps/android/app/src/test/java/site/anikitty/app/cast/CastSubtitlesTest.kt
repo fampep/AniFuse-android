@@ -76,6 +76,28 @@ class CastSubtitlesTest {
     }
 
     @Test
+    fun sessionSnapshotSyncsStaleHoldAfterWriteHold() {
+        val live = castDeviceVolumeSnapshot(
+            sessionLevel = 0.72f,
+            heldLevel = 1f,
+            nowMs = 1_000L,
+            lastWriteMs = 100L,
+        )
+        assertTrue(live.fromSession)
+        assertEquals(0.72f, live.level, 0.001f)
+        assertEquals(0.72f, castHeldAfterRead(held = 1f, snap = live), 0.001f)
+        val held = castDeviceVolumeSnapshot(
+            sessionLevel = 0.72f,
+            heldLevel = 0.55f,
+            nowMs = 200L,
+            lastWriteMs = 100L,
+        )
+        assertFalse(held.fromSession)
+        assertEquals(0.55f, held.level, 0.001f)
+        assertEquals(0.55f, castHeldAfterRead(held = 0.55f, snap = held), 0.001f)
+    }
+
+    @Test
     fun pushWhenCastingAndCaptionKeyDiffers() {
         val tracks = listOf(
             SubtitleTrack(url = "http://143.246.203.212/api/file?id=${"a".repeat(64)}", label = "en"),
