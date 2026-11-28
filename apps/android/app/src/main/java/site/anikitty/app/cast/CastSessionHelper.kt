@@ -239,27 +239,49 @@ class CastSessionHelper private constructor(
     fun isSessionConnecting(): Boolean = readiness() == CastSessionReadiness.Connecting
 
     /**
-     * Move the Chromecast speaker volume. Returns the new level, 0–1.
-     * A swipe must not change the phone's media stream while the TV is playing.
+     * Move the Chromecast speaker volume by one nudge step. Returns the new
+     * level, 0–1. Hardware keys use this path.
      */
     fun adjustDeviceVolume(delta: Float): Float {
+        val current = readDeviceVolume()
+        return setDeviceVolume(castVolumeAfterNudge(current, delta), unmuteIfRaising = delta > 0.012f)
+    }
+
+    /**
+     * Absolute Chromecast speaker level for a continuous finger gesture.
+     * [startLevel] is captured when the drag begins; [fingerDelta] is relative
+     * to that start (not a per-frame nudge).
+     */
+    fun gestureDeviceVolume(startLevel: Float, fingerDelta: Float): Float =
+        setDeviceVolume(
+            castVolumeFromGesture(startLevel, fingerDelta),
+            unmuteIfRaising = fingerDelta > 0.012f,
+        )
+
+    /** Current TV speaker level — session when fresh, else the last write we remember. */
+    fun readDeviceVolume(): Float {
         val session = castContext.sessionManager.currentCastSession
         val now = android.os.SystemClock.uptimeMillis()
         val sessionLevel = session?.let { runCatching { it.volume.toFloat() }.getOrNull() }
             ?.takeIf { it.isFinite() }
             ?.coerceIn(0f, 1f)
-        val current = if (sessionLevel != null && now - lastDeviceVolumeWriteMs > 400L) {
+        return if (sessionLevel != null && now - lastDeviceVolumeWriteMs > 400L) {
             sessionLevel
         } else {
             heldDeviceVolume
         }
-        val next = castVolumeAfterNudge(current, delta)
+    }
+
+    private fun setDeviceVolume(level: Float, unmuteIfRaising: Boolean): Float {
+        val session = castContext.sessionManager.currentCastSession
+        val current = heldDeviceVolume
+        val next = level.coerceIn(0f, 1f)
         heldDeviceVolume = next
         if (session != null && next != current) {
-            lastDeviceVolumeWriteMs = now
+            lastDeviceVolumeWriteMs = android.os.SystemClock.uptimeMillis()
             // setVolume throws IOException, so it is not a Kotlin property setter.
             runCatching { session.setVolume(next.toDouble()) }
-            if (delta > 0.012f && runCatching { session.isMute }.getOrDefault(false)) {
+            if (unmuteIfRaising && runCatching { session.isMute }.getOrDefault(false)) {
                 runCatching { session.setMute(false) }
                 heldVolume = 1f
                 castPlayer.volume = 1f

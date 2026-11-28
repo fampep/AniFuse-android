@@ -50,6 +50,21 @@ class CastSubtitlesTest {
         assertEquals(0.50f, castVolumeAfterNudge(0.50f, 0.001f), 0.001f)
         assertEquals(1f, castVolumeAfterNudge(0.98f, 0.2f), 0.001f)
         assertEquals(0f, castVolumeAfterNudge(0.02f, -0.2f), 0.001f)
+        assertEquals(0.06f, CAST_VOLUME_STEP, 0.0001f)
+    }
+
+    @Test
+    fun continuousGestureMapsFromStartLevel() {
+        assertEquals(0.70f, castVolumeFromGesture(0.50f, 0.20f), 0.001f)
+        assertEquals(0.30f, castVolumeFromGesture(0.50f, -0.20f), 0.001f)
+        assertEquals(1f, castVolumeFromGesture(0.90f, 0.50f), 0.001f)
+        assertEquals(0f, castVolumeFromGesture(0.10f, -0.50f), 0.001f)
+        // Same finger delta twice must not stair-step like nudge does.
+        assertEquals(
+            castVolumeFromGesture(0.40f, 0.25f),
+            castVolumeFromGesture(0.40f, 0.25f),
+            0.001f,
+        )
     }
 
     @Test

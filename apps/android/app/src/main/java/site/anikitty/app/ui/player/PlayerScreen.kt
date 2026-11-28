@@ -121,6 +121,7 @@ import site.anikitty.app.cast.CAST_CAPTION_PUSH_MAX_POLLS
 import site.anikitty.app.cast.CAST_CAPTION_PUSH_POLL_MS
 import site.anikitty.app.cast.castCaptionKey
 import site.anikitty.app.cast.castShouldPushCaptions
+import site.anikitty.app.cast.castVolumeFromGesture
 import site.anikitty.app.cast.castJoin
 import site.anikitty.app.cast.castSameItem
 import site.anikitty.app.cast.castAttachPositionMs
@@ -3280,6 +3281,7 @@ fun PlayerScreen(
                         val activity = context as? Activity
                         val startBrightness = activity?.let { brightnessFraction(it) } ?: 0.5f
                         val startVolume = volumeFraction(context)
+                        val startCastVolume = castHelper?.readDeviceVolume() ?: startVolume
                         while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
                             val change = event.changes.firstOrNull { it.pressed }
@@ -3294,7 +3296,8 @@ fun PlayerScreen(
                                     level = level,
                                 )
                             } else if (isCasting) {
-                                val level = castHelper?.adjustDeviceVolume(delta) ?: startVolume
+                                val level = castHelper?.gestureDeviceVolume(startCastVolume, delta)
+                                    ?: castVolumeFromGesture(startCastVolume, delta)
                                 if (delta > 0.012f && level > 0.02f && muted) {
                                     muted = false
                                     castHelper?.setTvMuted(false)

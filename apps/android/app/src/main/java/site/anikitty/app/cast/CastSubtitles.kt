@@ -100,15 +100,25 @@ internal fun castPlaybackFinished(playerState: Int, idleReason: Int): Boolean =
 internal fun castItemEndedAfterStart(sawPlayback: Boolean, playerState: Int, idleReason: Int): Boolean =
     sawPlayback && castPlaybackFinished(playerState, idleReason)
 
-/** One swipe step is 6% of the Chromecast speaker volume. */
+/** One hardware / nudge step is 6% of the Chromecast speaker volume. */
+internal const val CAST_VOLUME_STEP = 0.06f
+
 internal fun castVolumeAfterNudge(current: Float, delta: Float): Float {
     val steps = when {
         delta > 0.012f -> 1
         delta < -0.012f -> -1
         else -> 0
     }
-    return (current + steps * 0.06f).coerceIn(0f, 1f)
+    return (current + steps * CAST_VOLUME_STEP).coerceIn(0f, 1f)
 }
+
+/**
+ * Continuous finger volume must map from the level at gesture start.
+ * Feeding the same delta into [castVolumeAfterNudge] every frame stair-steps
+ * the TV by 6% per event and overshoots.
+ */
+internal fun castVolumeFromGesture(startLevel: Float, fingerDelta: Float): Float =
+    (startLevel.coerceIn(0f, 1f) + fingerDelta).coerceIn(0f, 1f)
 
 /** Stable identity for the sidecar list last given to the receiver. */
 internal fun castCaptionKey(tracks: List<SubtitleTrack>): String =
