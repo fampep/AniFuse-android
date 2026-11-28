@@ -78,6 +78,36 @@ class CastLifetimeTest {
                 hasPlayingItem = true,
             ),
         )
+        assertTrue(
+            castRelayRestoreMayPrepare(
+                restoreEpoch = 1,
+                currentEpoch = 1,
+                expectedSettled = 2,
+                settledTicket = 2,
+                activeLoadTicket = 0,
+                closed = false,
+            ),
+        )
+        assertFalse(
+            castRelayRestoreMayPrepare(
+                restoreEpoch = 1,
+                currentEpoch = 2,
+                expectedSettled = 2,
+                settledTicket = 2,
+                activeLoadTicket = 0,
+                closed = false,
+            ),
+        )
+        assertFalse(
+            castRelayRestoreMayPrepare(
+                restoreEpoch = 1,
+                currentEpoch = 1,
+                expectedSettled = 2,
+                settledTicket = 2,
+                activeLoadTicket = 0,
+                closed = true,
+            ),
+        )
     }
 
     @Test

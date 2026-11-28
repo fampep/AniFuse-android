@@ -122,6 +122,24 @@ internal fun castRelayRestoreMayPublish(
     activeLoadTicket == 0 &&
     hasPlayingItem
 
+/** Check before prepare — cancelled epochs must not mutate the live relay. */
+internal fun castRelayRestoreMayPrepare(
+    restoreEpoch: Int,
+    currentEpoch: Int,
+    expectedSettled: Int,
+    settledTicket: Int,
+    activeLoadTicket: Int,
+    closed: Boolean,
+): Boolean = !closed &&
+    castRelayRestoreMayPublish(
+        restoreEpoch = restoreEpoch,
+        currentEpoch = currentEpoch,
+        expectedSettled = expectedSettled,
+        settledTicket = settledTicket,
+        activeLoadTicket = activeLoadTicket,
+        hasPlayingItem = true,
+    )
+
 /** The playback service, not the player, hears session end and item end. */
 internal interface CastServiceWatch {
     fun onSessionEnded()

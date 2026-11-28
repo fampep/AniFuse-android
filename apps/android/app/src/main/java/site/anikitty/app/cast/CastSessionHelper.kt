@@ -107,6 +107,9 @@ class CastSessionHelper private constructor(
     /** Cancels an in-flight keep-path relay restore when a newer load starts. */
     private val restoreEpoch = AtomicInteger(0)
 
+    /** Serializes [CastRelay.prepare]/[CastRelay.publish] across load + restore. */
+    private val relayLock = Any()
+
     private val ticketItem = AtomicReference<Pair<Int, CastItemKey>?>(null)
     private val ticketSource = AtomicReference<Pair<Int, PlayableSource>?>(null)
     private var screenProgress: CastProgressTarget? = null
@@ -384,7 +387,9 @@ class CastSessionHelper private constructor(
         // The relay has to outlive the screen that requested this episode.
         CastPlaybackService.promote(appContext, title, episode)
         thread(name = "anikitty-cast-load", isDaemon = true) {
-            val prepared = runCatching { relay.prepare(source) }
+            val prepared = runCatching {
+                synchronized(relayLock) { relay.prepare(source) }
+            }
             main.post {
                 if (closed.get() || ticket != generation.get()) {
                     abortLoad(ticket, mediaCommitted = false)
@@ -460,7 +465,7 @@ class CastSessionHelper private constructor(
         mediaCommittedTicket.set(0)
         ticketItem.set(null)
         ticketSource.set(null)
-        relay.stop()
+        synchronized(relayLock) { relay.stop() }
         PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
         CastPlaybackService.demoteIfIdle()
         return false
@@ -514,24 +519,39 @@ class CastSessionHelper private constructor(
     /** Prepare already pointed the relay at the failed follow-up — put the live episode back. */
     private fun restoreSettledRelay(epoch: Int, expectedSettled: Int) {
         val prev = settledSource ?: return
-        runCatching {
-            val playback = relay.prepare(prev)
-            main.post {
-                if (closed.get()) return@post
-                if (!castRelayRestoreMayPublish(
-                        restoreEpoch = epoch,
-                        currentEpoch = restoreEpoch.get(),
-                        expectedSettled = expectedSettled,
-                        settledTicket = settledTicket.get(),
-                        activeLoadTicket = activeLoadTicket.get(),
-                        hasPlayingItem = playingItem != null,
-                    )
-                ) {
-                    return@post
-                }
-                relay.publish(playback)
+        synchronized(relayLock) {
+            if (!castRelayRestoreMayPrepare(
+                    restoreEpoch = epoch,
+                    currentEpoch = restoreEpoch.get(),
+                    expectedSettled = expectedSettled,
+                    settledTicket = settledTicket.get(),
+                    activeLoadTicket = activeLoadTicket.get(),
+                    closed = closed.get(),
+                )
+            ) {
+                return
             }
-        }.onFailure { Log.w(TAG, "Cast relay restore failed", it) }
+            val playback = runCatching { relay.prepare(prev) }.getOrElse {
+                Log.w(TAG, "Cast relay restore failed", it)
+                return
+            }
+            // Cancelled during prepare — do not publish; undo a revive after stop.
+            if (!castRelayRestoreMayPublish(
+                    restoreEpoch = epoch,
+                    currentEpoch = restoreEpoch.get(),
+                    expectedSettled = expectedSettled,
+                    settledTicket = settledTicket.get(),
+                    activeLoadTicket = activeLoadTicket.get(),
+                    hasPlayingItem = playingItem != null,
+                ) || closed.get()
+            ) {
+                if (closed.get() || settledTicket.get() == 0) {
+                    relay.stop()
+                }
+                return
+            }
+            relay.publish(playback)
+        }
     }
 
     private fun subtitleConfigurations(tracks: List<RelaySubtitle>): List<MediaItem.SubtitleConfiguration> {
@@ -606,7 +626,7 @@ class CastSessionHelper private constructor(
             }, 120L)
             return
         }
-        relay.publish(playback)
+        synchronized(relayLock) { relay.publish(playback) }
         val subs = subtitleConfigurations(playback.subtitles)
         val item = MediaItem.Builder()
             .setUri(playback.url)
@@ -778,7 +798,7 @@ class CastSessionHelper private constructor(
         loadHooks.set(null)
         disarmWatchLoad()
         runCatching { castPlayer.stop() }
-        relay.stop()
+        synchronized(relayLock) { relay.stop() }
         casting = false
         playingItem = null
         loadedItem = null
@@ -807,7 +827,7 @@ class CastSessionHelper private constructor(
         setPlaybackEndedListener(null)
         disarmWatchLoad()
         runCatching { castPlayer.release() }
-        relay.stop()
+        synchronized(relayLock) { relay.stop() }
         runCatching { multicast?.release() }
         casting = false
         playingItem = null
