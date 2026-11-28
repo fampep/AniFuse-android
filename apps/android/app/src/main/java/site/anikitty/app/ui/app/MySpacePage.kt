@@ -719,7 +719,7 @@ private fun CloudSyncBlock(
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     )
                     Text(
-                        text = if (syncing) "Syncing..." else "Connected",
+                        text = cloudSyncStatusLabel(syncing),
                         color = palette.text.copy(alpha = if (syncing) 1f else 0.5f),
                         style = MaterialTheme.typography.labelSmall,
                     )

@@ -4,6 +4,7 @@
 package site.anikitty.app.data.anilist
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -60,5 +61,30 @@ class AniListBatchPushTest {
         assertTrue(!pendingPushPartialSuccess(chunkSize = 3, acceptedCount = 0))
         assertTrue(!pendingPushPartialSuccess(chunkSize = 3, acceptedCount = 3))
         assertTrue(!pendingPushPartialSuccess(chunkSize = 0, acceptedCount = 0))
+    }
+
+    @Test
+    fun partialGraphqlBodyStillYieldsAcceptedMediaIds() {
+        val items = listOf(
+            AniListBatchPushItem(10, 1, "CURRENT"),
+            AniListBatchPushItem(20, 2, "CURRENT"),
+            AniListBatchPushItem(30, 3, "CURRENT"),
+        )
+        val body = """{"data":{"e0":{"id":1},"e1":null,"e2":{"id":3}},"errors":[{"message":"bad"}]}"""
+        assertTrue(aniListBodyHasData(body))
+        assertFalse(aniListBodyHasData("{}"))
+        assertEquals(setOf(10, 30), acceptedMediaIdsFromBatch(body, items))
+    }
+
+    @Test
+    fun retryPlanRebatchesThenCapsSingles() {
+        val rejected = (1..10).map { AniListBatchPushItem(it, it, "CURRENT") }
+        val plan = pendingPushRetryPlan(rejected, maxSingles = 3, rebatchSize = 4)
+        assertEquals(4, plan.rebatch.size)
+        assertEquals(3, plan.singles.size)
+        assertEquals(3, plan.deferred.size)
+        assertEquals(listOf(1, 2, 3, 4), plan.rebatch.map { it.mediaId })
+        assertEquals(listOf(5, 6, 7), plan.singles.map { it.mediaId })
+        assertEquals(listOf(8, 9, 10), plan.deferred.map { it.mediaId })
     }
 }

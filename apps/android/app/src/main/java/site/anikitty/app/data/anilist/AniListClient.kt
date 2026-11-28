@@ -253,6 +253,7 @@ class AniListClient(
         mediaId: Int,
         progress: Int,
         status: String = "CURRENT",
+        interactive: Boolean = false,
     ): Boolean = withContext(Dispatchers.IO) {
         val graphql = """
             mutation (${'$'}mediaId: Int, ${'$'}status: MediaListStatus, ${'$'}progress: Int) {
@@ -274,7 +275,7 @@ class AniListClient(
             )
             .toString()
         runCatching {
-            val body = execute(payload, accessToken, background = true)
+            val body = execute(payload, accessToken, background = !interactive)
             val ok = JSONObject(body).optJSONObject("data")?.optJSONObject("SaveMediaListEntry") != null
             if (ok) cache?.invalidatePrefix("mediaList:")
             ok
@@ -283,18 +284,24 @@ class AniListClient(
 
     /**
      * One paced HTTP call for up to [ANILIST_PUSH_CHUNK] pending progress rows.
-     * Returns the mediaIds AniList accepted.
+     * Returns the mediaIds AniList accepted. [allowPartial] keeps alias successes
+     * when GraphQL returns errors[] for a bad mediaId in the same mutation.
      */
     internal suspend fun saveProgressBatch(
         accessToken: String,
         items: List<AniListBatchPushItem>,
+        interactive: Boolean = false,
     ): Set<Int> = withContext(Dispatchers.IO) {
         if (items.isEmpty()) return@withContext emptySet()
         val payload = JSONObject().put("query", buildSaveProgressBatchMutation(items)).toString()
         runCatching {
-            val body = execute(payload, accessToken, background = true)
-            val okIndexes = parseSaveProgressBatchSuccess(body, expected = items.size)
-            val accepted = okIndexes.mapNotNullTo(LinkedHashSet()) { index -> items.getOrNull(index)?.mediaId }
+            val body = execute(
+                payload,
+                accessToken,
+                background = !interactive,
+                allowPartial = true,
+            )
+            val accepted = acceptedMediaIdsFromBatch(body, items)
             if (accepted.isNotEmpty()) cache?.invalidatePrefix("mediaList:")
             accepted
         }.getOrDefault(emptySet())

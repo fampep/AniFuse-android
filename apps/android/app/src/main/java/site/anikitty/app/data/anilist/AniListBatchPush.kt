@@ -52,6 +52,46 @@ internal fun <T> pendingPushRejected(
 internal fun pendingPushPartialSuccess(chunkSize: Int, acceptedCount: Int): Boolean =
     chunkSize > 0 && acceptedCount > 0 && acceptedCount < chunkSize
 
+/** True when GraphQL returned a data object even if errors[] is present. */
+internal fun aniListBodyHasData(body: String): Boolean =
+    runCatching { org.json.JSONObject(body).optJSONObject("data") != null }.getOrDefault(false)
+
+/** Map alias-index successes → mediaIds. */
+internal fun acceptedMediaIdsFromBatch(
+    body: String,
+    items: List<AniListBatchPushItem>,
+): Set<Int> {
+    val ok = parseSaveProgressBatchSuccess(body, expected = items.size)
+    return ok.mapNotNullTo(LinkedHashSet()) { items.getOrNull(it)?.mediaId }
+}
+
+/**
+ * Cap same-drain singles so a poisoned chunk cannot add N×700ms to Sync.
+ * Re-batch leftovers first; singles only for stragglers.
+ */
+internal data class PendingPushRetryPlan(
+    val rebatch: List<AniListBatchPushItem>,
+    val singles: List<AniListBatchPushItem>,
+    val deferred: List<AniListBatchPushItem>,
+)
+
+internal fun pendingPushRetryPlan(
+    rejected: List<AniListBatchPushItem>,
+    maxSingles: Int = 3,
+    rebatchSize: Int = 4,
+): PendingPushRetryPlan {
+    if (rejected.isEmpty()) {
+        return PendingPushRetryPlan(emptyList(), emptyList(), emptyList())
+    }
+    val rebatchCap = rebatchSize.coerceAtLeast(0)
+    val singleCap = maxSingles.coerceAtLeast(0)
+    val rebatch = rejected.take(rebatchCap)
+    val afterRebatch = rejected.drop(rebatchCap)
+    val singles = afterRebatch.take(singleCap)
+    val deferred = afterRebatch.drop(singleCap)
+    return PendingPushRetryPlan(rebatch = rebatch, singles = singles, deferred = deferred)
+}
+
 /**
  * Builds a multi-alias SaveMediaListEntry mutation.
  * Status is emitted as a GraphQL enum token (CURRENT / COMPLETED).

@@ -419,7 +419,7 @@ internal fun AniListProfileCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = if (syncing) "Syncing..." else "Connected",
+                        text = cloudSyncStatusLabel(syncing),
                         color = if (onBanner) Color.White.copy(alpha = if (syncing) 1f else 0.72f) else palette.muted,
                         style = MaterialTheme.typography.labelSmall,
                     )
