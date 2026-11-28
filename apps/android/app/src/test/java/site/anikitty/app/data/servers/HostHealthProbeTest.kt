@@ -26,4 +26,10 @@ class HostHealthProbeTest {
         assertFalse(hostProbeOutcome(null, connected = false))
         assertFalse(hostProbeOutcome(null, connected = true))
     }
+
+    @Test
+    fun softMissNeverStampsAFailedBackgroundProbe() {
+        assertTrue(shouldStampHostProbe(ok = true))
+        assertFalse(shouldStampHostProbe(ok = false))
+    }
 }
