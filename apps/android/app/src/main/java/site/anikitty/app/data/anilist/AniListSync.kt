@@ -33,7 +33,7 @@ class AniListSync(
         // still protect merge if a push failed. Never race drain with the list.
         // Interactive Sync paces drain as foreground so it is not stuck behind
         // the background GraphQL pacer.
-        drainPendingPushes(interactive = forceRefresh)
+        val drained = drainPendingPushes(interactive = forceRefresh)
         // Warm installs already know the user — skip Viewer so MediaList is the
         // only paced GraphQL hop on the critical sync path.
         val identity = if (auth.userId > 0) {
@@ -44,10 +44,16 @@ class AniListSync(
             AniListPullIdentity(viewer.id, viewer.name)
         }
 
+        // Accepted pushes already invalidate mediaList:, but a racing put or a
+        // background pull that drained mid-TTL must still hit the network so
+        // the import cannot re-apply a pre-push MediaList body.
         val entries = aniList.mediaListEntries(
             accessToken = token,
             userId = identity.userId,
-            forceRefresh = forceRefresh,
+            forceRefresh = mediaListForceRefreshAfterDrain(
+                interactiveForceRefresh = forceRefresh,
+                drainedAccepted = drained,
+            ),
         )
         val now = System.currentTimeMillis()
         val entryIds = entries.map { it.media.id }.distinct()
@@ -296,3 +302,12 @@ internal fun aniListPullIdentity(
     if (viewer != null) return AniListPullIdentity(viewer.id, viewer.name)
     return null
 }
+
+/**
+ * After drain lands rows on AniList, the next MediaList read must not reuse a
+ * warm 2-minute body — even on a non-interactive background pull.
+ */
+internal fun mediaListForceRefreshAfterDrain(
+    interactiveForceRefresh: Boolean,
+    drainedAccepted: Int,
+): Boolean = interactiveForceRefresh || drainedAccepted > 0

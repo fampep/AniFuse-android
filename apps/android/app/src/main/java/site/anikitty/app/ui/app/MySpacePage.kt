@@ -3,6 +3,10 @@
 
 package site.anikitty.app.ui.app
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -713,17 +717,40 @@ private fun CloudSyncBlock(
                         .background(palette.surface),
                     contentScale = ContentScale.Crop,
                 )
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = viewer?.name ?: accountLabel.ifBlank { "AniList" },
                         color = palette.text,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     )
-                    Text(
-                        text = cloudSyncStatusLabel(syncing),
-                        color = palette.text.copy(alpha = if (syncing) 1f else 0.5f),
-                        style = MaterialTheme.typography.labelSmall,
-                    )
+                    AnimatedContent(
+                        targetState = cloudSyncStatusLabel(syncing),
+                        transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                        label = "cloudSyncStatus",
+                    ) { label ->
+                        Text(
+                            text = label,
+                            color = palette.text.copy(alpha = if (syncing) 1f else 0.5f),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                    if (syncing) {
+                        val pulse by spin.animateFloat(
+                            initialValue = 0.18f,
+                            targetValue = 0.92f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(900, easing = LinearEasing),
+                                repeatMode = RepeatMode.Reverse,
+                            ),
+                            label = "syncPulse",
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        StageProgressBar(
+                            fraction = pulse,
+                            modifier = Modifier.fillMaxWidth(),
+                            barHeight = 2.dp,
+                        )
+                    }
                 }
             }
 

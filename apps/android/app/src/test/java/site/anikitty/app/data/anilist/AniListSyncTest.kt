@@ -111,6 +111,14 @@ class AniListSyncTest {
         assertEquals("mediaList:v1:7", mediaListCacheKey(7))
     }
 
+    @Test
+    fun postDrainMediaListAlwaysBypassesTheWarmTtl() {
+        assertTrue(mediaListForceRefreshAfterDrain(interactiveForceRefresh = false, drainedAccepted = 1))
+        assertTrue(mediaListForceRefreshAfterDrain(interactiveForceRefresh = true, drainedAccepted = 0))
+        assertTrue(mediaListForceRefreshAfterDrain(interactiveForceRefresh = true, drainedAccepted = 3))
+        assertFalse(mediaListForceRefreshAfterDrain(interactiveForceRefresh = false, drainedAccepted = 0))
+    }
+
     private fun merge(local: WatchHistoryEntity?, remoteProgress: Int, pending: Int?) = mergedPullEntry(
         existing = local,
         anilistId = 7,
