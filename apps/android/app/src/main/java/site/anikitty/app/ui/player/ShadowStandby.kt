@@ -109,6 +109,23 @@ internal fun shadowStallBudgetMs(standbyFresh: Boolean): Long =
     if (standbyFresh) SHADOW_STALL_MS else COLD_STALL_MS
 
 /**
+ * CastPlayer RTT is slower than phone Exo — give TV a wider budget before
+ * trickle-stall fires, still far under forever-buffering.
+ */
+internal const val CAST_STALL_MS = 3_600L
+internal const val CAST_COLD_STALL_MS = 6_000L
+
+internal fun castStallBudgetMs(standbyFresh: Boolean): Long =
+    if (standbyFresh) CAST_STALL_MS else CAST_COLD_STALL_MS
+
+/** Cast soft-stall only after the receiver clock belongs to this episode. */
+internal fun castTrickleStallAllowed(
+    isCasting: Boolean,
+    castItemStarted: Boolean,
+    castClockStale: Boolean,
+): Boolean = isCasting && castItemStarted && !castClockStale
+
+/**
  * Per-tick buffered advance still counted as a zombie CDN trickle.
  * Real ABR refill jumps hundreds of ms; a dying edge creeps ≤ this.
  */

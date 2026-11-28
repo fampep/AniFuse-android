@@ -2473,6 +2473,37 @@ fun PlayerScreen(
                             sourceIndex = next
                         }
                     }
+                } else if (
+                    castTrickleStallAllowed(
+                        isCasting = isCasting,
+                        castItemStarted = castItemStarted,
+                        castClockStale = castClockStale,
+                    )
+                ) {
+                    // CastPlayer soft-stall — same trickle detector, wider budget.
+                    val buffered = clock.bufferedMs
+                    val stalled = clock.playWhenReady &&
+                        !clock.playing &&
+                        clock.state == Player.STATE_BUFFERING
+                    val budget = castStallBudgetMs(shadowReadyNow())
+                    val tick = trickleStallTick(
+                        prevBuffered = stallBuffered,
+                        stallSince = stallSince,
+                        nowBuffered = buffered,
+                        nowMs = System.currentTimeMillis(),
+                        stalled = stalled,
+                        budgetMs = budget,
+                    )
+                    stallBuffered = tick.stallBuffered
+                    stallSince = tick.stallSince
+                    val canWalk = latestSources.size > latestSourceIndex + 1
+                    if (tick.trip && (shadowReadyNow() || canWalk)) {
+                        stallSince = 0L
+                        failCastSource(
+                            message = "Stream stalled on Chromecast",
+                            liveMs = maxOf(pos, resumeAtMs),
+                        )
+                    }
                 }
                 val d = if (trustCastClock) rawDur else 0L
                 if (clock.playing != playing) playing = clock.playing
