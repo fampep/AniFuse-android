@@ -157,6 +157,24 @@ internal fun castWarmMatches(warmUrl: String?, nextUrl: String): Boolean {
 }
 
 /**
+ * Warm may [CastRelay.bindTransport] only when it cannot stomp a live settled
+ * episode's unwrap factories. A pending switch after a failed follow-up must
+ * wait for [CastSessionHelper.load] → prepare under [prepareGate].
+ */
+internal fun castWarmMayBind(
+    casting: Boolean,
+    settledUrl: String?,
+    nextUrl: String,
+    loadInFlight: Boolean,
+): Boolean {
+    if (nextUrl.isBlank()) return false
+    if (loadInFlight) return false
+    if (!casting) return true
+    if (settledUrl.isNullOrBlank()) return true
+    return castWarmMatches(settledUrl, nextUrl)
+}
+
+/**
  * Theater status while Cast is connecting — surface warm work so the gap
  * before the TV starts is not a frozen "Connecting…" spinner.
  */

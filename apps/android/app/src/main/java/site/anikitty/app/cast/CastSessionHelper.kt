@@ -412,15 +412,38 @@ class CastSessionHelper private constructor(
     /**
      * Bind transport + peek the upstream playlist while Cast is Connecting so
      * [load] → [CastRelay.prepare] does not pay cold DNS/TLS/CDN on handoff.
-     * Safe before the media client exists; does not open the LAN relay.
+     * Serialized on [prepareGate] with prepare/restore. Never rewrites factories
+     * for a different URL while a settled episode is still on the TV.
      */
     fun warmForCast(source: PlayableSource): Boolean {
         if (closed.get()) return false
         if (castWarmMatches(warmUrl, source.url) && upstreamWarmed) return true
-        val ok = runCatching { relay.warmUpstream(source) }.getOrDefault(false)
-        warmUrl = source.url
-        upstreamWarmed = ok
-        return ok
+        if (!castWarmMayBind(
+                casting = casting,
+                settledUrl = settledSource?.url,
+                nextUrl = source.url,
+                loadInFlight = activeLoadTicket.get() != 0,
+            )
+        ) {
+            return false
+        }
+        synchronized(prepareGate) {
+            if (closed.get()) return false
+            if (!castWarmMayBind(
+                    casting = casting,
+                    settledUrl = settledSource?.url,
+                    nextUrl = source.url,
+                    loadInFlight = activeLoadTicket.get() != 0,
+                )
+            ) {
+                return false
+            }
+            if (castWarmMatches(warmUrl, source.url) && upstreamWarmed) return true
+            val ok = runCatching { relay.warmUpstream(source) }.getOrDefault(false)
+            warmUrl = source.url
+            upstreamWarmed = ok
+            return ok
+        }
     }
 
     internal fun load(
@@ -442,10 +465,7 @@ class CastSessionHelper private constructor(
         activeLoadTicket.set(ticket)
         loadLivePosition = livePositionMs
         val ceiling = castHeightKey(maxVideoHeight)
-        // Headers already bound when warmForCast ran for this URL.
-        if (!castWarmMatches(warmUrl, source.url)) {
-            runCatching { relay.bindTransport(source, ceiling.takeIf { it > 0 }) }
-        }
+        // Transport bind stays inside prepareClaimed / prepareGate — never here.
         val item = CastItemKey(
             anilistId = anilistId,
             episode = episode,
