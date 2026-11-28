@@ -184,6 +184,13 @@ internal fun pipPlayPauseIconRes(playing: Boolean): Int =
 internal fun pipPlayPauseTitle(playing: Boolean): String =
     if (playing) "Pause" else "Play"
 
+/**
+ * Android 13+ only refreshes a PiP remote-action icon when the PendingIntent
+ * request code changes. Play and pause therefore need distinct codes.
+ */
+internal fun pipPlayPauseRequestCode(playing: Boolean): Int =
+    if (playing) 22 else 21
+
 private fun pipActions(activity: Activity, playing: Boolean): List<RemoteAction> {
     fun pending(action: String, request: Int): PendingIntent {
         val intent = Intent(activity, PipActionReceiver::class.java).setAction(action)
@@ -206,7 +213,7 @@ private fun pipActions(activity: Activity, playing: Boolean): List<RemoteAction>
             Icon.createWithResource(activity, pipPlayPauseIconRes(playing)),
             toggleTitle,
             toggleTitle,
-            pending(PipActionReceiver.ACTION_PLAY_PAUSE, 2),
+            pending(PipActionReceiver.ACTION_PLAY_PAUSE, pipPlayPauseRequestCode(playing)),
         ),
         RemoteAction(
             Icon.createWithResource(activity, android.R.drawable.ic_media_ff),

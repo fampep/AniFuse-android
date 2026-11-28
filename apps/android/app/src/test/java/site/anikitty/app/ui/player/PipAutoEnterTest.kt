@@ -56,4 +56,11 @@ class PipAutoEnterTest {
         assertEquals("Play", pipPlayPauseTitle(playing = false))
         assertEquals(10_000L, PIP_SEEK_STEP_MS)
     }
+
+    @Test
+    fun pipPlayPauseUsesDistinctPendingIntentCodes() {
+        assertEquals(22, pipPlayPauseRequestCode(playing = true))
+        assertEquals(21, pipPlayPauseRequestCode(playing = false))
+        assertTrue(pipPlayPauseRequestCode(true) != pipPlayPauseRequestCode(false))
+    }
 }
