@@ -83,6 +83,9 @@ class CastSubtitlesTest {
         assertFalse(castCanReplaceMediaItem(playbackState = 1, itemIndex = 0, mediaItemCount = 1))
         assertFalse(castCanReplaceMediaItem(playbackState = 3, itemIndex = -1, mediaItemCount = 1))
         assertFalse(castCanReplaceMediaItem(playbackState = 3, itemIndex = 1, mediaItemCount = 1))
+        // CastPlayer drops the playhead on replace — seek stamp must stay non-negative.
+        assertEquals(0L, castLateCaptionSeekMs(-12L))
+        assertEquals(90_000L, castLateCaptionSeekMs(90_000L))
     }
 
     @Test

@@ -326,11 +326,14 @@ class CastSessionHelper private constructor(
         val relayed = relay.attachSubtitles(tracks) ?: return false
         val item = current.buildUpon().setSubtitleConfigurations(subtitleConfigurations(relayed)).build()
         val index = castPlayer.currentMediaItemIndex
-        // replaceMediaItem keeps the picture up — setMediaItem+prepare blacks the TV.
+        val seekMs = castLateCaptionSeekMs(positionMs)
+        // Soft replace avoids a full idle→prepare blackout, but CastPlayer's
+        // queue insert/remove drops the playhead — stamp it back immediately.
         if (castCanReplaceMediaItem(castPlayer.playbackState, index, castPlayer.mediaItemCount)) {
             castPlayer.replaceMediaItem(index, item)
+            castPlayer.seekTo(seekMs)
         } else {
-            castPlayer.setMediaItem(item, positionMs.coerceAtLeast(0L))
+            castPlayer.setMediaItem(item, seekMs)
             castPlayer.prepare()
         }
         castPlayer.volume = heldVolume

@@ -3385,7 +3385,7 @@ fun PlayerScreen(
                     tint = Color.White,
                     modifier = Modifier.size(17.dp),
                 )
-                Spacer(modifier.width(7.dp))
+                Spacer(Modifier.width(7.dp))
                 Text(
                     "2×",
                     color = Color.White,
@@ -3393,7 +3393,7 @@ fun PlayerScreen(
                     fontSize = 15.sp,
                     letterSpacing = 0.8.sp,
                 )
-                Spacer(modifier.width(6.dp))
+                Spacer(Modifier.width(6.dp))
                 Text(
                     "HOLD",
                     color = Color.White.copy(alpha = 0.62f),

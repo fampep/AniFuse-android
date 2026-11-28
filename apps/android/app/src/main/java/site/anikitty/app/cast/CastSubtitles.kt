@@ -154,7 +154,8 @@ internal fun castCaptionPushBudgetMs(
 /**
  * Late library captions should [androidx.media3.common.Player.replaceMediaItem]
  * when the CastPlayer already has a live item — [setMediaItem]+[prepare] blacks
- * the TV for a beat. Mirror the phone SubtitleAttach path.
+ * the TV for a beat. Callers must [seekTo] afterward: CastPlayer implements
+ * replace as queue insert/remove and drops the playhead.
  */
 internal fun castCanReplaceMediaItem(
     playbackState: Int,
@@ -163,6 +164,9 @@ internal fun castCanReplaceMediaItem(
 ): Boolean = playbackState != 1 /* Player.STATE_IDLE */ &&
     itemIndex >= 0 &&
     mediaItemCount > itemIndex
+
+/** Playhead to stamp after a Cast caption replace (never negative). */
+internal fun castLateCaptionSeekMs(positionMs: Long): Long = positionMs.coerceAtLeast(0L)
 
 /** Pick an active text-track id from the live cast session tracks. */
 internal fun castPickTextTrackId(
