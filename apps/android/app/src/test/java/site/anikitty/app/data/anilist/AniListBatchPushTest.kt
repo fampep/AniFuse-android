@@ -47,4 +47,18 @@ class AniListBatchPushTest {
         assertEquals(setOf(0, 2), parseSaveProgressBatchSuccess(body, expected = 3))
         assertEquals(emptySet<Int>(), parseSaveProgressBatchSuccess("{}", expected = 2))
     }
+
+    @Test
+    fun rejectedRowsRetryWhenBatchIsPartial() {
+        data class Row(val id: Int)
+        val chunk = listOf(Row(10), Row(20), Row(30))
+        assertEquals(
+            listOf(20, 30),
+            pendingPushRejected(chunk, acceptedIds = setOf(10)) { it.id }.map { it.id },
+        )
+        assertTrue(pendingPushPartialSuccess(chunkSize = 3, acceptedCount = 1))
+        assertTrue(!pendingPushPartialSuccess(chunkSize = 3, acceptedCount = 0))
+        assertTrue(!pendingPushPartialSuccess(chunkSize = 3, acceptedCount = 3))
+        assertTrue(!pendingPushPartialSuccess(chunkSize = 0, acceptedCount = 0))
+    }
 }

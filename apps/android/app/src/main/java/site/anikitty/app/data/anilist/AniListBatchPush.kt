@@ -38,6 +38,21 @@ internal fun <T> pendingPushesForDrain(
 ): List<T> = rows.sortedByDescending(updatedAtOf)
 
 /**
+ * Rows a multi-alias batch left behind. When the batch was a partial success,
+ * these retry as singles in the same drain so one bad mediaId does not wait
+ * for the next 5-minute sync loop.
+ */
+internal fun <T> pendingPushRejected(
+    chunk: List<T>,
+    acceptedIds: Set<Int>,
+    idOf: (T) -> Int,
+): List<T> = chunk.filter { idOf(it) !in acceptedIds }
+
+/** True when some — but not all — aliases landed; triggers same-drain singles. */
+internal fun pendingPushPartialSuccess(chunkSize: Int, acceptedCount: Int): Boolean =
+    chunkSize > 0 && acceptedCount > 0 && acceptedCount < chunkSize
+
+/**
  * Builds a multi-alias SaveMediaListEntry mutation.
  * Status is emitted as a GraphQL enum token (CURRENT / COMPLETED).
  */

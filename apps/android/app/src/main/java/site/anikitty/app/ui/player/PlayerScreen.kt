@@ -3590,12 +3590,23 @@ fun PlayerScreen(
                 },
             )
                 .padding(horizontal = 28.dp),
-            enter = fadeIn(tween(if (reducedHud) 0 else 140)),
-            exit = fadeOut(tween(if (reducedHud) 0 else 180)),
+            enter = if (reducedHud) {
+                fadeIn(snap())
+            } else {
+                fadeIn(tween(90)) + scaleIn(
+                    initialScale = 0.90f,
+                    animationSpec = spring(dampingRatio = 0.74f, stiffness = Spring.StiffnessMedium),
+                )
+            },
+            exit = if (reducedHud) {
+                fadeOut(snap())
+            } else {
+                fadeOut(tween(140)) + scaleOut(targetScale = 0.94f, animationSpec = tween(140))
+            },
         ) {
             val shown = heldHud ?: return@AnimatedVisibility
             val pct = (shown.level.coerceIn(0f, 1f) * 100f).toInt()
-            val hudShape = RoundedCornerShape(18.dp)
+            val hudShape = RoundedCornerShape(20.dp)
             val hudDescription = when {
                 shown.kind == GestureHudKind.Seek -> "Seek to ${shown.caption ?: "$pct percent"}"
                 shown.kind == GestureHudKind.Brightness -> "Brightness $pct percent"
@@ -3612,13 +3623,13 @@ fun PlayerScreen(
                             spotColor = Color.Black.copy(alpha = 0.3f),
                         )
                         .clip(hudShape)
-                        .background(Color(0xCC101012))
+                        .background(Color(0xE6101012))
                         .background(
                             Brush.verticalGradient(
-                                listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
+                                listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
                             ),
                         )
-                        .border(1.dp, Color.White.copy(alpha = 0.28f), hudShape)
+                        .border(1.dp, Color.White.copy(alpha = 0.32f), hudShape)
                         .clearAndSetSemantics {
                             contentDescription = hudDescription
                             liveRegion = LiveRegionMode.Polite
@@ -3667,13 +3678,13 @@ fun PlayerScreen(
                             spotColor = Color.Black.copy(alpha = 0.3f),
                         )
                         .clip(hudShape)
-                        .background(Color(0xCC101012))
+                        .background(Color(0xE6101012))
                         .background(
                             Brush.verticalGradient(
-                                listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
+                                listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
                             ),
                         )
-                        .border(1.dp, Color.White.copy(alpha = 0.28f), hudShape)
+                        .border(1.dp, Color.White.copy(alpha = 0.32f), hudShape)
                         .clearAndSetSemantics {
                             contentDescription = hudDescription
                             liveRegion = LiveRegionMode.Polite

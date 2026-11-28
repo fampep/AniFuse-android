@@ -107,7 +107,30 @@ class AniListSync(
                 val plan = aniListPushPlan(row.episode, row.totalEpisodes)
                 historyDao.upsert(historyAfterAniListPush(existing, plan.progress, plan.status))
             }
-            // Rows AniList rejected stay queued for the next drain.
+            // Partial batch: retry rejects as singles now — one bad mediaId must
+            // not park the rest of the chunk until the next timed drain.
+            val rejected = pendingPushRejected(chunk, accepted) { it.anilistId }
+            if (pendingPushPartialSuccess(chunk.size, accepted.size) && rejected.isNotEmpty()) {
+                for (row in rejected) {
+                    val retryStarted = System.currentTimeMillis()
+                    val plan = aniListPushPlan(row.episode, row.totalEpisodes)
+                    val ok = aniList.saveProgress(
+                        accessToken = token,
+                        mediaId = row.anilistId,
+                        progress = plan.progress,
+                        status = plan.status,
+                    )
+                    if (!ok) continue
+                    sent++
+                    val queued = pendingPushes.get(row.anilistId)
+                    if (queued != null && shouldDeletePendingPush(queued.updatedAtEpochMs, retryStarted)) {
+                        pendingPushes.delete(row.anilistId)
+                    }
+                    val existing = historyDao.get(row.anilistId) ?: continue
+                    historyDao.upsert(historyAfterAniListPush(existing, plan.progress, plan.status))
+                }
+            }
+            // Total misses stay queued for the next drain.
         }
         return sent
     }
