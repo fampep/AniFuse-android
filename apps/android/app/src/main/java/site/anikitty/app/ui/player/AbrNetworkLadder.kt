@@ -147,10 +147,11 @@ internal fun abrAdaptiveWindows(
         AbrNetworkClass.Offline -> AbrAdaptiveWindows(
             minDurationForQualityIncreaseMs = 7_000,
             maxDurationForQualityDecreaseMs = 1_000,
-            minDurationToRetainAfterDiscardMs = 5_000,
+            // Media3 requires retain-after-discard ≥ quality-increase window.
+            minDurationToRetainAfterDiscardMs = 7_000,
             bandwidthFraction = 0.65f,
         )
-    }
+    }.also { requireAbrAdaptiveValid(it) }
 }
 
 /**
@@ -180,3 +181,30 @@ internal fun requireAbrLoadControlValid(profile: AbrLoadControlMs) {
     }
     require(profile.backBufferMs >= 0)
 }
+
+/**
+ * Media3 AdaptiveTrackSelection requires retain-after-discard ≥ quality-increase
+ * or it warns and rewrites retain up — the intended dump window never applies.
+ */
+internal fun requireAbrAdaptiveValid(windows: AbrAdaptiveWindows) {
+    require(windows.minDurationToRetainAfterDiscardMs >= windows.minDurationForQualityIncreaseMs) {
+        "retain (${windows.minDurationToRetainAfterDiscardMs}) < increase " +
+            "(${windows.minDurationForQualityIncreaseMs})"
+    }
+    require(windows.maxDurationForQualityDecreaseMs > 0)
+    require(windows.bandwidthFraction in 0.01f..1f)
+}
+
+/**
+ * Wi‑Fi detection that survives VPN-only active networks. Below API 31 a VPN
+ * active network often exposes only TRANSPORT_VPN — walk sibling networks and
+ * treat unmetered VPN as Wi‑Fi so cold open does not clamp like cellular.
+ */
+internal fun abrWifiLike(
+    activeHasWifiOrEthernet: Boolean,
+    activeHasVpn: Boolean,
+    isMetered: Boolean,
+    anyNetworkWifiOrEthernet: Boolean,
+): Boolean = activeHasWifiOrEthernet ||
+    anyNetworkWifiOrEthernet ||
+    (activeHasVpn && !isMetered)

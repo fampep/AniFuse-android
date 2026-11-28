@@ -106,4 +106,51 @@ class AbrNetworkLadderTest {
         assertEquals("ABR · NET · METERED", abrNetworkStatusPill(AbrNetworkClass.Metered))
         assertEquals("ABR · NET · OFFLINE", abrNetworkStatusPill(AbrNetworkClass.Offline))
     }
+
+    @Test
+    fun everyAdaptiveProfileSatisfiesMedia3RetainInvariant() {
+        for (network in AbrNetworkClass.entries) {
+            for (rtt in listOf(null, 80L, 200L, 500L)) {
+                requireAbrAdaptiveValid(abrAdaptiveWindows(network, rtt))
+            }
+        }
+    }
+
+    @Test
+    fun offlineRetainIsAtLeastQualityIncrease() {
+        val offline = abrAdaptiveWindows(AbrNetworkClass.Offline)
+        assertTrue(offline.minDurationToRetainAfterDiscardMs >= offline.minDurationForQualityIncreaseMs)
+        assertEquals(7_000, offline.minDurationToRetainAfterDiscardMs)
+    }
+
+    @Test
+    fun abrWifiLikeSurvivesVpnOnlyActiveNetwork() {
+        // VPN-only active + unmetered → Wi‑Fi ladder (home Wi‑Fi under VPN).
+        assertTrue(
+            abrWifiLike(
+                activeHasWifiOrEthernet = false,
+                activeHasVpn = true,
+                isMetered = false,
+                anyNetworkWifiOrEthernet = false,
+            ),
+        )
+        // Sibling Wi‑Fi while VPN is active.
+        assertTrue(
+            abrWifiLike(
+                activeHasWifiOrEthernet = false,
+                activeHasVpn = true,
+                isMetered = true,
+                anyNetworkWifiOrEthernet = true,
+            ),
+        )
+        // Metered VPN without Wi‑Fi underneath → not Wi‑Fi.
+        assertTrue(
+            !abrWifiLike(
+                activeHasWifiOrEthernet = false,
+                activeHasVpn = true,
+                isMetered = true,
+                anyNetworkWifiOrEthernet = false,
+            ),
+        )
+    }
 }

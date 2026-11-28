@@ -5112,9 +5112,22 @@ private fun abrNetworkClassFor(context: Context): AbrNetworkClass {
     val network = cm.activeNetwork ?: return AbrNetworkClass.Offline
     val caps = cm.getNetworkCapabilities(network) ?: return AbrNetworkClass.Offline
     val hasInternet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-    val isWifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+    val activeWifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
         caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+    val activeVpn = caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+    val siblingWifi = cm.allNetworks.any { other ->
+        if (other == network) return@any false
+        val otherCaps = cm.getNetworkCapabilities(other) ?: return@any false
+        otherCaps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            otherCaps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+    }
     val isMetered = cm.isActiveNetworkMetered
+    val isWifi = abrWifiLike(
+        activeHasWifiOrEthernet = activeWifi,
+        activeHasVpn = activeVpn,
+        isMetered = isMetered,
+        anyNetworkWifiOrEthernet = siblingWifi,
+    )
     return abrNetworkClass(hasInternet = hasInternet, isWifi = isWifi, isMetered = isMetered)
 }
 
