@@ -1,6 +1,7 @@
 # ani.pm
 
-Bundled resolver. One Store card (`anipm`) — no second ani.pm / settlar mirror.
+Bundled resolver. **One** Store / Race card (`anipm`) — `ani.nz` is only a
+mirror domain on the same Player API, not a second site.
 
 The phone uses ani.pm’s first-party Player API (same shape as the public
 embed docs):
@@ -10,8 +11,15 @@ embed docs):
 2. Warm `/embed/mal/{mal}/{ep}/{sub|dub}` for same-origin cookies
 3. `POST /api/session` with `{ malId, episode }` → short-lived token
 4. Play `/playlists/{mal}_ep{n}/{sub|dub}.direct.pls?t=…` on this phone
+5. [AnipmXorDataSource] clears the PNG-trailer XOR so Media3 sees MPEG-TS
 
-Live origins tried in order: `https://anipm.pk`, then `https://ani.pm`.
-The old `embed.settlar.io` session path is not used.
+Live origins tried in order (warm last-good first when cached):
+
+- `https://anipm.pk`
+- `https://ani.pm`
+- `https://ani.nz`
+
+The old `embed.settlar.io` session path and the standalone `aninz` Race card
+are not used.
 
 Copyright 2026 fampep. [Apache License 2.0](../LICENSE).

@@ -8,6 +8,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import site.anikitty.app.data.servers.AniPmServer
+import site.anikitty.app.data.servers.FlixCrypto
 
 class AniNzPlaybackTest {
     @Test
@@ -113,5 +115,13 @@ class AniNzPlaybackTest {
         assertFalse(aninzBlocked(200, """{"items":[]}"""))
         assertFalse(AniNzServer.MISSING.contains("404"))
         assertFalse(AniNzServer.BLOCKED.contains("403"))
+    }
+
+    @Test
+    fun aninzIsNotASecondAniPmSite() {
+        // Standalone Race card is gone — ani.nz is an AniPm ORIGINS mirror only.
+        assertEquals("anipm", FlixCrypto.migrateServerId("aninz"))
+        assertTrue(AniPmServer.ORIGINS.contains("https://ani.nz"))
+        assertFalse(AniPmServer.ORIGINS.contains("https://an.nz"))
     }
 }

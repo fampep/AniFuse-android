@@ -83,6 +83,7 @@ class ReanimePlaybackTest {
     fun savedSettlarAliasBecomesAniPm() {
         assertEquals("anipm", FlixCrypto.migrateServerId("settlar"))
         assertEquals("anipm", FlixCrypto.migrateServerId("yozora"))
+        assertEquals("anipm", FlixCrypto.migrateServerId("aninz"))
         assertEquals("anipm", FlixCrypto.migrateServerId("anipm"))
         assertEquals("anirex", FlixCrypto.migrateServerId("anivault"))
         assertEquals("anikoto", FlixCrypto.migrateServerId("anikoto"))

@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -28,8 +29,9 @@ import java.util.concurrent.TimeUnit
  * 2. `POST /api/session` `{ malId, episode }` → short-lived token
  * 3. Play `/playlists/{mal}_ep{n}/{sub|dub}.direct.pls?t=…` on the same origin
  *
- * Live hosts are `anipm.pk` and `ani.pm`. The playlist is HLS with PNG
- * byte-range segments; Media3 reads the BYTERANGE tags on this phone.
+ * Live hosts are `anipm.pk`, `ani.pm`, and `ani.nz` — one Race card. `ani.nz`
+ * is only a mirror domain, never a second site. Playlist is HLS with PNG
+ * byte-range segments; [AnipmXorDataSource] clears the XOR trailer for Media3.
  */
 class AniPmServer(
     private val cache: ResolveCache? = null,
@@ -38,7 +40,7 @@ class AniPmServer(
     override val server = StreamServer(
         id = ID,
         name = "ani.pm",
-        description = "On-device ani.pm resolve. The first-party playlist plays on this phone.",
+        description = "On-device ani.pm resolve (anipm.pk / ani.pm / ani.nz mirrors). One card.",
         iconUrl = "https://www.google.com/s2/favicons?domain=ani.pm&sz=128",
         siteUrl = SITE,
     )
@@ -52,9 +54,10 @@ class AniPmServer(
         require(anilistId > 0) { "anilistId required" }
         require(episode > 0) { "episode required" }
         val lang = if (audio.equals("dub", ignoreCase = true)) "dub" else "sub"
-        val malId = resolveMal(anilistId, titleHint)
+        val origins = anipmOrderedOrigins(ORIGINS, cache?.getShow(ID, anilistId)?.watchUrl)
+        val malId = resolveMal(anilistId, titleHint, origins)
         var lastError = MISSING
-        for (origin in ORIGINS) {
+        for (origin in origins) {
             val opened = runCatching {
                 openOnOrigin(origin, malId, episode, lang)
             }.getOrElse { err ->
@@ -71,12 +74,12 @@ class AniPmServer(
         error(lastError)
     }
 
-    private fun resolveMal(anilistId: Int, titleHint: String?): Int {
+    private fun resolveMal(anilistId: Int, titleHint: String?, origins: List<String>): Int {
         cache?.getShow(ID, anilistId)?.siteId?.toIntOrNull()?.takeIf { it > 0 }?.let { return it }
         malIdFromTitleHint(titleHint).takeIf { it > 0 }?.let { return it }
 
         var reachable = false
-        for (origin in ORIGINS) {
+        for (origin in origins) {
             warm(origin)
             val lookup = get(
                 "$origin/api/v1/lookup?anilist=$anilistId",
@@ -99,7 +102,7 @@ class AniPmServer(
         if (titles.isEmpty()) {
             error(if (reachable || lastBlocked) MISSING else "ani.pm needs a title or MAL id to find this show.")
         }
-        for (origin in ORIGINS) {
+        for (origin in origins) {
             for (title in titles) {
                 val body = get(
                     "$origin/api/v1/titles?q=${enc(title)}&limit=10",
@@ -289,8 +292,11 @@ class AniPmServer(
         const val BLOCKED = "ani.pm could not be reached."
         /** Canonical brand / store URL. */
         const val SITE = "https://ani.pm"
-        /** Live playback origins — anipm.pk is the CF apex ani.pm often lands on. */
-        val ORIGINS = listOf("https://anipm.pk", "https://ani.pm")
+        /**
+         * Live playback origins. `anipm.pk` is the CF apex; `ani.pm` is the
+         * brand; `ani.nz` is only a mirror domain — never a second Race card.
+         */
+        val ORIGINS = listOf("https://anipm.pk", "https://ani.pm", "https://ani.nz")
         const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -448,6 +454,26 @@ internal fun anipmPickTitle(payload: String, anilistId: Int, query: String): Int
         val t = title.lowercase()
         t.contains(want) || want.contains(t)
     }?.first
+}
+
+/**
+ * Prefer the origin that already played this title (from [ResolveCache] watch
+ * URL), then the rest of [origins] in catalog order — cuts a cold CF hop when
+ * the warm mirror is still healthy.
+ */
+internal fun anipmOrderedOrigins(origins: List<String>, watchUrl: String?): List<String> {
+    if (origins.isEmpty()) return origins
+    val preferred = anipmOriginFromWatchUrl(watchUrl, origins) ?: return origins
+    if (origins.firstOrNull() == preferred) return origins
+    return listOf(preferred) + origins.filterNot { it == preferred }
+}
+
+internal fun anipmOriginFromWatchUrl(watchUrl: String?, origins: List<String>): String? {
+    if (watchUrl.isNullOrBlank()) return null
+    val host = watchUrl.toHttpUrlOrNull()?.host?.lowercase() ?: return null
+    return origins.firstOrNull { origin ->
+        origin.toHttpUrlOrNull()?.host?.lowercase() == host
+    }
 }
 
 internal fun anipmParseSession(payload: String): AnipmSession? {

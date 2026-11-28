@@ -15,15 +15,12 @@ import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 /**
- * On-device ani.nz resolve.
+ * Legacy ani.nz settlar resolve — **unbundled**.
  *
- * Search is `GET /api/anime/search`. The episode is the site's full
- * `GET /api/anime/playback-bootstrap/{source}/{id}` call, using the episode
- * route id when the site sends one. That selection opens ani.nz's own
- * settlar server. The playable file is the HLS master on `media.settlar.io`.
- * A third-party host is dropped. Playback stays on this phone. Intro and
- * credits come from the bootstrap when present. The quality label is the
- * tallest rung on that master.
+ * `ani.nz` is only a mirror domain of ani.pm’s Player API now. The Race dock
+ * and Store expose a single [AniPmServer] card; this class stays for unit
+ * tests of the old bootstrap helpers and for any leftover affinity ids that
+ * [FlixCrypto.migrateServerId] remaps to `anipm`.
  */
 class AniNzServer(
     private val cache: ResolveCache? = null,
