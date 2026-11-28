@@ -46,6 +46,13 @@ class RaceDockPulseTest {
         assertNull(
             raceDockPulseLabel(selected = false, cold = false, score = 0, latencyMs = null),
         )
+        assertEquals("lead", raceDockPulseKind(selected = true, cold = false, score = 0, latencyMs = 40L))
+        assertEquals("rtt", raceDockPulseKind(selected = false, cold = false, score = 900, latencyMs = 42L))
+        assertEquals("hot", raceDockPulseKind(selected = false, cold = false, score = 900, latencyMs = null))
+        assertEquals("down", raceDockPulseKind(selected = false, cold = true, score = 0, latencyMs = null))
+        assertEquals("none", raceDockPulseKind(selected = false, cold = false, score = 0, latencyMs = null))
+        assertEquals(42L, raceDockPulseMs(42L))
+        assertNull(raceDockPulseMs(0L))
     }
 
     @Test

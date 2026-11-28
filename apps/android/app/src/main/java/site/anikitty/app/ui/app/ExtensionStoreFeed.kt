@@ -5,11 +5,14 @@ package site.anikitty.app.ui.app
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -82,6 +85,7 @@ import site.anikitty.app.data.extensions.isCatalogSite
 import site.anikitty.app.data.extensions.isRetiredExtension
 import site.anikitty.app.data.extensions.storeCardRole
 import site.anikitty.app.data.extensions.storeListingMatches
+import site.anikitty.app.data.servers.HostHealthProbe
 import site.anikitty.app.data.servers.PlaybackHostHealth
 import site.anikitty.app.data.servers.ServerCatalog
 import site.anikitty.app.data.servers.StreamServer
@@ -95,6 +99,7 @@ import site.anikitty.app.ui.theme.KittyGlassShape
 import site.anikitty.app.ui.theme.kittyFloatingChrome
 import site.anikitty.app.ui.theme.KittyHaptics
 import site.anikitty.app.ui.theme.LocalKittyPalette
+import site.anikitty.app.ui.theme.prefersReducedMotion
 
 /**
  * Extension Store — black glass panels, white selection.
@@ -384,12 +389,14 @@ fun ExtensionStoreFeed(
                                 server.name.trim().lowercase() in coldKeys
                             val score = PlaybackHostHealth.scoreProvider(server.id, server.siteUrl)
                             val latency = PlaybackHostHealth.providerLatencyMs(server.id, server.siteUrl)
-                            val pulse = raceDockPulseLabel(
+                            val pulseKind = raceDockPulseKind(
                                 selected = selected,
                                 cold = cold,
                                 score = score,
                                 latencyMs = latency,
                             )
+                            val pulseMs = raceDockPulseMs(latency)
+                            val reducedMotion = prefersReducedMotion()
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
@@ -406,6 +413,8 @@ fun ExtensionStoreFeed(
                                     )
                                     .clickable {
                                         catalog.select(server.id)
+                                        // Re-probe remembered CDNs so LEAD · ms lands fast.
+                                        HostHealthProbe.kickRemembered()
                                         KittyHaptics.perform(view, KittyHaptics.Kind.Confirm)
                                     }
                                     .padding(horizontal = 10.dp, vertical = 8.dp),
@@ -422,19 +431,12 @@ fun ExtensionStoreFeed(
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                                     fontSize = 12.sp,
                                 )
-                                if (pulse != null) {
+                                if (pulseKind != "none") {
                                     Spacer(modifier = Modifier.width(6.dp))
                                     val pulseShape = RoundedCornerShape(999.dp)
-                                    Text(
-                                        pulse,
-                                        color = when {
-                                            selected -> Color.White
-                                            pulse == "DOWN" -> palette.faint
-                                            else -> Color.White.copy(alpha = 0.78f)
-                                        },
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = if (selected) 9.sp else 10.sp,
-                                        letterSpacing = if (selected) 0.5.sp else 0.2.sp,
+                                    val fadeMs = if (reducedMotion) 0 else 140
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier
                                             .clip(pulseShape)
                                             .background(
@@ -458,7 +460,54 @@ fun ExtensionStoreFeed(
                                                 pulseShape,
                                             )
                                             .padding(horizontal = 7.dp, vertical = 2.dp),
-                                    )
+                                    ) {
+                                        val pulseColor = when {
+                                            selected -> Color.White
+                                            pulseKind == "down" -> palette.faint
+                                            else -> Color.White.copy(alpha = 0.78f)
+                                        }
+                                        val pulseType = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = if (selected) 9.sp else 10.sp,
+                                            letterSpacing = if (selected) 0.5.sp else 0.2.sp,
+                                        )
+                                        if (pulseKind == "rtt" && pulseMs != null) {
+                                            // Live ms only — no kind animation shell.
+                                            Text(
+                                                "${pulseMs}ms",
+                                                color = pulseColor,
+                                                style = pulseType,
+                                            )
+                                        } else {
+                                            AnimatedContent(
+                                                targetState = pulseKind,
+                                                transitionSpec = {
+                                                    fadeIn(tween(fadeMs)) togetherWith
+                                                        fadeOut(tween(fadeMs))
+                                                },
+                                                label = "raceDockPulse",
+                                            ) { kind ->
+                                                Text(
+                                                    when (kind) {
+                                                        "lead" -> "LEAD"
+                                                        "down" -> "DOWN"
+                                                        "hot" -> "HOT"
+                                                        else -> ""
+                                                    },
+                                                    color = pulseColor,
+                                                    style = pulseType,
+                                                )
+                                            }
+                                            // Live RTT outside AnimatedContent — never freeze ms.
+                                            if (pulseKind == "lead" && pulseMs != null) {
+                                                Text(
+                                                    " · ${pulseMs}ms",
+                                                    color = pulseColor,
+                                                    style = pulseType,
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

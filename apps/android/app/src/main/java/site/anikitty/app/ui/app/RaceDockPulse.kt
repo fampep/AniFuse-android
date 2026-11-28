@@ -21,9 +21,30 @@ internal fun raceDockPulseLabel(
     else -> null
 }
 
+/**
+ * Animation key for the pulse chip — kind only, so live RTT ms can tick
+ * outside AnimatedContent without freezing or ghosting every probe refresh.
+ */
+internal fun raceDockPulseKind(
+    selected: Boolean,
+    cold: Boolean,
+    score: Int,
+    latencyMs: Long?,
+): String = when {
+    selected -> "lead"
+    cold || score < 0 -> "down"
+    latencyMs != null && latencyMs > 0L -> "rtt"
+    score > 0 -> "hot"
+    else -> "none"
+}
+
+/** Bounded positive RTT for the live suffix outside the kind animation. */
+internal fun raceDockPulseMs(latencyMs: Long?): Long? =
+    latencyMs?.takeIf { it > 0L }?.coerceAtMost(9_999L)
+
 /** Selected chip: LEAD, or LEAD · 42ms when a probe has answered. */
 internal fun raceDockLeadLabel(latencyMs: Long?): String {
-    val ms = latencyMs?.takeIf { it > 0L }?.coerceAtMost(9_999L)
+    val ms = raceDockPulseMs(latencyMs)
     return if (ms != null) "LEAD · ${ms}ms" else "LEAD"
 }
 
