@@ -134,11 +134,16 @@ internal suspend fun localInboxNotes(context: Context): List<InboxNote> = withCo
  * gives up quickly, so a dead CDN or a rate limit cannot hold the list.
  */
 /**
- * Drop airing noise the person already finished. [watchedThrough] is the
- * local frontier (completed count); the schedule episode must be ahead of it.
+ * Drop airing noise already behind the local play frontier.
+ * [playFrontier] is [WatchHistoryEntity.episode] — the episode on / next —
+ * not a completed count. PLANNING rows seed frontier 1, so premieres must
+ * still ping (`>=`), and after finishing N the frontier is N+1.
  */
-internal fun airingInboxKeep(scheduleEpisode: Int, watchedThrough: Int): Boolean =
-    scheduleEpisode > watchedThrough.coerceAtLeast(0)
+internal fun airingInboxKeep(scheduleEpisode: Int, playFrontier: Int): Boolean {
+    val frontier = playFrontier.coerceAtLeast(0)
+    if (frontier <= 0) return scheduleEpisode >= 1
+    return scheduleEpisode >= frontier
+}
 
 internal suspend fun remoteInboxNotes(
     context: Context,
@@ -164,7 +169,7 @@ internal suspend fun remoteInboxNotes(
                     .filter { slot ->
                         airingInboxKeep(
                             scheduleEpisode = slot.episode,
-                            watchedThrough = watchedById[slot.anime.id] ?: 0,
+                            playFrontier = watchedById[slot.anime.id] ?: 0,
                         )
                     }
                     .take(12)
