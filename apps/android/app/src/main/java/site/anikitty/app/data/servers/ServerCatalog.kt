@@ -198,7 +198,41 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         onDiskMiss = { liveSources.forget(anilistId, episode, audio) },
     )
 
-    /** AniList frontier jumped — drop every disk live recall for this title. */
+    /**
+     * Probed runner-up for the playing episode — memory shadow/standby, then
+     * disk. Seeds [PlayerScreen] after an OS kill so mid-play CDN death
+     * still hits swapToShadow.
+     */
+    suspend fun takeProbedShadow(
+        anilistId: Int,
+        episode: Int,
+        audio: String,
+    ): List<PlayableSource> = site.anikitty.app.data.servers.takeProbedShadow(
+        anilistId = anilistId,
+        episode = episode,
+        audio = audio,
+        diskRecall = {
+            liveSources.recall(anilistId, episode, audio, PlayableWarmCache.LANE_SHADOW)
+                ?: liveSources.recall(anilistId, episode, audio, PlayableWarmCache.LANE_STANDBY)
+        },
+        onDiskMiss = {
+            liveSources.forget(anilistId, episode, audio, PlayableWarmCache.LANE_SHADOW)
+            liveSources.forget(anilistId, episode, audio, PlayableWarmCache.LANE_STANDBY)
+        },
+    )
+
+    /** Persist a probed shadow/standby lane across process death. */
+    fun rememberLane(
+        anilistId: Int,
+        episode: Int,
+        audio: String,
+        sources: List<PlayableSource>,
+        lane: String,
+    ) {
+        liveSources.remember(anilistId, episode, audio, sources, lane = lane)
+    }
+
+    /** AniList frontier jumped — drop every disk live/shadow recall for this title. */
     fun forgetLiveTitle(anilistId: Int) {
         liveSources.forgetTitle(anilistId)
     }

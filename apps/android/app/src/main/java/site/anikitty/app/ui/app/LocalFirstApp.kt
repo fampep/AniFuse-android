@@ -1213,6 +1213,13 @@ fun LocalFirstApp(
                                 lane = site.anikitty.app.data.servers.PlayableWarmCache.LANE_STANDBY,
                                 sources = readyStandby,
                             )
+                            streamServers.rememberLane(
+                                anilistId = current.anime.id,
+                                episode = current.episode,
+                                audio = playerAudio,
+                                sources = readyStandby,
+                                lane = site.anikitty.app.data.servers.PlayableWarmCache.LANE_STANDBY,
+                            )
                         } else {
                             val raced = streamServers.resolveWithFailover(
                                 anilistId = current.anime.id,
@@ -1231,6 +1238,13 @@ fun LocalFirstApp(
                                     lane = site.anikitty.app.data.servers.PlayableWarmCache.LANE_STANDBY,
                                     sources = alive,
                                 )
+                                streamServers.rememberLane(
+                                    anilistId = current.anime.id,
+                                    episode = current.episode,
+                                    audio = playerAudio,
+                                    sources = alive,
+                                    lane = site.anikitty.app.data.servers.PlayableWarmCache.LANE_STANDBY,
+                                )
                                 site.anikitty.app.data.servers.StreamWarmPrefetch.touch(alive.first())
                             }
                         }
@@ -1240,7 +1254,7 @@ fun LocalFirstApp(
                     null
                 } else {
                     { playingHost, known ->
-                        site.anikitty.app.data.servers.armLiveShadow(
+                        val armed = site.anikitty.app.data.servers.armLiveShadow(
                             known = known,
                             playingHost = playingHost,
                             resolve = {
@@ -1252,6 +1266,27 @@ fun LocalFirstApp(
                                     avoidHost = playingHost,
                                 ).sources
                             },
+                        )
+                        if (armed.isNotEmpty()) {
+                            streamServers.rememberLane(
+                                anilistId = current.anime.id,
+                                episode = current.episode,
+                                audio = playerAudio,
+                                sources = armed,
+                                lane = site.anikitty.app.data.servers.PlayableWarmCache.LANE_SHADOW,
+                            )
+                        }
+                        armed
+                    }
+                },
+                onSeedShadow = if (demo || site.anikitty.app.data.demo.DemoLibrary.find(current.anime.id) != null) {
+                    null
+                } else {
+                    {
+                        streamServers.takeProbedShadow(
+                            anilistId = current.anime.id,
+                            episode = current.episode,
+                            audio = playerAudio,
                         )
                     }
                 },

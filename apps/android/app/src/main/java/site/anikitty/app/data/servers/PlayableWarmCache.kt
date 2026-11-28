@@ -135,6 +135,8 @@ suspend fun takeProbedWarm(
     probe: suspend (List<PlayableSource>) -> List<PlayableSource> = { PlayableWarmProbe.filterAlive(it) },
     diskRecall: (() -> List<PlayableSource>?)? = null,
     onDiskMiss: (() -> Unit)? = null,
+    /** Memory/disk survivors land here so shadow reopen stays in [LANE_SHADOW]. */
+    promoteLane: String = PlayableWarmCache.LANE_LIVE,
 ): List<PlayableSource> {
     for (lane in lanes) {
         val raw = PlayableWarmCache.take(anilistId, episode, audio, lane, nowMs) ?: continue
@@ -153,8 +155,32 @@ suspend fun takeProbedWarm(
         episode = episode,
         audio = audio,
         sources = alive,
-        lane = PlayableWarmCache.LANE_LIVE,
+        lane = promoteLane,
         nowMs = nowMs,
     )
     return alive
 }
+
+/**
+ * Consume a probed shadow/standby — memory first, then disk — so a mid-play
+ * CDN death after process death still swaps without a cold resolve.
+ */
+suspend fun takeProbedShadow(
+    anilistId: Int,
+    episode: Int,
+    audio: String,
+    nowMs: Long = System.currentTimeMillis(),
+    probe: suspend (List<PlayableSource>) -> List<PlayableSource> = { PlayableWarmProbe.filterAlive(it) },
+    diskRecall: (() -> List<PlayableSource>?)? = null,
+    onDiskMiss: (() -> Unit)? = null,
+): List<PlayableSource> = takeProbedWarm(
+    anilistId = anilistId,
+    episode = episode,
+    audio = audio,
+    lanes = listOf(PlayableWarmCache.LANE_SHADOW, PlayableWarmCache.LANE_STANDBY),
+    nowMs = nowMs,
+    probe = probe,
+    diskRecall = diskRecall,
+    onDiskMiss = onDiskMiss,
+    promoteLane = PlayableWarmCache.LANE_SHADOW,
+)

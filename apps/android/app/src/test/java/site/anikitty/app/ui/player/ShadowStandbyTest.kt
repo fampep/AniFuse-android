@@ -101,5 +101,14 @@ class ShadowStandbyTest {
             FailureRoute.SameSource,
             failureRoute(SourceRecovery.RetrySame, playlistHasHealthyNext = true, shadowReady = true),
         )
+        // Exhausted CDN with an armed standby must swap — not paint the error.
+        assertEquals(
+            FailureRoute.ShadowSwap,
+            failureRoute(SourceRecovery.GiveUp, playlistHasHealthyNext = false, shadowReady = true),
+        )
+        assertEquals(
+            FailureRoute.SameSource,
+            failureRoute(SourceRecovery.GiveUp, playlistHasHealthyNext = false, shadowReady = false),
+        )
     }
 }

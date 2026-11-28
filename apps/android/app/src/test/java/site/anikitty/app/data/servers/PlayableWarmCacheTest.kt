@@ -133,6 +133,64 @@ class PlayableWarmCacheTest {
     fun liveSourceKeysNormalizeAudio() {
         assertEquals("9:1:sub", LiveSourceStore.key(9, 1, "SUB"))
         assertEquals("9:1:dub", LiveSourceStore.key(9, 1, " dub "))
+        // Live keeps the legacy 3-part key; shadow/standby append the lane.
+        assertEquals("9:1:sub", LiveSourceStore.key(9, 1, "sub", PlayableWarmCache.LANE_LIVE))
+        assertEquals(
+            "9:1:sub:shadow",
+            LiveSourceStore.key(9, 1, "sub", PlayableWarmCache.LANE_SHADOW),
+        )
+        assertEquals(
+            "9:1:dub:standby",
+            LiveSourceStore.key(9, 1, "DUB", PlayableWarmCache.LANE_STANDBY),
+        )
+    }
+
+    @Test
+    fun shadowDiskRecallPromotesIntoShadowLane() = kotlinx.coroutines.runBlocking {
+        PlayableWarmCache.clear()
+        val hit = takeProbedShadow(
+            anilistId = 42,
+            episode = 7,
+            audio = "sub",
+            nowMs = 100L,
+            probe = { it },
+            diskRecall = {
+                listOf(PlayableSource(url = "https://cdn.standby/ep.m3u8", label = "Shadow"))
+            },
+        )
+        assertEquals("https://cdn.standby/ep.m3u8", hit.single().url)
+        assertEquals(
+            1,
+            PlayableWarmCache.peek(42, 7, "sub", PlayableWarmCache.LANE_SHADOW, nowMs = 110L)?.size,
+        )
+        assertNull(PlayableWarmCache.peek(42, 7, "sub", PlayableWarmCache.LANE_LIVE, nowMs = 110L))
+    }
+
+    @Test
+    fun shadowMemoryBeatsDiskAndConsumesTheLane() = kotlinx.coroutines.runBlocking {
+        PlayableWarmCache.put(
+            5,
+            1,
+            "sub",
+            listOf(PlayableSource(url = "https://cdn.mem/shadow.m3u8")),
+            lane = PlayableWarmCache.LANE_SHADOW,
+            nowMs = 10L,
+        )
+        var diskHit = false
+        val hit = takeProbedShadow(
+            anilistId = 5,
+            episode = 1,
+            audio = "sub",
+            nowMs = 20L,
+            probe = { it },
+            diskRecall = {
+                diskHit = true
+                listOf(PlayableSource(url = "https://cdn.disk/shadow.m3u8"))
+            },
+        )
+        assertEquals("https://cdn.mem/shadow.m3u8", hit.single().url)
+        assertEquals(false, diskHit)
+        assertNull(PlayableWarmCache.peek(5, 1, "sub", PlayableWarmCache.LANE_SHADOW, nowMs = 30L))
     }
 
     @Test
