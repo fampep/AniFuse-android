@@ -3,6 +3,11 @@
 
 package site.anikitty.app.ui.app
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -323,28 +328,35 @@ fun ContinueWatchCard(
                         ),
                     ),
             )
-            // Episode badge — specular glass pill, white caps.
+            // Episode badge — specular glass pill; crossfade when Sync advances EP.
             val epShape = RoundedCornerShape(KittyRadius.sm)
-            Text(
-                "EP ${shown.episode}",
-                color = Color.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp,
+            AnimatedContent(
+                targetState = shown.episode,
+                transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(100)) },
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(KittySpace.sm)
-                    .clip(epShape)
-                    .background(Color(0xE6101012))
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
-                        ),
-                    )
-                    .border(1.dp, Color.White.copy(alpha = 0.28f), epShape)
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
-                    .clearAndSetSemantics { },
-            )
+                    .padding(KittySpace.sm),
+                label = "continueEpBadge",
+            ) { ep ->
+                Text(
+                    "EP $ep",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp,
+                    modifier = Modifier
+                        .clip(epShape)
+                        .background(Color(0xE6101012))
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
+                            ),
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.28f), epShape)
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                        .clearAndSetSemantics { },
+                )
+            }
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)

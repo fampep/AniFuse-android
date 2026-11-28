@@ -99,6 +99,37 @@ class PlayableWarmCacheTest {
     }
 
     @Test
+    fun dropTitleClearsEveryLaneForThatShow() {
+        PlayableWarmCache.put(
+            21,
+            4,
+            "sub",
+            listOf(PlayableSource(url = "https://cdn.example/live.m3u8")),
+            lane = PlayableWarmCache.LANE_LIVE,
+            nowMs = 10L,
+        )
+        PlayableWarmCache.put(
+            21,
+            5,
+            "sub",
+            listOf(PlayableSource(url = "https://cdn.example/next.m3u8")),
+            lane = PlayableWarmCache.LANE_NEXT,
+            nowMs = 11L,
+        )
+        PlayableWarmCache.put(
+            22,
+            1,
+            "sub",
+            listOf(PlayableSource(url = "https://cdn.example/other.m3u8")),
+            nowMs = 12L,
+        )
+        PlayableWarmCache.dropTitle(21)
+        assertNull(PlayableWarmCache.peek(21, 4, "sub", PlayableWarmCache.LANE_LIVE, nowMs = 20L))
+        assertNull(PlayableWarmCache.peek(21, 5, "sub", PlayableWarmCache.LANE_NEXT, nowMs = 20L))
+        assertEquals(1, PlayableWarmCache.peek(22, 1, "sub", nowMs = 20L)?.size)
+    }
+
+    @Test
     fun liveSourceKeysNormalizeAudio() {
         assertEquals("9:1:sub", LiveSourceStore.key(9, 1, "SUB"))
         assertEquals("9:1:dub", LiveSourceStore.key(9, 1, " dub "))

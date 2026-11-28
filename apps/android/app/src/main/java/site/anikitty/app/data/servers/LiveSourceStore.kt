@@ -69,6 +69,17 @@ class LiveSourceStore(context: Context) {
         prefs.edit().remove(key(anilistId, episode, audio)).apply()
     }
 
+    /** Drop every audio/episode disk recall for a title after the frontier advances. */
+    fun forgetTitle(anilistId: Int) {
+        if (anilistId <= 0) return
+        val needle = "$anilistId:"
+        val keys = prefs.all.keys.filter { it.startsWith(needle) }
+        if (keys.isEmpty()) return
+        val editor = prefs.edit()
+        keys.forEach { editor.remove(it) }
+        editor.apply()
+    }
+
     private fun trim() {
         val all = prefs.all
         if (all.size <= MAX) return

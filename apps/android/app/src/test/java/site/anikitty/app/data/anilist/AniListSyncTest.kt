@@ -119,6 +119,15 @@ class AniListSyncTest {
         assertFalse(mediaListForceRefreshAfterDrain(interactiveForceRefresh = false, drainedAccepted = 0))
     }
 
+    @Test
+    fun cloudFrontierAdvanceDropsStaleWarm() {
+        assertTrue(shouldDropWarmOnFrontierAdvance(previousEpisode = 4, nextEpisode = 7))
+        assertFalse(shouldDropWarmOnFrontierAdvance(previousEpisode = 7, nextEpisode = 7))
+        assertFalse(shouldDropWarmOnFrontierAdvance(previousEpisode = 8, nextEpisode = 7))
+        assertFalse(shouldDropWarmOnFrontierAdvance(previousEpisode = null, nextEpisode = 3))
+        assertFalse(shouldDropWarmOnFrontierAdvance(previousEpisode = 0, nextEpisode = 2))
+    }
+
     private fun merge(local: WatchHistoryEntity?, remoteProgress: Int, pending: Int?) = mergedPullEntry(
         existing = local,
         anilistId = 7,

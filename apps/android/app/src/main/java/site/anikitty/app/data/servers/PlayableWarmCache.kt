@@ -88,6 +88,18 @@ object PlayableWarmCache {
         synchronized(lock) { map.remove(key(anilistId, episode, audio, lane)) }
     }
 
+    /**
+     * Cloud frontier jumped past a local Continue episode. Every lane for this
+     * title is wrong for the next open — drop live/next/shadow/standby together.
+     */
+    fun dropTitle(anilistId: Int) {
+        if (anilistId <= 0) return
+        val needle = "$anilistId:"
+        synchronized(lock) {
+            map.keys.filter { it.startsWith(needle) }.toList().forEach { map.remove(it) }
+        }
+    }
+
     fun clear() {
         synchronized(lock) { map.clear() }
     }

@@ -7,6 +7,7 @@ import site.anikitty.app.data.local.PendingAniListPush
 import site.anikitty.app.data.local.PendingAniListPushDao
 import site.anikitty.app.data.local.WatchHistoryDao
 import site.anikitty.app.data.local.WatchHistoryEntity
+import site.anikitty.app.data.servers.PlayableWarmCache
 
 /**
  * Pulls AniList MediaList into on-device history and pushes local episode progress back.
@@ -16,6 +17,8 @@ class AniListSync(
     private val auth: AniListAuthStore,
     private val historyDao: WatchHistoryDao,
     private val pendingPushes: PendingAniListPushDao,
+    /** Disk live-source recall for a title whose Continue frontier jumped. */
+    private val onTitleFrontierAdvance: (anilistId: Int) -> Unit = {},
 ) {
     data class Result(
         val imported: Int,
@@ -78,6 +81,14 @@ class AniListSync(
             )
         }
         if (merged.isNotEmpty()) historyDao.upsertAll(merged)
+        // Another device moved the Continue frontier — kill warm/disk recalls for
+        // the old episode so Home open races the new one instead of a rotten URL.
+        for (row in merged) {
+            val previous = existingById[row.anilistId]?.episode
+            if (!shouldDropWarmOnFrontierAdvance(previous, row.episode)) continue
+            PlayableWarmCache.dropTitle(row.anilistId)
+            onTitleFrontierAdvance(row.anilistId)
+        }
         return Result(imported = merged.size, username = identity.username)
     }
 
@@ -311,3 +322,9 @@ internal fun mediaListForceRefreshAfterDrain(
     interactiveForceRefresh: Boolean,
     drainedAccepted: Int,
 ): Boolean = interactiveForceRefresh || drainedAccepted > 0
+
+/** Cloud progress jumped past the phone's Continue episode. */
+internal fun shouldDropWarmOnFrontierAdvance(
+    previousEpisode: Int?,
+    nextEpisode: Int,
+): Boolean = previousEpisode != null && previousEpisode > 0 && nextEpisode > previousEpisode

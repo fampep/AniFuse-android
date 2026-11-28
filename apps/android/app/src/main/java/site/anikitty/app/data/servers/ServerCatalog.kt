@@ -198,6 +198,11 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         onDiskMiss = { liveSources.forget(anilistId, episode, audio) },
     )
 
+    /** AniList frontier jumped — drop every disk live recall for this title. */
+    fun forgetLiveTitle(anilistId: Int) {
+        liveSources.forgetTitle(anilistId)
+    }
+
     /**
      * Resolve using the selected installed provider first, then automatically
      * try every other **enabled** provider until one returns sources.
