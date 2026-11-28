@@ -1,0 +1,34 @@
+// Copyright 2026 fampep
+// Licensed under the Apache License, Version 2.0. See the LICENSE file.
+
+package site.anikitty.app.ui.player
+
+import site.anikitty.app.data.servers.SubtitleTrack
+
+/**
+ * Library tracks fill gaps; provider sidecars win on the same URL.
+ * Bake the merge into the first MediaItem so dialogue is never caption-dark
+ * while a warm SubtitleLibrary.peek is already in memory.
+ */
+internal fun playbackSubtitleTracks(
+    provider: List<SubtitleTrack>,
+    library: List<SubtitleTrack>,
+): List<SubtitleTrack> = mergeSubtitleTracks(provider, library)
+
+/** Attach once Media3 is buffering or ready — do not wait out a 6s READY poll. */
+internal fun subtitleAttachMayProceed(playbackState: Int): Boolean =
+    playbackState == PLAYBACK_STATE_BUFFERING ||
+        playbackState == PLAYBACK_STATE_READY ||
+        playbackState == PLAYBACK_STATE_ENDED
+
+internal fun subtitleConfigsUnchanged(
+    existingUris: List<String>,
+    nextUris: List<String>,
+): Boolean = existingUris == nextUris
+
+/** 50ms × 40 = 2s ceiling — was 125ms × 48 ≈ 6s. */
+internal const val SUBTITLE_ATTACH_POLL_MS = 50L
+internal const val SUBTITLE_ATTACH_MAX_POLLS = 40
+
+internal const val PLAYBACK_STATE_IDLE = 1
+internal const val PLAYBACK_STATE_ENDED = 4

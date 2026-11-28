@@ -854,11 +854,14 @@ fun PlayerScreen(
         }
         if (configs.isEmpty()) return@LaunchedEffect
         val already = current.localConfiguration?.subtitleConfigurations.orEmpty()
-        if (already.map { it.uri } == configs.map { it.uri }) return@LaunchedEffect
-        // Wait for READY once so caption attach cannot fight the first buffer.
+        if (subtitleConfigsUnchanged(already.map { it.uri.toString() }, configs.map { it.uri.toString() })) {
+            return@LaunchedEffect
+        }
+        // Attach as soon as buffering/ready — 2s ceiling, not a 6s READY wait.
         var guard = 0
-        while (guard < 48 && exo.playbackState != Player.STATE_READY && exo.playbackState != Player.STATE_ENDED) {
-            delay(125)
+        while (guard < SUBTITLE_ATTACH_MAX_POLLS && !subtitleAttachMayProceed(exo.playbackState)) {
+            if (exo.playbackState == Player.STATE_IDLE && guard > 0) return@LaunchedEffect
+            delay(SUBTITLE_ATTACH_POLL_MS)
             guard++
         }
         if (exo.playbackState == Player.STATE_IDLE) return@LaunchedEffect
@@ -950,7 +953,10 @@ fun PlayerScreen(
         if (playing.hls || playing.url.contains(".m3u8", ignoreCase = true) || playing.gotakuObf != null) {
             itemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
         }
-        val configs = playing.subtitles.mapIndexedNotNull { index, track ->
+        // Bake warm library sidecars into the first MediaItem — late replace
+        // only covers tracks that arrive after prepare.
+        val captionTracks = playbackSubtitleTracks(playing.subtitles, librarySubtitles)
+        val configs = captionTracks.mapIndexedNotNull { index, track ->
             subtitleConfig(track, default = index == 0)
         }
         if (configs.isNotEmpty()) itemBuilder.setSubtitleConfigurations(configs)
