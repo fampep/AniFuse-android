@@ -44,6 +44,8 @@ class ShadowStandbyTest {
                 armKey = "cdn.live",
             ),
         )
+        assertFalse(shadowShouldArmSegmentLane(playbackLocal = true))
+        assertTrue(shadowShouldArmSegmentLane(playbackLocal = false))
     }
 
     @Test

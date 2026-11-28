@@ -71,6 +71,13 @@ internal fun shadowArmAvoidHost(
     return playbackHost(sourceUrl).ifBlank { armKey }
 }
 
+/**
+ * Progressive file:// never hits the HLS segment interceptor. Arming
+ * [SegmentShadow] with the saved CDN as fromHost would retarget concurrent
+ * downloads of that host onto this episode's standby.
+ */
+internal fun shadowShouldArmSegmentLane(playbackLocal: Boolean): Boolean = !playbackLocal
+
 /** @deprecated Prefer [liveShadowArmAllowed] / [liveShadowSwapAllowed]. */
 internal fun liveShadowAllowed(playbackLocal: Boolean): Boolean = liveShadowArmAllowed(playbackLocal)
 

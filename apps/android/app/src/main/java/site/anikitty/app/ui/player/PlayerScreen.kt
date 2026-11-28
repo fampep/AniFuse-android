@@ -1249,7 +1249,9 @@ fun PlayerScreen(
         shadowAt = System.currentTimeMillis()
         shadowArmedHost = host
         val standbyHost = shadowHost
-        if (standbyHost != null) {
+        // Progressive offline keeps shadowList for leaveOffline playlist swap
+        // only — do not register a process-wide HLS retarget on the saved CDN.
+        if (standbyHost != null && shadowShouldArmSegmentLane(playbackLocal)) {
             SegmentShadow.arm(
                 fromHost = avoidHost.ifBlank { host },
                 toHost = standbyHost,
