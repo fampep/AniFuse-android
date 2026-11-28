@@ -76,6 +76,16 @@ class CastSubtitlesTest {
     }
 
     @Test
+    fun lateCaptionsPreferReplaceOverHardReload() {
+        // Player.STATE_READY == 3, STATE_IDLE == 1.
+        assertTrue(castCanReplaceMediaItem(playbackState = 3, itemIndex = 0, mediaItemCount = 1))
+        assertTrue(castCanReplaceMediaItem(playbackState = 2, itemIndex = 0, mediaItemCount = 2))
+        assertFalse(castCanReplaceMediaItem(playbackState = 1, itemIndex = 0, mediaItemCount = 1))
+        assertFalse(castCanReplaceMediaItem(playbackState = 3, itemIndex = -1, mediaItemCount = 1))
+        assertFalse(castCanReplaceMediaItem(playbackState = 3, itemIndex = 1, mediaItemCount = 1))
+    }
+
+    @Test
     fun theLoadLeavesThePictureTrackOn() {
         assertTrue(castLoadActiveTrackIds(longArrayOf()) == null)
         assertTrue(castLoadActiveTrackIds(longArrayOf(1L)) == null)

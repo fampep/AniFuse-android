@@ -140,9 +140,16 @@ class DownloadLaneTest {
         assertEquals(100L, contentRangeStart("bytes 100-999/2000"))
         assertEquals(40L, contentRangeStart("BYTES 40-/80"))
         assertNull(contentRangeStart(null))
+        assertEquals(999L, contentRangeEnd("bytes 100-999/2000"))
+        assertNull(contentRangeEnd("bytes 40-/80"))
+        assertEquals(2000L, contentRangeTotal("bytes 100-999/2000"))
+        assertNull(contentRangeTotal("bytes 40-99/*"))
         assertTrue(contentRangeMatches(40L, "bytes 40-99/200"))
         assertFalse(contentRangeMatches(40L, "bytes 0-99/200"))
         assertFalse(contentRangeMatches(40L, null))
+        // Inverted end or total smaller than the resume point — restart.
+        assertFalse(contentRangeMatches(40L, "bytes 40-20/200"))
+        assertFalse(contentRangeMatches(40L, "bytes 40-99/20"))
         assertEquals(
             DownloadTransfer.Resume,
             downloadTransferValidated(206, partBytes = 40L, contentRange = "bytes 40-99/200"),
@@ -154,6 +161,10 @@ class DownloadLaneTest {
         assertEquals(
             DownloadTransfer.Restart,
             downloadTransferValidated(206, partBytes = 40L, contentRange = null),
+        )
+        assertEquals(
+            DownloadTransfer.Restart,
+            downloadTransferValidated(206, partBytes = 40L, contentRange = "bytes 40-20/200"),
         )
         assertEquals(
             DownloadTransfer.Replace,

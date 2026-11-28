@@ -28,11 +28,33 @@ internal fun contentRangeStart(contentRange: String?): Long? {
     return match.groupValues[1].toLongOrNull()
 }
 
-/** True when a 206 body continues exactly where the partial left off. */
+/** Inclusive end byte from `bytes start-end/total`, or null when the end is open. */
+internal fun contentRangeEnd(contentRange: String?): Long? {
+    val raw = contentRange?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val match = Regex("""(?i)bytes\s+\d+-(\d+)(?:/|$)""").find(raw) ?: return null
+    return match.groupValues[1].toLongOrNull()
+}
+
+/** Total object size from `bytes start-end/total`, or null when the total is `*`. */
+internal fun contentRangeTotal(contentRange: String?): Long? {
+    val raw = contentRange?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val match = Regex("""(?i)bytes\s+\d+-(?:\d+|\*)/(\d+)""").find(raw) ?: return null
+    return match.groupValues[1].toLongOrNull()
+}
+
+/**
+ * True when a 206 body continues exactly where the partial left off.
+ * Also rejects inverted end offsets and totals smaller than the resume point.
+ */
 internal fun contentRangeMatches(partBytes: Long, contentRange: String?): Boolean {
     if (partBytes <= 0L) return false
     val start = contentRangeStart(contentRange) ?: return false
-    return start == partBytes
+    if (start != partBytes) return false
+    val end = contentRangeEnd(contentRange)
+    if (end != null && end < partBytes) return false
+    val total = contentRangeTotal(contentRange)
+    if (total != null && total > 0L && partBytes > total) return false
+    return true
 }
 
 /**

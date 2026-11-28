@@ -151,6 +151,19 @@ internal fun castCaptionPushBudgetMs(
     maxPolls: Int = CAST_CAPTION_PUSH_MAX_POLLS,
 ): Long = pollMs.coerceAtLeast(1L) * maxPolls.coerceAtLeast(1)
 
+/**
+ * Late library captions should [androidx.media3.common.Player.replaceMediaItem]
+ * when the CastPlayer already has a live item — [setMediaItem]+[prepare] blacks
+ * the TV for a beat. Mirror the phone SubtitleAttach path.
+ */
+internal fun castCanReplaceMediaItem(
+    playbackState: Int,
+    itemIndex: Int,
+    mediaItemCount: Int,
+): Boolean = playbackState != 1 /* Player.STATE_IDLE */ &&
+    itemIndex >= 0 &&
+    mediaItemCount > itemIndex
+
 /** Pick an active text-track id from the live cast session tracks. */
 internal fun castPickTextTrackId(
     tracks: List<MediaTrack>,

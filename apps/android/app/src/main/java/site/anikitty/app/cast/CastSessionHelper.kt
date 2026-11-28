@@ -325,8 +325,14 @@ class CastSessionHelper private constructor(
         val current = castPlayer.currentMediaItem ?: return false
         val relayed = relay.attachSubtitles(tracks) ?: return false
         val item = current.buildUpon().setSubtitleConfigurations(subtitleConfigurations(relayed)).build()
-        castPlayer.setMediaItem(item, positionMs.coerceAtLeast(0L))
-        castPlayer.prepare()
+        val index = castPlayer.currentMediaItemIndex
+        // replaceMediaItem keeps the picture up — setMediaItem+prepare blacks the TV.
+        if (castCanReplaceMediaItem(castPlayer.playbackState, index, castPlayer.mediaItemCount)) {
+            castPlayer.replaceMediaItem(index, item)
+        } else {
+            castPlayer.setMediaItem(item, positionMs.coerceAtLeast(0L))
+            castPlayer.prepare()
+        }
         castPlayer.volume = heldVolume
         castPlayer.playWhenReady = true
         return true

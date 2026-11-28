@@ -1965,6 +1965,7 @@ fun PlayerScreen(
             val pos = helper.castPlayer.currentPosition.coerceAtLeast(0L).takeIf { it > 0L } ?: playhead.ms
             if (helper.pushLibrarySubtitles(tracks, pos)) {
                 castSentSubtitleKey = castCaptionKey(tracks)
+                castHint = "Captions on your TV"
                 return@LaunchedEffect
             }
             delay(CAST_CAPTION_PUSH_POLL_MS)
@@ -3853,18 +3854,32 @@ fun PlayerScreen(
         }
 
         if (!inPip && castHint != null) {
+            val hintShape = RoundedCornerShape(999.dp)
             Text(
                 castHint!!,
-                color = PlayerChrome.Paper,
+                color = Color.White,
                 fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.3.sp,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .windowInsetsPadding(WindowInsets.statusBars)
                     .padding(top = 72.dp, start = 20.dp, end = 20.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(PlayerChrome.Sheet)
-                    .border(1.dp, PlayerChrome.SheetStroke, RoundedCornerShape(12.dp))
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                    .shadow(
+                        elevation = 14.dp,
+                        shape = hintShape,
+                        ambientColor = Color.Black.copy(alpha = 0.5f),
+                        spotColor = Color.Black.copy(alpha = 0.35f),
+                    )
+                    .clip(hintShape)
+                    .background(Color(0xE6101012))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.14f), Color.Transparent),
+                        ),
+                    )
+                    .border(1.dp, Color.White.copy(alpha = 0.28f), hintShape)
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
             )
         }
 
