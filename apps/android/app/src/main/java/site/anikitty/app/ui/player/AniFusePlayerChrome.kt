@@ -63,7 +63,7 @@ import site.anikitty.app.ui.theme.KittyHaptics
  * Phone theater chrome — Plex-inspired transport geometry, AniFuse glass skin.
  *
  * Center row: Previous · −10 · Play/Pause · +10 · Next
- * Bottom: scrubber, then a floating glass dock for Episodes / Sources / Subs / Speed.
+ * Bottom: scrubber + Plex elapsed/−remaining clock, then glass dock (Episodes / Sources / Subs / Speed).
  */
 @Composable
 internal fun AniFusePlayerChrome(
@@ -234,7 +234,7 @@ internal fun AniFusePlayerChrome(
                 onScrub = onScrub,
                 onScrubFinished = onScrubFinished,
             )
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

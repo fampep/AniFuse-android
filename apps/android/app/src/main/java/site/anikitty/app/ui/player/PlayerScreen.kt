@@ -3408,7 +3408,7 @@ fun PlayerScreen(
                         }
                         return@awaitEachGesture
                     }
-                    val slideLevel = start.x < size.width / 2f
+                    val edgeZone = playerEdgeZone(start.x, size.width)
                     var dragged = false
                     var horizontal = false
                     val releasedEarly = withTimeoutOrNull(280L) {
@@ -3423,7 +3423,8 @@ fun PlayerScreen(
                                 horizontal = true
                                 return@withTimeoutOrNull false
                             }
-                            if (dy > 28f && dy > dx) {
+                            // Brightness / volume only from screen edges — center is scrub + double-tap.
+                            if (edgeZone != PlayerEdgeZone.Center && dy > 28f && dy > dx) {
                                 dragged = true
                                 return@withTimeoutOrNull false
                             }
@@ -3440,42 +3441,48 @@ fun PlayerScreen(
                         }
                         holdBoost = false
                     } else if (dragged && horizontal) {
+                        // Drive the same scrubbing path as GlassScrubber so SeekPreview + clock update.
                         gestureDragging = true
+                        scrubbing = true
+                        controlsVisible = true
                         val origin = activePlayer?.currentPosition?.coerceAtLeast(0L) ?: positionMs
                         val span = (activePlayer?.duration?.takeIf { it > 0L } ?: durationMs).coerceAtLeast(1L)
-                        var target = origin
+                        var fraction = if (span > 0L) (origin.toFloat() / span.toFloat()).coerceIn(0f, 1f) else 0f
+                        scrubValue = fraction
                         while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
                             val change = event.changes.firstOrNull { it.pressed }
                             if (change == null) break
                             change.consume()
-                            val dx = change.position.x - start.x
-                            val deltaMs = (dx / size.width.coerceAtLeast(1).toFloat()) * span.toFloat()
-                            target = (origin + deltaMs.toLong()).coerceIn(0L, span)
-                            gestureHud = GestureHud(
-                                kind = GestureHudKind.Seek,
-                                level = target.toFloat() / span.toFloat(),
-                                caption = formatPlayerClock(target),
+                            fraction = gestureScrubFraction(
+                                originMs = origin,
+                                deltaX = change.position.x - start.x,
+                                width = size.width,
+                                durationMs = span,
                             )
+                            scrubValue = fraction
                         }
-                        val landed = safeSeekTarget(target, activePlayer?.duration ?: span, durationMs)
+                        val raw = (fraction * span).toLong()
+                        val landed = safeSeekTarget(raw, activePlayer?.duration ?: span, durationMs)
                         activePlayer?.seekTo(landed)
                         positionMs = landed
                         playhead.ms = landed
+                        scrubbing = false
                         gestureDragging = false
-                    } else if (dragged) {
+                    } else if (dragged && edgeZone != PlayerEdgeZone.Center) {
                         gestureDragging = true
                         val activity = context as? Activity
                         val startBrightness = activity?.let { brightnessFraction(it) } ?: 0.5f
                         val startVolume = volumeFraction(context)
                         val startCastVolume = castHelper?.readDeviceVolume() ?: startVolume
+                        val brightnessEdge = edgeZone == PlayerEdgeZone.Brightness
                         while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
                             val change = event.changes.firstOrNull { it.pressed }
                             if (change == null) break
                             val delta = (start.y - change.position.y) / size.height
                             change.consume()
-                            if (slideLevel && activity != null) {
+                            if (brightnessEdge && activity != null) {
                                 val level = (startBrightness + delta).coerceIn(0.01f, 1f)
                                 applyBrightness(activity, level)
                                 gestureHud = GestureHud(
@@ -4641,24 +4648,22 @@ fun PlayerScreen(
         }
         if (!inPip && activeSkip != null && panel == PlayerMenuPage.None) {
             val (kind, iv) = activeSkip
-            val label = when (kind) {
-                "intro" -> "Skip Intro"
-                "credits" -> "Skip Outro"
-                "recap" -> "Skip Recap"
-                "preview" -> "Skip Preview"
-                else -> "Skip"
-            }
             val chromeUp = theater && controlsVisible && !controlsLocked
             val avoidNextCard = nearEndOffer || showEndAutoplay
-            val skipShape = RoundedCornerShape(if (isCasting) 14.dp else 12.dp)
-            Text(
-                label,
-                color = Color.White,
-                fontSize = if (isCasting) 15.sp else 14.sp,
-                fontWeight = FontWeight.Medium,
-                fontFamily = FontFamily.SansSerif,
+            GlassSkipChip(
+                kind = kind,
+                casting = isCasting,
+                onSkip = { skipTo(iv.endMs) },
                 modifier = Modifier
-                    .align(if (!television && chromeUp) Alignment.BottomEnd else if (avoidNextCard) Alignment.BottomEnd else Alignment.BottomStart)
+                    .align(
+                        if (!television && chromeUp) {
+                            Alignment.BottomEnd
+                        } else if (avoidNextCard) {
+                            Alignment.BottomEnd
+                        } else {
+                            Alignment.BottomStart
+                        },
+                    )
                     .then(
                         if (theater) {
                             Modifier.windowInsetsPadding(
@@ -4670,23 +4675,10 @@ fun PlayerScreen(
                     )
                     .padding(
                         start = if (avoidNextCard) 0.dp else 22.dp,
-                        end = if (avoidNextCard) 22.dp else 0.dp,
-                        bottom = if (chromeUp) {
-                            if (isCasting) 128.dp else 118.dp
-                        } else {
-                            22.dp
-                        },
+                        end = if (chromeUp || avoidNextCard) 22.dp else 0.dp,
+                        bottom = glassSkipBottomPaddingDp(chromeUp = chromeUp, casting = isCasting),
                     )
-                    .clip(skipShape)
-                    .playerFocusCue(skipShape)
-                    .background(Color.Black.copy(alpha = if (isCasting) 0.72f else 0.62f))
-                    .border(1.dp, Color.White.copy(alpha = 0.35f), skipShape)
-                    .clickable(role = Role.Button) { skipTo(iv.endMs) }
-                    .clearAndSetSemantics { contentDescription = skipActionDescription(kind) }
-                    .padding(
-                        horizontal = if (isCasting) 18.dp else 16.dp,
-                        vertical = if (isCasting) 12.dp else 10.dp,
-                    ),
+                    .playerFocusCue(RoundedCornerShape(if (isCasting) 16.dp else 14.dp)),
             )
         }
     }

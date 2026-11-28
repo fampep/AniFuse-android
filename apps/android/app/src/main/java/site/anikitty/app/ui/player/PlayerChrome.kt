@@ -11,6 +11,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
@@ -95,6 +96,8 @@ internal fun LiveClockText(
     scrubValue: Float,
     durationMs: Long,
     modifier: Modifier = Modifier,
+    /** Plex timeline: elapsed left, −remaining right under the scrubber. */
+    spread: Boolean = false,
 ) {
     var liveMs by remember { mutableLongStateOf(0L) }
     LaunchedEffect(player, scrubbing) {
@@ -109,17 +112,43 @@ internal fun LiveClockText(
     }
     val shown = if (scrubbing) (scrubValue * durationMs).toLong() else liveMs
     val remain = (durationMs - shown).coerceAtLeast(0L)
-    Text(
-        "${formatClockPadded(shown)}  −${formatClockPadded(remain)}",
-        color = Color.White,
-        fontSize = 13.sp,
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Medium,
-        maxLines = 1,
-        modifier = modifier.clearAndSetSemantics {
-            contentDescription = playbackClockDescription(shown, durationMs)
-        },
-    )
+    val semantics = Modifier.clearAndSetSemantics {
+        contentDescription = playbackClockDescription(shown, durationMs)
+    }
+    if (spread) {
+        Row(
+            modifier = modifier.then(semantics),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                formatClockPadded(shown),
+                color = Color.White,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.SansSerif,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+            Text(
+                "−${formatClockPadded(remain)}",
+                color = Color.White.copy(alpha = 0.72f),
+                fontSize = 12.sp,
+                fontFamily = FontFamily.SansSerif,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+            )
+        }
+    } else {
+        Text(
+            "${formatClockPadded(shown)}  −${formatClockPadded(remain)}",
+            color = Color.White,
+            fontSize = 13.sp,
+            fontFamily = FontFamily.SansSerif,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            modifier = modifier.then(semantics),
+        )
+    }
 }
 
 @Composable
