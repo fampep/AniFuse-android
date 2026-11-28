@@ -237,16 +237,20 @@ class CastLifetimeTest {
         assertEquals(3, switched.target?.episode)
         assertEquals(-1, switched.reportedThrough)
 
+        // Screen navigated ahead — keep writing the TV episode, do not clear.
         val mismatch = commitCastProgress(
             screen = onALaterEpisode,
             playing = playing,
             current = onThatEpisode,
             reportedThrough = 2,
         )
-        assertNull(mismatch.target)
-        assertEquals(-1, mismatch.reportedThrough)
+        assertEquals(onThatEpisode, mismatch.target)
+        assertEquals(2, mismatch.reportedThrough)
         val noReceiver = commitCastProgress(onThatEpisode, playing = null, onThatEpisode, 2)
         assertNull(noReceiver.target)
+        assertTrue(castServiceOwnsProgress(casting = true, loadInFlight = false))
+        assertFalse(castServiceOwnsProgress(casting = true, loadInFlight = true))
+        assertFalse(castServiceOwnsProgress(casting = false, loadInFlight = false))
     }
 
     @Test

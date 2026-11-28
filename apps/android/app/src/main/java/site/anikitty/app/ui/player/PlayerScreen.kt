@@ -129,11 +129,14 @@ import site.anikitty.app.cast.castSameItem
 import site.anikitty.app.cast.castAttachPositionMs
 import site.anikitty.app.cast.castLiveCommitPositionMs
 import site.anikitty.app.cast.castDisconnectResumeMs
-import site.anikitty.app.cast.castMayCorrectReceiver
 import site.anikitty.app.cast.castPhoneKnownPosition
 import site.anikitty.app.cast.castPhoneResumeTarget
+import site.anikitty.app.cast.CAST_PLAYHEAD_CONFIRM_SLACK_MS
+import site.anikitty.app.cast.castBlanksPhoneSurface
 import site.anikitty.app.cast.castHandoffChromeVisible
 import site.anikitty.app.cast.castPhoneShouldStayQuiet
+import site.anikitty.app.cast.castReceiverNeedsSeek
+import site.anikitty.app.cast.castTransportOwnsPlayer
 import site.anikitty.app.cast.releaseCastHandoff
 import site.anikitty.app.cast.castClientRetryDelayMs
 import site.anikitty.app.cast.reduceCastAttach
@@ -1041,7 +1044,6 @@ fun PlayerScreen(
             next.build()
         }
     }
-    val activePlayer: Player? = if (isCasting) castHelper?.castPlayer else player
     val latestPlayer by rememberUpdatedState(player)
     var castMediaCommitted by remember { mutableStateOf(false) }
     LaunchedEffect(castHelper, castAttachStarted, castPending, isCasting) {
@@ -1060,6 +1062,10 @@ fun PlayerScreen(
             delay(50)
         }
     }
+    // Transport rides CastPlayer once media is committed — settleReady alone
+    // left mid-handoff scrubs on the phone while the TV already had the item.
+    val castTransportLive = castTransportOwnsPlayer(isCasting, castMediaCommitted)
+    val activePlayer: Player? = if (castTransportLive) castHelper?.castPlayer else player
     val phoneQuietNow = castPhoneShouldStayQuiet(
         casting = isCasting,
         handoff = castAttachStarted && !isCasting && !castClientGaveUp,
@@ -1441,8 +1447,15 @@ fun PlayerScreen(
         }
     }
 
-    fun catchCastPlayhead(helper: CastSessionHelper, wantedMs: Long, requested: Boolean) {
-        if (!castMayCorrectReceiver(requested, wantedMs, helper.receiverPositionMs())) return
+    fun catchCastPlayhead(
+        helper: CastSessionHelper,
+        wantedMs: Long,
+        requested: Boolean,
+        slackMs: Long = CAST_PLAYHEAD_CONFIRM_SLACK_MS,
+    ) {
+        // Join-live loads never recorded this screen's playhead — do not yank TV.
+        if (!requested) return
+        if (!castReceiverNeedsSeek(wantedMs, helper.receiverPositionMs(), slackMs)) return
         val landed = safeSeekTarget(wantedMs, helper.castPlayer.duration, durationMs)
         runCatching { helper.castPlayer.seekTo(landed) }
     }
@@ -1502,8 +1515,32 @@ fun PlayerScreen(
         castHint = null
         val helper = castHelper
         val requested = castPlayheadRequested
+        // Keep the asked clock for the confirm loop — cleared once aligned.
+        if (helper != null) {
+            catchCastPlayhead(helper, castSentPositionMs, requested)
+        } else if (!requested) {
+            castPlayheadRequested = false
+        }
+    }
+
+    // Multi-tick confirm — receiver often lands ~1–2s off after settleReady.
+    LaunchedEffect(isCasting, castSentPositionMs, castPlayheadRequested) {
+        if (!isCasting || !castPlayheadRequested) return@LaunchedEffect
+        val wanted = castSentPositionMs
+        if (wanted < 0L) {
+            castPlayheadRequested = false
+            return@LaunchedEffect
+        }
+        repeat(5) {
+            val helper = castHelper ?: return@LaunchedEffect
+            catchCastPlayhead(helper, wanted, requested = true)
+            if (!castReceiverNeedsSeek(wanted, helper.receiverPositionMs(), CAST_PLAYHEAD_CONFIRM_SLACK_MS)) {
+                castPlayheadRequested = false
+                return@LaunchedEffect
+            }
+            delay(350)
+        }
         castPlayheadRequested = false
-        if (helper != null) catchCastPlayhead(helper, castSentPositionMs, requested)
     }
 
     val castFailUrl = remember { arrayOfNulls<String>(1) }
@@ -2656,9 +2693,12 @@ fun PlayerScreen(
                 if (!waitingResume) heldResumeMs = 0L
                 if (progressSaveDue(pos, lastProgressAt, openingSeekPending = waitingResume)) {
                     lastProgressAt = pos
-                    // Phone and Chromecast share this playhead. Casting uses
-                    // the cast player; the credits marker is the same one.
-                    latestOnProgress?.invoke(pos, dur, latestSkip)
+                    // Chromecast progress is owned by CastPlaybackService from
+                    // the receiver clock — dual writers stamped the wrong row
+                    // during handoff / episode switches.
+                    if (!isCasting) {
+                        latestOnProgress?.invoke(pos, dur, latestSkip)
+                    }
                 }
             }
             delay(250)
@@ -2839,8 +2879,9 @@ fun PlayerScreen(
     }
 
     fun seekBy(deltaMs: Long, revealControls: Boolean = true) {
-        // A seek while the TV is still connecting would move the phone.
-        if (!isCasting && !castClientGaveUp && (castAttachStarted || castPending)) return
+        // Connecting without a committed MediaItem would move the phone.
+        // Once media is committed, activePlayer is CastPlayer — allow scrub.
+        if (!castTransportLive && !castClientGaveUp && (castAttachStarted || castPending)) return
         val p = activePlayer ?: return
         val target = safeSeekTarget(p.currentPosition + deltaMs, p.duration, durationMs)
         p.seekTo(target)
@@ -2856,7 +2897,7 @@ fun PlayerScreen(
     }
 
     fun skipTo(endMs: Long) {
-        if (!isCasting && !castClientGaveUp && (castAttachStarted || castPending)) return
+        if (!castTransportLive && !castClientGaveUp && (castAttachStarted || castPending)) return
         val p = activePlayer ?: return
         // Prefer the remote CastPlayer when casting — same skip markers as local.
         val target = safeSeekTarget(endMs, p.duration, durationMs)
@@ -2928,24 +2969,31 @@ fun PlayerScreen(
     }
 
     val handoffToCast = castAttachStarted && !isCasting && !castClientGaveUp
-    val castScreenUp = castHandoffChromeVisible(
+    // Badge / theater pill while connecting — does NOT blank PlayerView.
+    val castChromeUp = castHandoffChromeVisible(
         casting = isCasting,
         handoff = castAttachStarted && !castClientGaveUp,
         pending = castPending && !castClientGaveUp,
     )
+    // Blank the phone surface only after TV media commit / settle — otherwise
+    // a racing first load left a black stage and needed a second episode tap.
+    val castScreenUp = castBlanksPhoneSurface(
+        casting = isCasting,
+        mediaCommitted = castMediaCommitted,
+    )
     // Block transport only after the TV owns audio — pending handoff keeps the phone live.
-    fun castHandoffInFlight(): Boolean = phoneQuietNow && !isCasting
+    fun castHandoffInFlight(): Boolean = phoneQuietNow && !castTransportLive
     fun playOnScreen() {
         if (castHandoffInFlight()) return
-        (if (isCasting) castHelper?.castPlayer else player)?.play()
+        (if (castTransportLive) castHelper?.castPlayer else player)?.play()
     }
     fun pauseOnScreen() {
         if (castHandoffInFlight()) return
-        (if (isCasting) castHelper?.castPlayer else player)?.pause()
+        (if (castTransportLive) castHelper?.castPlayer else player)?.pause()
     }
     fun toggleOnScreen() {
         if (castHandoffInFlight()) return
-        val current = if (isCasting) castHelper?.castPlayer else player
+        val current = if (castTransportLive) castHelper?.castPlayer else player
         current?.let { if (it.isPlaying) it.pause() else it.play() }
     }
     val castBlocks = castBlocksPictureInPicture(isCasting, castPending, handoffToCast)
@@ -3846,7 +3894,7 @@ fun PlayerScreen(
 
         // Glass badge when chrome is down / connecting. Phone cast chrome owns
         // the status pill while controls are visible.
-        val castBadgeNeeded = castScreenUp && (
+        val castBadgeNeeded = castChromeUp && (
             television ||
                 !isCasting ||
                 !theater ||
@@ -4388,7 +4436,7 @@ fun PlayerScreen(
                         } else {
                             "Episode $episode of $totalEpisodes"
                         },
-                        statusPill = if (castScreenUp) {
+                        statusPill = if (castChromeUp) {
                             castTheaterStatusPill(
                                 connecting = !isCasting,
                                 buffering = buffering,
@@ -4483,9 +4531,9 @@ fun PlayerScreen(
                             positionMs = target
                             scrubbing = false
                         },
-                        castMode = castScreenUp,
+                        castMode = castScreenUp || isCasting,
                         muted = muted,
-                        onMute = if (castScreenUp) {
+                        onMute = if (castChromeUp) {
                             { toggleMute() }
                         } else {
                             null

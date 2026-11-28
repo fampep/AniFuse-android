@@ -239,6 +239,38 @@ class CastAttachTest {
                 receiverReady = false,
             ),
         )
+        // Connecting badge may show, but PlayerView stays until media commits.
+        assertFalse(castBlanksPhoneSurface(casting = false, mediaCommitted = false))
+        assertTrue(castBlanksPhoneSurface(casting = false, mediaCommitted = true))
+        assertTrue(castBlanksPhoneSurface(casting = true, mediaCommitted = false))
+        assertFalse(castTransportOwnsPlayer(casting = false, mediaCommitted = false))
+        assertTrue(castTransportOwnsPlayer(casting = false, mediaCommitted = true))
+        assertTrue(castTransportOwnsPlayer(casting = true, mediaCommitted = false))
+    }
+
+    @Test
+    fun postSettlePlayheadConfirmUsesTightSlack() {
+        assertTrue(
+            castReceiverNeedsSeek(
+                requestedMs = 90_000L,
+                receiverMs = 88_500L,
+                slackMs = CAST_PLAYHEAD_CONFIRM_SLACK_MS,
+            ),
+        )
+        assertFalse(
+            castReceiverNeedsSeek(
+                requestedMs = 90_000L,
+                receiverMs = 89_700L,
+                slackMs = CAST_PLAYHEAD_CONFIRM_SLACK_MS,
+            ),
+        )
+        assertFalse(
+            castReceiverNeedsSeek(
+                requestedMs = 90_000L,
+                receiverMs = 88_500L,
+                slackMs = CAST_PLAYHEAD_LOAD_SLACK_MS,
+            ),
+        )
     }
 
     @Test
