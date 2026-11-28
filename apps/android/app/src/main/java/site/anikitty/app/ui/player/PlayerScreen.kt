@@ -2295,13 +2295,19 @@ fun PlayerScreen(
                 maxVideoHeight = ceiling,
                 // Quality / audio / ceiling reloads take seconds of prepare —
                 // stamp a live playhead at commit so Auto↔720p does not rewind.
+                // Never fold in resumeAtMs — that history stamp can yank past a scrub.
                 livePositionMs = if (sameEpisode) {
                     {
                         val phone = runCatching {
                             helper.castPlayer.currentPosition.takeIf { it > 0L } ?: 0L
                         }.getOrDefault(0L)
                         val known = runCatching { playhead.ms }.getOrDefault(0L)
-                        val next = maxOf(pos, phone, known, resumeAtMs)
+                        val next = castLiveCommitPositionMs(
+                            stampedMs = pos,
+                            phoneMs = phone,
+                            knownMs = known,
+                            lateResumeMs = 0L,
+                        )
                         if (next > castSentPositionMs) castSentPositionMs = next
                         next
                     }
@@ -2317,10 +2323,18 @@ fun PlayerScreen(
                     pushMute()
                     castHint = null
                     isCasting = true
-                    catchCastPlayhead(helper, pos, requested = true)
-                    castPlayheadRequested = false
                     castClockStale = false
-                    if (!sameEpisode) {
+                    if (sameEpisode) {
+                        // livePositionMs already advanced castSentPositionMs —
+                        // confirm against that clock; never yank back to tap-time pos.
+                        catchCastPlayhead(
+                            helper,
+                            castSentPositionMs,
+                            requested = castPlayheadRequested,
+                        )
+                    } else {
+                        catchCastPlayhead(helper, pos, requested = true)
+                        castPlayheadRequested = false
                         playbackEnded = false
                         autoplayCancelled = false
                     }
