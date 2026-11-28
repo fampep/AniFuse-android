@@ -1471,6 +1471,7 @@ fun PlayerScreen(
     fun abandonCastToPhone(local: Player?) {
         castClientGaveUp = true
         castPending = false
+        castWarmReady = false
         castAttachStarted = false
         castLoadedKey = null
         castSentSubtitleKey = ""
