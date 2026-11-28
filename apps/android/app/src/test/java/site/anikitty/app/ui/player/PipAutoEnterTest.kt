@@ -3,6 +3,7 @@
 
 package site.anikitty.app.ui.player
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -45,5 +46,14 @@ class PipAutoEnterTest {
                 castBlocks = true,
             ),
         )
+    }
+
+    @Test
+    fun pipRemoteToggleShowsPauseWhilePlaying() {
+        assertEquals(android.R.drawable.ic_media_pause, pipPlayPauseIconRes(playing = true))
+        assertEquals("Pause", pipPlayPauseTitle(playing = true))
+        assertEquals(android.R.drawable.ic_media_play, pipPlayPauseIconRes(playing = false))
+        assertEquals("Play", pipPlayPauseTitle(playing = false))
+        assertEquals(10_000L, PIP_SEEK_STEP_MS)
     }
 }

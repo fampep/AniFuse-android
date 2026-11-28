@@ -2571,6 +2571,7 @@ fun PlayerScreen(
             videoWidth = player?.videoSize?.width ?: 0,
             videoHeight = player?.videoSize?.height ?: renderedHeight,
             sourceRect = rect,
+            playing = playing,
         )
         val entered = try {
             host.enterPictureInPictureMode(params)
@@ -2646,7 +2647,8 @@ fun PlayerScreen(
             PipControls.onSeek = null
         }
     }
-    LaunchedEffect(autoPip, activity, renderedHeight, playerViewRef) {
+    // Re-stamp PiP params when play/pause flips so the remote action glyph stays honest.
+    LaunchedEffect(autoPip, activity, renderedHeight, playerViewRef, playing) {
         val host = activity ?: return@LaunchedEffect
         val rect = android.graphics.Rect()
         playerViewRef?.getGlobalVisibleRect(rect)
@@ -2656,6 +2658,7 @@ fun PlayerScreen(
             videoWidth = player?.videoSize?.width ?: 0,
             videoHeight = player?.videoSize?.height?.takeIf { it > 0 } ?: renderedHeight,
             sourceRect = rect,
+            playing = playing,
         )
     }
 

@@ -75,16 +75,21 @@ object PipAutoEnter {
     @Volatile
     private var lastSourceRect: Rect? = null
 
+    @Volatile
+    private var lastPlaying: Boolean = false
+
     fun update(
         activity: Activity,
         allowed: Boolean,
         videoWidth: Int = 0,
         videoHeight: Int = 0,
         sourceRect: Rect? = null,
+        playing: Boolean = lastPlaying,
     ) {
         val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             activity.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
         this.allowed = allowed && supported
+        lastPlaying = playing
         if (videoWidth > 0 && videoHeight > 0) {
             lastWidth = videoWidth
             lastHeight = videoHeight
@@ -95,7 +100,14 @@ object PipAutoEnter {
         if (!supported) return
         runCatching {
             activity.setPictureInPictureParams(
-                params(activity, this.allowed, videoWidth, videoHeight, sourceRect),
+                params(
+                    activity = activity,
+                    autoEnter = this.allowed,
+                    videoWidth = videoWidth,
+                    videoHeight = videoHeight,
+                    sourceRect = sourceRect,
+                    playing = playing,
+                ),
             )
         }
     }
@@ -106,6 +118,7 @@ object PipAutoEnter {
         videoWidth: Int,
         videoHeight: Int,
         sourceRect: Rect?,
+        playing: Boolean = lastPlaying,
     ): PictureInPictureParams {
         val builder = PictureInPictureParams.Builder()
             .setAspectRatio(pipAspect(videoWidth, videoHeight))
@@ -113,7 +126,7 @@ object PipAutoEnter {
             builder.setSourceRectHint(sourceRect)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            builder.setActions(pipActions(activity))
+            builder.setActions(pipActions(activity, playing))
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setAutoEnterEnabled(autoEnter)
@@ -127,7 +140,7 @@ object PipAutoEnter {
         if (!allowed || activity.isInPictureInPictureMode) return
         val builder = PictureInPictureParams.Builder()
             .setAspectRatio(pipAspect(lastWidth, lastHeight))
-            .setActions(pipActions(activity))
+            .setActions(pipActions(activity, lastPlaying))
         val rect = lastSourceRect
         if (rect != null && !rect.isEmpty) {
             builder.setSourceRectHint(rect)
@@ -146,8 +159,8 @@ internal class PipActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             ACTION_PLAY_PAUSE -> PipControls.onPlayPause?.invoke()
-            ACTION_REWIND -> PipControls.onSeek?.invoke(-10_000L)
-            ACTION_FORWARD -> PipControls.onSeek?.invoke(10_000L)
+            ACTION_REWIND -> PipControls.onSeek?.invoke(-PIP_SEEK_STEP_MS)
+            ACTION_FORWARD -> PipControls.onSeek?.invoke(PIP_SEEK_STEP_MS)
         }
     }
 
@@ -158,7 +171,20 @@ internal class PipActionReceiver : BroadcastReceiver() {
     }
 }
 
-private fun pipActions(activity: Activity): List<RemoteAction> {
+/** PiP seek step — matches double-tap / chrome skip. */
+internal const val PIP_SEEK_STEP_MS = 10_000L
+
+/**
+ * Play/pause glyph for the PiP remote action strip.
+ * While the episode is playing the strip must show Pause, not a stuck Play.
+ */
+internal fun pipPlayPauseIconRes(playing: Boolean): Int =
+    if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+
+internal fun pipPlayPauseTitle(playing: Boolean): String =
+    if (playing) "Pause" else "Play"
+
+private fun pipActions(activity: Activity, playing: Boolean): List<RemoteAction> {
     fun pending(action: String, request: Int): PendingIntent {
         val intent = Intent(activity, PipActionReceiver::class.java).setAction(action)
         return PendingIntent.getBroadcast(
@@ -168,6 +194,7 @@ private fun pipActions(activity: Activity): List<RemoteAction> {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
+    val toggleTitle = pipPlayPauseTitle(playing)
     return listOf(
         RemoteAction(
             Icon.createWithResource(activity, android.R.drawable.ic_media_rew),
@@ -176,9 +203,9 @@ private fun pipActions(activity: Activity): List<RemoteAction> {
             pending(PipActionReceiver.ACTION_REWIND, 1),
         ),
         RemoteAction(
-            Icon.createWithResource(activity, android.R.drawable.ic_media_play),
-            "Play or pause",
-            "Play or pause",
+            Icon.createWithResource(activity, pipPlayPauseIconRes(playing)),
+            toggleTitle,
+            toggleTitle,
             pending(PipActionReceiver.ACTION_PLAY_PAUSE, 2),
         ),
         RemoteAction(
