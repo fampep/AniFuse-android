@@ -8,8 +8,11 @@ package site.anikitty.app.ui.player
 import android.Manifest
 import android.app.Activity
 import android.app.PictureInPictureParams
+import android.content.Context
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.util.Log
 import android.util.Rational
@@ -808,31 +811,37 @@ fun PlayerScreen(
             playbackHlsOffline -> cacheDataSourceFactory(context, anilistId, episode, pipeline.strip)
             else -> pipeline.strip
         }
-        // Media3 requires minBufferMs >= bufferForPlaybackAfterRebufferMs
-        // and minBufferMs >= bufferForPlaybackMs. Violating that crashes on open.
+        // Network-class + Race-dock RTT ladder — Wi‑Fi climbs fast; metered
+        // holds more buffer and seeds a lower rung. Media3 requires
+        // minBufferMs >= bufferForPlaybackAfterRebufferMs / bufferForPlaybackMs.
+        val network = abrNetworkClassFor(context)
+        val openHost = playableHost(playbackSource?.url.orEmpty())
+        val openRtt = openHost.takeIf { it.isNotBlank() }
+            ?.let { PlaybackHostHealth.latencyMs(it) }
+        val buffers = abrLoadControlMs(network, openRtt)
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 2_000,
-                /* maxBufferMs = */ 50_000,
-                /* bufferForPlaybackMs = */ 320,
-                /* bufferForPlaybackAfterRebufferMs = */ 800,
+                buffers.minBufferMs,
+                buffers.maxBufferMs,
+                buffers.bufferForPlaybackMs,
+                buffers.bufferForPlaybackAfterRebufferMs,
             )
-            .setBackBuffer(40_000, true)
+            .setBackBuffer(buffers.backBufferMs, true)
             .build()
         val metrics = context.resources.displayMetrics
-        val seedBitrate = context.getSharedPreferences("anikitty_player", 0)
+        val prefsSeed = context.getSharedPreferences("anikitty_player", 0)
             .getInt("last_video_bitrate", 1_500_000)
-            .coerceIn(400_000, 8_000_000)
+        val seedBitrate = abrSeedBitrate(prefsSeed, network)
         val innerBandwidth = DefaultBandwidthMeter.Builder(context)
             .setInitialBitrateEstimate(seedBitrate.toLong())
             .build()
         val bandwidth = ReseedableBandwidthMeter(innerBandwidth)
-        // Flagship ABR: climb early on a healthy pipe, dump rungs the second stalls hit.
+        val windows = abrAdaptiveWindows(network, openRtt)
         val adaptive = AdaptiveTrackSelection.Factory(
-            /* minDurationForQualityIncreaseMs = */ 3_200,
-            /* maxDurationForQualityDecreaseMs = */ 2_000,
-            /* minDurationToRetainAfterDiscardMs = */ 10_000,
-            /* bandwidthFraction = */ 0.82f,
+            windows.minDurationForQualityIncreaseMs,
+            windows.maxDurationForQualityDecreaseMs,
+            windows.minDurationToRetainAfterDiscardMs,
+            windows.bandwidthFraction,
         )
         val selector = DefaultTrackSelector(context, adaptive).apply {
             // Device locale is the default preference. A Danish phone then keeps
@@ -861,11 +870,12 @@ fun PlayerScreen(
                 videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
                 playbackParameters = PlaybackParameters(playbackSpeed)
             }
-        PlayerBundle(exo, selector, pipeline, bandwidth)
+        PlayerBundle(exo, selector, pipeline, bandwidth, network)
     }
     val player = playerBundle?.player
     val trackSelector = playerBundle?.trackSelector
     val bandwidthMeter = playerBundle?.bandwidth
+    val abrNetwork = playerBundle?.network ?: AbrNetworkClass.Wifi
     // The video is already playing. Captions arrive on their own and are added
     // without building a new player.
     var ccPhase by remember(anilistId, episode) {
@@ -4613,6 +4623,7 @@ fun PlayerScreen(
                                     "$res · $mode",
                                     abrFailoverStatusPill(abrPhase),
                                     subtitleAttachStatusPill(ccPhase),
+                                    abrNetworkStatusPill(abrNetwork),
                                 ),
                                 shadowReady = shadowReadyNow(),
                                 standbyLatencyMs = PlaybackHostHealth.latencyMs(shadowHost.orEmpty()),
@@ -5130,7 +5141,34 @@ private data class PlayerBundle(
     val trackSelector: DefaultTrackSelector,
     val pipeline: PlaybackPipeline,
     val bandwidth: ReseedableBandwidthMeter,
+    val network: AbrNetworkClass = AbrNetworkClass.Wifi,
 )
+
+/** Sample active network once at ExoPlayer build for the ABR ladder. */
+private fun abrNetworkClassFor(context: Context): AbrNetworkClass {
+    val cm = context.getSystemService(ConnectivityManager::class.java)
+        ?: return AbrNetworkClass.Offline
+    val network = cm.activeNetwork ?: return AbrNetworkClass.Offline
+    val caps = cm.getNetworkCapabilities(network) ?: return AbrNetworkClass.Offline
+    val hasInternet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    val activeWifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+    val activeVpn = caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+    val siblingWifi = cm.allNetworks.any { other ->
+        if (other == network) return@any false
+        val otherCaps = cm.getNetworkCapabilities(other) ?: return@any false
+        otherCaps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            otherCaps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+    }
+    val isMetered = cm.isActiveNetworkMetered
+    val isWifi = abrWifiLike(
+        activeHasWifiOrEthernet = activeWifi,
+        activeHasVpn = activeVpn,
+        isMetered = isMetered,
+        anyNetworkWifiOrEthernet = siblingWifi,
+    )
+    return abrNetworkClass(hasInternet = hasInternet, isWifi = isWifi, isMetered = isMetered)
+}
 
 private data class PlayerClock(
     val positionMs: Long,
