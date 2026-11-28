@@ -121,6 +121,7 @@ import site.anikitty.app.cast.castAudioKey
 import site.anikitty.app.cast.CAST_CAPTION_PUSH_MAX_POLLS
 import site.anikitty.app.cast.CAST_CAPTION_PUSH_POLL_MS
 import site.anikitty.app.cast.castCaptionKey
+import site.anikitty.app.cast.castHeightKey
 import site.anikitty.app.cast.castShouldPushCaptions
 import site.anikitty.app.cast.castVolumeFromGesture
 import site.anikitty.app.cast.castJoin
@@ -1707,6 +1708,13 @@ fun PlayerScreen(
 
     LaunchedEffect(anilistId, episode) { castLoadRetry = 0 }
 
+    fun castMaxHeight(): Int? {
+        val id = selectedVideoId
+        if (id == "auto") return null
+        val fromOpt = videoOptions.firstOrNull { it.id == id }?.height?.takeIf { it > 0 }
+        return fromOpt ?: id.removeSuffix("p").toIntOrNull()?.takeIf { it > 0 }
+    }
+
     fun loadOntoCast(helper: CastSessionHelper, src: PlayableSource) {
         if (!castAlive.get()) return
         if (!helper.isSessionAvailable()) {
@@ -1735,6 +1743,7 @@ fun PlayerScreen(
                 episode = latestEpisode,
                 positionMs = pos,
                 anilistId = anilistId,
+                maxVideoHeight = castMaxHeight(),
                 // Advance from the stamped attach clock only — never re-run
                 // castPlayhead() (that drops pendingResume once castSent is set)
                 // and never throw into start()'s deferred failure path.
@@ -1766,6 +1775,7 @@ fun PlayerScreen(
                 episode = latestEpisode,
                 url = src.url,
                 audio = castAudioKey(src.audioLanguage),
+                height = castHeightKey(castMaxHeight()),
             ),
         )
         if (castJoin(helper.casting, helper.isLoadInFlight(), same) != CastJoin.Adopt) return false
@@ -2041,10 +2051,10 @@ fun PlayerScreen(
         if (!isCasting) castLoadedEpisode = episode
     }
 
-    // When quality, episode, or the selected audio language changes mid-cast,
-    // push a new load. A shared master keeps the same URL, so the language
-    // has to be its own key. The first load is the attach effect above.
-    LaunchedEffect(source?.url, source?.audioLanguage, episode) {
+    // When quality, episode, audio language, or the resolution ceiling changes
+    // mid-cast, push a new load. A shared master keeps the same URL, so lang
+    // and height have to be their own keys. The first load is the attach above.
+    LaunchedEffect(source?.url, source?.audioLanguage, episode, selectedVideoId) {
         if (!isCasting) return@LaunchedEffect
         // Stop the phone before the new item loads. The local player is rebuilt
         // for the new episode and would otherwise start playing beside the TV.
@@ -2054,11 +2064,13 @@ fun PlayerScreen(
         }
         val helper = castHelper ?: return@LaunchedEffect
         val src = source ?: return@LaunchedEffect
+        val ceiling = castMaxHeight()
         val screenItem = CastItemKey(
             anilistId = anilistId,
             episode = episode,
             url = src.url,
             audio = castAudioKey(src.audioLanguage),
+            height = castHeightKey(ceiling),
         )
         // Joining a receiver that is already playing this item must not load it again.
         val alreadyThere = helper.playingItem?.takeIf { !helper.isLoadInFlight() } ?: helper.loadedItem
@@ -2076,7 +2088,8 @@ fun PlayerScreen(
             startPositionMs.coerceAtLeast(0L)
         }
         castLoadedEpisode = episode
-        castLoadedKey = "${sourceIndex}\u0000${src.url}\u0000${src.audioLanguage.orEmpty()}\u0000$episode"
+        castLoadedKey =
+            "${sourceIndex}\u0000${src.url}\u0000${src.audioLanguage.orEmpty()}\u0000$episode\u0000${castHeightKey(ceiling)}"
         castSentPositionMs = pos
         castPlayheadRequested = true
         if (!sameEpisode) {
@@ -2098,6 +2111,7 @@ fun PlayerScreen(
                 episode = episode,
                 positionMs = pos,
                 anilistId = anilistId,
+                maxVideoHeight = ceiling,
                 onReady = {
                     if (!castAlive.get()) return@load
                     runCatching {
@@ -2256,14 +2270,22 @@ fun PlayerScreen(
                 textOptions = options
                 selectedTextId = rematchTextId(selectedTextId, options)
                 val vids = buildVideoOptions(tracks)
-                videoOptions = vids
-                selectedVideoId = rematchVideoId(selectedVideoId, vids)
+                // CastPlayer rarely reports a ladder. Keep the phone's rungs (or
+                // a theater seed) so the Quality chip can still lock height on TV.
+                val keptVids = when {
+                    !isCasting -> vids
+                    vids.any { it.height > 0 } -> vids
+                    videoOptions.any { it.height > 0 } -> videoOptions
+                    else -> castTheaterVideoOptions()
+                }
+                videoOptions = keptVids
+                selectedVideoId = rematchVideoId(selectedVideoId, keptVids)
                 val audios = buildAudioOptions(tracks)
                 audioOptions = audios
                 selectedAudioId = rematchAudioId(selectedAudioId, audios)
                 if (activeSelector != null) {
                     applyTextSelection(activeSelector, selectedTextId, options, subsEnabled)
-                    applyVideoSelection(activeSelector, selectedVideoId, vids)
+                    applyVideoSelection(activeSelector, selectedVideoId, keptVids)
                     applyAudioSelection(activeSelector, selectedAudioId, audios)
                 }
             }
@@ -3087,13 +3109,26 @@ fun PlayerScreen(
                 }
             }
             PlayerMenuPage.Quality -> {
-                val resolutions = videoOptions.ifEmpty {
-                    listOf(VideoOption(id = "auto", label = "Auto (best available)"))
+                val resolutions = when {
+                    videoOptions.any { it.height > 0 } -> videoOptions
+                    isCasting -> castTheaterVideoOptions()
+                    else -> videoOptions.ifEmpty {
+                        listOf(VideoOption(id = "auto", label = "Auto (best available)"))
+                    }
                 }
                 val resolutionBlock = @Composable {
-                    PlayerMenuSectionLabel("Resolution")
+                    PlayerMenuSectionLabel(
+                        if (isCasting) "Resolution · TV lock" else "Resolution",
+                    )
                     GlassResolutionChipRow(
-                        options = resolutions.map { it.id to it.label },
+                        options = resolutions.map { opt ->
+                            val label = if (isCasting && opt.id != "auto") {
+                                "${opt.label} · Cast"
+                            } else {
+                                opt.label
+                            }
+                            opt.id to label
+                        },
                         selectedId = selectedVideoId,
                         onSelect = { selectedVideoId = it },
                     )
@@ -4914,6 +4949,14 @@ private fun rematchTextId(previous: String, options: List<TextOption>): String {
     }
     return "auto"
 }
+
+/** Theater Quality chips when CastPlayer reports no ladder. */
+private fun castTheaterVideoOptions(): List<VideoOption> = listOf(
+    VideoOption(id = "auto", label = "Auto (best available)"),
+    VideoOption(id = "1080p", label = "1080p · Full HD", height = 1080, width = 1920),
+    VideoOption(id = "720p", label = "720p · HD", height = 720, width = 1280),
+    VideoOption(id = "480p", label = "480p", height = 480, width = 854),
+)
 
 @OptIn(UnstableApi::class)
 private fun buildVideoOptions(tracks: Tracks): List<VideoOption> {

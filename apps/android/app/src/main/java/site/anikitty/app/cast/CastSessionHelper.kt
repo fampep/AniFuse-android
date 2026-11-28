@@ -408,6 +408,7 @@ class CastSessionHelper private constructor(
         episode: Int,
         positionMs: Long,
         anilistId: Int = 0,
+        maxVideoHeight: Int? = null,
         /** Fresh phone playhead at commit time — phone keeps playing during deferred start. */
         livePositionMs: (() -> Long)? = null,
         onReady: () -> Unit,
@@ -419,11 +420,13 @@ class CastSessionHelper private constructor(
         val ticket = generation.incrementAndGet()
         activeLoadTicket.set(ticket)
         loadLivePosition = livePositionMs
+        val ceiling = castHeightKey(maxVideoHeight)
         val item = CastItemKey(
             anilistId = anilistId,
             episode = episode,
             url = source.url,
             audio = castAudioKey(source.audioLanguage),
+            height = ceiling,
         )
         loadedItem = item
         ticketItem.set(ticket to item)
@@ -434,7 +437,9 @@ class CastSessionHelper private constructor(
         thread(name = "anikitty-cast-load", isDaemon = true) {
             // prepareGate only — never relayLock. stopCasting bumps prepareEpoch and
             // closes the socket without waiting; stale claims stop again after I/O.
-            val prepared = runCatching { prepareClaimed(prepareClaim, source) }
+            val prepared = runCatching {
+                prepareClaimed(prepareClaim, source, maxHeight = ceiling.takeIf { it > 0 })
+            }
             main.post {
                 if (closed.get() || ticket != generation.get()) {
                     abortLoad(ticket, mediaCommitted = false)
@@ -571,12 +576,16 @@ class CastSessionHelper private constructor(
      * was cancelled; may call [CastRelay.stop] if prepare revived the socket after
      * a concurrent stop. Never holds [relayLock] across network I/O.
      */
-    private fun prepareClaimed(claim: Int, source: PlayableSource): RelayPlayback? {
+    private fun prepareClaimed(
+        claim: Int,
+        source: PlayableSource,
+        maxHeight: Int? = null,
+    ): RelayPlayback? {
         synchronized(prepareGate) {
             if (!castRelayPrepareStillOwns(claim, prepareEpoch.get(), closed.get())) {
                 return null
             }
-            val playback = relay.prepare(source)
+            val playback = relay.prepare(source, maxHeight = maxHeight)
             if (!castRelayPrepareStillOwns(claim, prepareEpoch.get(), closed.get())) {
                 synchronized(relayLock) { relay.stop() }
                 return null

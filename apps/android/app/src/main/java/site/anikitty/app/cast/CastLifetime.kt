@@ -68,14 +68,20 @@ internal data class CastItemKey(
     val episode: Int,
     val url: String,
     val audio: String,
+    /** Picture height ceiling in pixels. 0 = Auto (receiver ABR). */
+    val height: Int = 0,
 )
 
 internal fun castAudioKey(audio: String?): String = audio?.trim()?.lowercase().orEmpty()
+
+/** Normalize a Quality chip into the Cast item key. 0 = Auto. */
+internal fun castHeightKey(height: Int?): Int = height?.takeIf { it > 0 } ?: 0
 
 internal fun castSameItem(loaded: CastItemKey?, screen: CastItemKey): Boolean {
     if (loaded == null || loaded.url.isBlank() || screen.url.isBlank()) return false
     if (loaded.url != screen.url || loaded.episode != screen.episode) return false
     if (castAudioKey(loaded.audio) != castAudioKey(screen.audio)) return false
+    if (castHeightKey(loaded.height) != castHeightKey(screen.height)) return false
     if (loaded.anilistId > 0 && screen.anilistId > 0 && loaded.anilistId != screen.anilistId) return false
     return true
 }
