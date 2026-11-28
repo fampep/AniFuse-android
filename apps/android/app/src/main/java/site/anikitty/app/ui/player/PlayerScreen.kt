@@ -4193,7 +4193,11 @@ fun PlayerScreen(
                     val mode = if (audio == "dub") "DUB" else "SUB"
                     AniFusePlayerChrome(
                         title = title,
-                        episodeLine = if (isMovie) "Movie" else "Episode $episode",
+                        episodeLine = if (isMovie) {
+                            "Movie"
+                        } else {
+                            "Episode $episode of $totalEpisodes"
+                        },
                         statusPill = listOfNotNull(
                             source?.serverName?.takeIf { it.isNotBlank() },
                             "$res · $mode",
@@ -4202,7 +4206,13 @@ fun PlayerScreen(
                         playing = playing,
                         speedLabel = speedLabel(playbackSpeed),
                         showEpisodes = !isMovie && onPickEpisode != null && totalEpisodes > 1,
-                        showNext = onNextEpisode != null && episode < totalEpisodes,
+                        showPrevious = chromeShowsPreviousEpisode(
+                            showEpisodes = !isMovie && onPickEpisode != null && totalEpisodes > 1,
+                            episode = episode,
+                        ),
+                        showNext = chromeShowsNextEpisode(
+                            showNext = onNextEpisode != null && episode < totalEpisodes,
+                        ),
                         castUnavailable = castRouteReason,
                         onCastUnavailable = { castHint = it },
                         player = activePlayer,
@@ -4233,6 +4243,7 @@ fun PlayerScreen(
                             panel = PlayerMenuPage.Episodes
                             controlsVisible = true
                         },
+                        onPrevious = { goPreviousEpisode() },
                         onSources = {
                             sourcePanelFocus = true
                             panel = PlayerMenuPage.Quality
