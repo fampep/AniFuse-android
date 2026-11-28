@@ -866,13 +866,21 @@ fun PlayerScreen(
         selector.parameters = previous.buildUpon().setMaxVideoBitrate(cap).build()
         delay(holdMs)
         if (trackSelector !== selector) return@LaunchedEffect
-        // Soft release first — uncapping immediately thrash-climbs on a cold meter.
+        // Soft release, then a second climb — uncapping immediately thrash-climbs
+        // on a cold meter after a CDN swap.
         val soft = abrFailoverReleaseBitrate(seed)
         meter?.reseed(soft.toLong())
         selector.parameters = selector.parameters.buildUpon()
             .setMaxVideoBitrate(soft)
             .build()
         delay(1_400L)
+        if (trackSelector !== selector) return@LaunchedEffect
+        val climb = abrFailoverClimbBitrate(seed)
+        meter?.reseed(climb.toLong())
+        selector.parameters = selector.parameters.buildUpon()
+            .setMaxVideoBitrate(climb)
+            .build()
+        delay(abrFailoverClimbHoldMs())
         if (trackSelector === selector) {
             meter?.clearReseed()
             selector.parameters = selector.parameters.buildUpon()

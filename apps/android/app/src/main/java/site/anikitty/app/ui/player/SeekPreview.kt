@@ -192,6 +192,22 @@ internal fun SeekPreview(
                     )
                 }
             }
+            // Glass stem ties the floating card to the scrub rail.
+            Box(
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .width(2.dp)
+                    .height(10.dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.White.copy(alpha = 0.42f),
+                                Color.White.copy(alpha = 0.08f),
+                            ),
+                        ),
+                    ),
+            )
         }
     }
 }

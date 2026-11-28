@@ -294,6 +294,7 @@ fun GlassScrubber(
 
             if (durationMs > 0 && !skipTimes.isEmpty) {
                 val dur = durationMs.coerceAtLeast(1L).toFloat()
+                val tickH = trackH * 2.1f
                 skipTimes.segments.forEach { (kind, iv) ->
                     val start = (iv.startMs / dur).coerceIn(0f, 1f)
                     val end = (iv.endMs / dur).coerceIn(0f, 1f)
@@ -310,6 +311,21 @@ fun GlassScrubber(
                         size = Size(w, trackH),
                         cornerRadius = radius,
                     )
+                    // Edge ticks so intro/credits boundaries read as glass cuts.
+                    val tickAlpha = when (kind) {
+                        "intro" -> 0.78f
+                        "credits" -> 0.48f
+                        else -> 0.32f
+                    }
+                    listOf(start, end).forEach { edge ->
+                        val x = size.width * edge
+                        drawRoundRect(
+                            color = Color.White.copy(alpha = tickAlpha),
+                            topLeft = Offset(x - 0.75.dp.toPx(), cy - tickH / 2f),
+                            size = Size(1.5.dp.toPx(), tickH),
+                            cornerRadius = CornerRadius(0.75.dp.toPx(), 0.75.dp.toPx()),
+                        )
+                    }
                 }
             }
 

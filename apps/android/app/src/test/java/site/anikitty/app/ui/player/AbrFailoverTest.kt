@@ -32,6 +32,11 @@ class AbrFailoverTest {
         assertEquals(2_400_000, release)
         assertEquals(1_200_000, abrFailoverReleaseBitrate(400_000))
         assertEquals(4_000_000, abrFailoverReleaseBitrate(5_000_000))
+        val climb = abrFailoverClimbBitrate(seed)
+        assertTrue(climb > release)
+        assertTrue(climb < Int.MAX_VALUE)
+        assertEquals(4_200_000, climb)
+        assertEquals(1_100L, abrFailoverClimbHoldMs())
     }
 
     @Test

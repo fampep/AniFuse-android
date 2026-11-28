@@ -41,6 +41,18 @@ internal fun abrFailoverReleaseBitrate(seedBitrate: Int): Int {
     return (seed * 8L / 5L).toInt().coerceIn(1_200_000, 4_000_000)
 }
 
+/**
+ * Second soft climb after [abrFailoverReleaseBitrate] — still capped so a
+ * cold CDN cannot thrash to the top rung before the meter has samples.
+ */
+internal fun abrFailoverClimbBitrate(seedBitrate: Int): Int {
+    val soft = abrFailoverReleaseBitrate(seedBitrate)
+    return (soft * 7L / 4L).toInt().coerceIn(2_000_000, 6_000_000)
+}
+
+/** Hold the second climb long enough for a few segment samples. */
+internal fun abrFailoverClimbHoldMs(): Long = 1_100L
+
 /** Forced meter reading while the soft cap is live — matches the ladder ceiling. */
 internal fun abrFailoverReseedBitrate(seedBitrate: Int): Long =
     abrFailoverCapBitrate(seedBitrate).toLong()
