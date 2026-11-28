@@ -160,7 +160,14 @@ class SubtitleAttachTest {
             SubtitleAttachPhase.Bake,
             subtitleAttachPhaseAfterAction(SubtitleAttachAction.HardReload),
         )
+        // Unchanged / already baked must clear CC · WARM.
+        assertEquals(
+            SubtitleAttachPhase.Ready,
+            subtitleAttachPhaseAfterAction(SubtitleAttachAction.None),
+        )
         assertEquals(null, subtitleAttachPhaseAfterAction(SubtitleAttachAction.ReArm))
+        assertEquals(SubtitleAttachPhase.Idle, subtitleAttachPhaseAfterFetch(0))
+        assertEquals(SubtitleAttachPhase.Fetch, subtitleAttachPhaseAfterFetch(2))
         assertTrue(SUBTITLE_ATTACH_MAX_REARMS >= 1)
     }
 

@@ -126,8 +126,14 @@ internal fun subtitleAttachPhaseAfterAction(action: SubtitleAttachAction): Subti
     when (action) {
         SubtitleAttachAction.SoftReplace -> SubtitleAttachPhase.Soft
         SubtitleAttachAction.HardReload -> SubtitleAttachPhase.Bake
-        SubtitleAttachAction.None, SubtitleAttachAction.ReArm -> null
+        // Already baked / unchanged — clear CC · WARM so the pill does not stick.
+        SubtitleAttachAction.None -> SubtitleAttachPhase.Ready
+        SubtitleAttachAction.ReArm -> null
     }
+
+/** Fetch finished with nothing to attach — drop the warm pill. */
+internal fun subtitleAttachPhaseAfterFetch(trackCount: Int): SubtitleAttachPhase =
+    if (trackCount <= 0) SubtitleAttachPhase.Idle else SubtitleAttachPhase.Fetch
 
 /** 33ms × 36 ≈ 1.2s ceiling — attach as soon as Media3 leaves IDLE. */
 internal const val SUBTITLE_ATTACH_POLL_MS = 33L

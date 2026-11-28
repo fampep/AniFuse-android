@@ -849,6 +849,7 @@ fun PlayerScreen(
             val fetched = libraryCaptionsOrEmpty(anilistId, episode)
             librarySubtitles = mergeSubtitleTracks(provider, fetched)
             captionsLoading = false
+            ccPhase = subtitleAttachPhaseAfterFetch(librarySubtitles.size)
         } else {
             captionsLoading = false
             if (librarySubtitles.isEmpty()) ccPhase = SubtitleAttachPhase.Idle
@@ -924,12 +925,18 @@ fun PlayerScreen(
     LaunchedEffect(player, librarySubtitles, playbackSource?.url) {
         val exo = player ?: return@LaunchedEffect
         val tracks = librarySubtitles
-        if (tracks.isEmpty()) return@LaunchedEffect
+        if (tracks.isEmpty()) {
+            ccPhase = SubtitleAttachPhase.Idle
+            return@LaunchedEffect
+        }
         var expectedUri = playbackSource?.url ?: return@LaunchedEffect
         val configs = tracks.mapIndexedNotNull { index, track ->
             subtitleConfig(track, default = index == 0)
         }
-        if (configs.isEmpty()) return@LaunchedEffect
+        if (configs.isEmpty()) {
+            ccPhase = SubtitleAttachPhase.Idle
+            return@LaunchedEffect
+        }
         val nextUris = configs.map { it.uri.toString() }
         // Attach as soon as buffering/ready — 2s ceiling, not a 6s READY wait.
         // Stay in the loop while IDLE; prepare() often starts IDLE for a beat.
@@ -942,7 +949,10 @@ fun PlayerScreen(
         while (true) {
             // Re-read after the poll — a pre-poll snapshot can soft-replace a dead
             // CDN URI back into the player after a successful failover.
-            val live = exo.currentMediaItem ?: return@LaunchedEffect
+            val live = exo.currentMediaItem ?: run {
+                ccPhase = SubtitleAttachPhase.Idle
+                return@LaunchedEffect
+            }
             val liveUri = live.localConfiguration?.uri?.toString()
             val already = live.localConfiguration?.subtitleConfigurations.orEmpty()
                 .map { it.uri.toString() }
@@ -957,11 +967,21 @@ fun PlayerScreen(
                 mediaItemCount = exo.mediaItemCount,
             )
             when (action) {
-                SubtitleAttachAction.None -> return@LaunchedEffect
+                SubtitleAttachAction.None -> {
+                    // Bake-in already carried captions — clear CC · WARM.
+                    subtitleAttachPhaseAfterAction(action)?.let { ccPhase = it }
+                    return@LaunchedEffect
+                }
                 SubtitleAttachAction.ReArm -> {
-                    if (rearms >= SUBTITLE_ATTACH_MAX_REARMS) return@LaunchedEffect
+                    if (rearms >= SUBTITLE_ATTACH_MAX_REARMS) {
+                        ccPhase = SubtitleAttachPhase.Idle
+                        return@LaunchedEffect
+                    }
                     val nextExpected = subtitleAttachUriKey(liveUri)
-                    if (nextExpected.isEmpty()) return@LaunchedEffect
+                    if (nextExpected.isEmpty()) {
+                        ccPhase = SubtitleAttachPhase.Idle
+                        return@LaunchedEffect
+                    }
                     expectedUri = nextExpected
                     rearms++
                     continue
