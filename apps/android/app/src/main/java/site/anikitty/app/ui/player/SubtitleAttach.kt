@@ -15,6 +15,23 @@ internal fun playbackSubtitleTracks(
     library: List<SubtitleTrack>,
 ): List<SubtitleTrack> = mergeSubtitleTracks(provider, library)
 
+/**
+ * Peek is tri-state: null = unknown (must fetch), empty = known miss (skip
+ * network), non-empty = warm hit. Collapsing null with empty used to skip the
+ * library fetch whenever the provider already had any sidecar.
+ */
+internal fun shouldFetchLibraryCaptions(
+    peeked: List<SubtitleTrack>?,
+    anilistId: Int,
+    episode: Int,
+): Boolean = peeked == null && anilistId > 0 && episode > 0
+
+/** Provider sidecars first; warm/empty peek fills gaps without inventing a fetch. */
+internal fun captionsAfterPeek(
+    provider: List<SubtitleTrack>,
+    peeked: List<SubtitleTrack>?,
+): List<SubtitleTrack> = mergeSubtitleTracks(provider, peeked.orEmpty())
+
 /** Attach once Media3 is buffering or ready — do not wait out a 6s READY poll. */
 internal fun subtitleAttachMayProceed(playbackState: Int): Boolean =
     playbackState == PLAYBACK_STATE_BUFFERING ||

@@ -16,4 +16,12 @@ class ScrubPreviewBucketTest {
         assertEquals(2_000L, scrubPreviewBucketMs(2_001L))
         assertEquals(0L, scrubPreviewBucketMs(-50L))
     }
+
+    @Test
+    fun seekPreviewCardIsCompactOnPhone() {
+        assertEquals(118f, seekPreviewCardWidthDp(360f))
+        assertEquals(118f, seekPreviewCardWidthDp(479f))
+        assertEquals(156f, seekPreviewCardWidthDp(480f))
+        assertEquals(156f, seekPreviewCardWidthDp(900f))
+    }
 }

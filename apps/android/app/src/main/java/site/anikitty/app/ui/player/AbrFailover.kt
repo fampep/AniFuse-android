@@ -47,7 +47,9 @@ internal fun abrFailoverReseedBitrate(seedBitrate: Int): Long =
 
 /**
  * Only reseed ABR when the CDN host actually changes. Same-host quality or
- * playlist swaps must not thrash the meter / soft-cap ladder.
+ * playlist swaps must not thrash the meter / soft-cap ladder. Callers must
+ * key the soft-cap effect on the host (not the full URL) so a same-host swap
+ * cannot cancel a mid-flight release and leave maxVideoBitrate stuck.
  */
 internal fun abrFailoverShouldReseed(previousHost: String?, nextHost: String?): Boolean {
     val prev = previousHost?.trim()?.lowercase().orEmpty()

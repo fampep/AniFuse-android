@@ -32,6 +32,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/** Phone scrubbers stay compact; tablets get a wider glass preview card. */
+internal fun seekPreviewCardWidthDp(maxWidthDp: Float): Float =
+    if (maxWidthDp < 480f) 118f else 156f
+
 /**
  * Thumbnail above the scrubber, optional chapter chip + timestamp under it.
  * The card is clamped to the bar so a phone edge never clips it.
@@ -56,8 +60,7 @@ internal fun SeekPreview(
                 }
             },
     ) {
-        val narrow = maxWidth < 480.dp
-        val cardWidth = if (narrow) 118.dp else 156.dp
+        val cardWidth = seekPreviewCardWidthDp(maxWidth.value).dp
         val cardHeight = cardWidth * 9f / 16f
         val clamped = fraction.coerceIn(0f, 1f)
         val x = (maxWidth * clamped - cardWidth / 2).coerceIn(0.dp, (maxWidth - cardWidth).coerceAtLeast(0.dp))

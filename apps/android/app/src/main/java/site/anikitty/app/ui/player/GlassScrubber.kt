@@ -87,6 +87,15 @@ fun GlassScrubber(
         },
         label = "thumbScale",
     )
+    val trackHeightDp by animateFloatAsState(
+        targetValue = if (scrubbing) 6f else 4.5f,
+        animationSpec = if (reduced) {
+            snap()
+        } else {
+            spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMedium)
+        },
+        label = "trackHeight",
+    )
     val latestOnScrub by rememberUpdatedState(onScrub)
     val latestOnFinished by rememberUpdatedState(onScrubFinished)
     val density = LocalDensity.current
@@ -230,7 +239,7 @@ fun GlassScrubber(
                 },
         ) {
             val cy = size.height / 2f
-            val trackH = (if (scrubbing) 6.dp else 4.5.dp).toPx()
+            val trackH = trackHeightDp.dp.toPx()
             val radius = CornerRadius(trackH / 2f, trackH / 2f)
             val unplayed = trackIdle
             val bufferedColor = trackBuffered

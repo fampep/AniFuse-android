@@ -267,6 +267,7 @@ import site.anikitty.app.data.servers.audioSwitchLabel
 import site.anikitty.app.data.servers.requestedAudioLanguage
 import site.anikitty.app.data.servers.SubtitleTrack
 import site.anikitty.app.data.servers.SubtitleLibrary
+import site.anikitty.app.data.servers.libraryCaptionsOrEmpty
 import site.anikitty.app.data.skip.AniSkipStamp
 import site.anikitty.app.data.skip.SkipTimes
 import site.anikitty.app.data.skip.chooseSkip
@@ -818,13 +819,12 @@ fun PlayerScreen(
     // without building a new player.
     LaunchedEffect(anilistId, episode, source?.url) {
         val provider = source?.subtitles.orEmpty()
-        val peeked = site.anikitty.app.data.servers.SubtitleLibrary.peek(anilistId, episode).orEmpty()
-        librarySubtitles = mergeSubtitleTracks(provider, peeked)
-        if (librarySubtitles.isEmpty() && anilistId > 0 && episode > 0) {
+        // Preserve peek null (unknown) vs empty (known miss) — do not .orEmpty() first.
+        val peeked = SubtitleLibrary.peek(anilistId, episode)
+        librarySubtitles = captionsAfterPeek(provider, peeked)
+        if (shouldFetchLibraryCaptions(peeked, anilistId, episode)) {
             captionsLoading = true
-            val fetched = runCatching {
-                site.anikitty.app.data.servers.SubtitleLibrary.tracks(anilistId, episode)
-            }.getOrDefault(emptyList())
+            val fetched = libraryCaptionsOrEmpty(anilistId, episode)
             librarySubtitles = mergeSubtitleTracks(provider, fetched)
             captionsLoading = false
         } else {
@@ -832,20 +832,26 @@ fun PlayerScreen(
         }
     }
     // After a CDN failover, cap ABR briefly so the new host is not judged by
-    // the previous pipe's bitrate estimate. A shadow swap lands at index 0,
-    // so the cap follows the URL, not the index. Also reseed the live meter —
-    // a max-bitrate alone still fights a polluted DefaultBandwidthMeter reading.
-    var bitrateCappedFor by remember(anilistId, episode) { mutableStateOf<String?>(null) }
-    LaunchedEffect(playbackSource?.url, trackSelector, bandwidthMeter) {
+    // the previous pipe's bitrate estimate. Key the effect on the CDN host —
+    // same-host quality/playlist URL swaps must not cancel a mid-flight soft
+    // release and leave maxVideoBitrate stuck for the rest of the episode.
+    var bitrateCappedForHost by remember(anilistId, episode) { mutableStateOf<String?>(null) }
+    val playbackHost = playableHost(playbackSource?.url.orEmpty())
+    LaunchedEffect(playbackHost, trackSelector, bandwidthMeter) {
         val selector = trackSelector ?: return@LaunchedEffect
         val meter = bandwidthMeter
-        val url = playbackSource?.url ?: return@LaunchedEffect
-        val previousUrl = bitrateCappedFor
-        val first = previousUrl == null
-        bitrateCappedFor = url
+        if (playbackHost.isBlank()) return@LaunchedEffect
+        val previousHost = bitrateCappedForHost
+        val first = previousHost == null
+        bitrateCappedForHost = playbackHost
         if (first) return@LaunchedEffect
-        // Same CDN host — quality/playlist swap must not reseed or soft-cap thrash.
-        if (!abrFailoverShouldReseed(playableHost(previousUrl.orEmpty()), playableHost(url))) {
+        if (!abrFailoverShouldReseed(previousHost, playbackHost)) {
+            // Selector/meter rebuild on the same host cancelled any in-flight
+            // soft-cap delay — clear stuck forced estimate + ceiling.
+            meter?.clearReseed()
+            selector.parameters = selector.parameters.buildUpon()
+                .setMaxVideoBitrate(Int.MAX_VALUE)
+                .build()
             return@LaunchedEffect
         }
         val seed = playerPrefs.getInt("last_video_bitrate", 1_500_000)

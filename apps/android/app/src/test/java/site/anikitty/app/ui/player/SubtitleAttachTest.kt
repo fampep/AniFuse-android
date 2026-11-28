@@ -50,6 +50,24 @@ class SubtitleAttachTest {
         assertTrue(SUBTITLE_ATTACH_MAX_POLLS * SUBTITLE_ATTACH_POLL_MS <= 2_000L)
     }
 
+    @Test
+    fun fetchWhenPeekIsUnknownEvenIfProviderHasTracks() {
+        val provider = listOf(track("https://cdn.example/a.vtt", "en"))
+        assertTrue(shouldFetchLibraryCaptions(peeked = null, anilistId = 1, episode = 1))
+        assertFalse(shouldFetchLibraryCaptions(peeked = emptyList(), anilistId = 1, episode = 1))
+        assertFalse(
+            shouldFetchLibraryCaptions(
+                peeked = listOf(track("https://lib.example/b.vtt", "es")),
+                anilistId = 1,
+                episode = 1,
+            ),
+        )
+        assertFalse(shouldFetchLibraryCaptions(peeked = null, anilistId = 0, episode = 1))
+        assertEquals(provider, captionsAfterPeek(provider, peeked = null))
+        val filled = captionsAfterPeek(provider, listOf(track("https://lib.example/b.vtt", "es")))
+        assertEquals(2, filled.size)
+    }
+
     private fun track(url: String, lang: String) = SubtitleTrack(
         url = url,
         language = lang,
