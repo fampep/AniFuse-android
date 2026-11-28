@@ -69,7 +69,16 @@ internal object PlaybackHostHealth {
         synchronized(lock) {
             val stale = marks.filterValues { nowMs - it.atMs > HOLD_MS }.keys
             stale.forEach { marks.remove(it) }
-            marks[key] = Mark(ok = ok, atMs = nowMs, latencyMs = latencyMs.coerceAtLeast(0L))
+            // A later ok=true with no sample (playback ready / shadow arm) must
+            // not wipe a resolve-stamped RTT — Race dock reads that latency.
+            val previous = marks[key]
+            val keptLatency = when {
+                latencyMs > 0L -> latencyMs
+                ok && previous != null && previous.ok && nowMs - previous.atMs <= HOLD_MS ->
+                    previous.latencyMs
+                else -> 0L
+            }
+            marks[key] = Mark(ok = ok, atMs = nowMs, latencyMs = keptLatency)
             while (marks.size > MAX) {
                 val oldest = marks.entries.minByOrNull { it.value.atMs }?.key ?: break
                 marks.remove(oldest)

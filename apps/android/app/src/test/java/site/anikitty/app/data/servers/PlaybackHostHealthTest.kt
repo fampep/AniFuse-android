@@ -72,4 +72,23 @@ class PlaybackHostHealthTest {
             PlaybackHostHealth.scoreProvider("other", "https://site.example/", nowMs = 1_000L),
         )
     }
+
+    @Test
+    fun aZeroLatencyOkNoteKeepsTheStampedResolveRtt() {
+        PlaybackHostHealth.detach()
+        PlaybackHostHealth.note("cdn.fast", ok = true, latencyMs = 420L, nowMs = 1_000L)
+        PlaybackHostHealth.noteProviderCdn("anikoto", "cdn.fast")
+        // Playback ready / shadow arm used to wipe this to 0.
+        PlaybackHostHealth.note("cdn.fast", ok = true, latencyMs = 0L, nowMs = 1_200L)
+        assertEquals(
+            420L,
+            PlaybackHostHealth.providerLatencyMs("anikoto", "https://site.example/", nowMs = 1_200L),
+        )
+        // A real new sample still replaces the old one.
+        PlaybackHostHealth.note("cdn.fast", ok = true, latencyMs = 90L, nowMs = 1_400L)
+        assertEquals(
+            90L,
+            PlaybackHostHealth.providerLatencyMs("anikoto", "https://site.example/", nowMs = 1_400L),
+        )
+    }
 }
