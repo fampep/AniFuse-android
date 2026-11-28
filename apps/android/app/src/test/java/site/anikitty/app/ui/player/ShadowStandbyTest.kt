@@ -276,23 +276,49 @@ class ShadowStandbyTest {
                 stateBuffering = 2,
             ),
         )
-        // BUFFERING successor — re-arm with a fresh stall clock.
+        // Predecessor BUFFERING before the new load starts — must not re-arm.
+        assertNull(
+            castSuccessorRearm(
+                awaitSuccessor = true,
+                playbackState = 2,
+                stateReady = 3,
+                stateBuffering = 2,
+                loadInFlight = false,
+                loadStarted = false,
+            ),
+        )
+        // Still preparing the successor — ignore leftover BUFFERING.
+        assertNull(
+            castSuccessorRearm(
+                awaitSuccessor = true,
+                playbackState = 2,
+                stateReady = 3,
+                stateBuffering = 2,
+                loadInFlight = true,
+                loadStarted = true,
+            ),
+        )
+        // Load finished, BUFFERING successor — re-arm with a fresh stall clock.
         val buffering = castSuccessorRearm(
             awaitSuccessor = true,
             playbackState = 2,
             stateReady = 3,
             stateBuffering = 2,
+            loadInFlight = false,
+            loadStarted = true,
         )
         assertNotNull(buffering)
         assertTrue(buffering!!.castItemStarted)
         assertEquals(-1L, buffering.stallBuffered)
         assertEquals(0L, buffering.stallSince)
-        // READY still re-arms.
+        // READY still re-arms after load.
         val ready = castSuccessorRearm(
             awaitSuccessor = true,
             playbackState = 3,
             stateReady = 3,
             stateBuffering = 2,
+            loadInFlight = false,
+            loadStarted = true,
         )
         assertNotNull(ready)
         assertTrue(ready!!.castItemStarted)

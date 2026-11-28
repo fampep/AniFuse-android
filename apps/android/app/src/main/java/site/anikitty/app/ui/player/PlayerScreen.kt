@@ -2645,9 +2645,11 @@ fun PlayerScreen(
         var stallBuffered = -1L
         var stallSince = 0L
         var watchedCastUrl: String? = null
-        // After failCastSource walks mirrors, only READY (not leftover BUFFERING)
-        // re-arms the stall clock for the successor.
+        // After failCastSource walks mirrors, wait for the new load to start
+        // and finish before BUFFERING can re-arm — leftover predecessor
+        // BUFFERING must not burn the successor budget.
         var awaitSuccessorReady = false
+        var awaitSuccessorSawLoad = false
         val p = activePlayer
         while (p != null) {
             if (!scrubbing) {
@@ -2673,22 +2675,28 @@ fun PlayerScreen(
                     stallSince = arm.stallSince
                     if (castUrl != null && castUrl != watchedCastUrl) {
                         awaitSuccessorReady = true
+                        awaitSuccessorSawLoad = false
                         castFailUrl[0] = null
                     }
                 }
                 watchedCastUrl = castUrl
+                val loadInFlight = castHelper?.isLoadInFlight() == true
+                if (awaitSuccessorReady && loadInFlight) awaitSuccessorSawLoad = true
                 if (isCasting && !castClockStale) {
                     val successor = castSuccessorRearm(
                         awaitSuccessor = awaitSuccessorReady,
                         playbackState = clock.state,
                         stateReady = Player.STATE_READY,
                         stateBuffering = Player.STATE_BUFFERING,
+                        loadInFlight = loadInFlight,
+                        loadStarted = awaitSuccessorSawLoad,
                     )
                     if (successor != null) {
                         castItemStarted = successor.castItemStarted
                         stallBuffered = successor.stallBuffered
                         stallSince = successor.stallSince
                         awaitSuccessorReady = false
+                        awaitSuccessorSawLoad = false
                     } else if (
                         !awaitSuccessorReady &&
                         (clock.state == Player.STATE_READY ||

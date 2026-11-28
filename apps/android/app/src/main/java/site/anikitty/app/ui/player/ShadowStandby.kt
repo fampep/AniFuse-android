@@ -171,14 +171,21 @@ internal fun castStallArmAfterSourceChange(
  * After a source walk, re-arm on READY **or** BUFFERING so a zombie successor
  * that never reaches READY still enters the trickle detector. Always returns a
  * fresh stall arm — predecessor BUFFERING must not inherit its wall clock.
+ *
+ * [loadStarted] must be true (we saw the new URL's load begin) and
+ * [loadInFlight] false (prepare finished) before BUFFERING counts — otherwise
+ * leftover predecessor BUFFERING re-arms on the same tick the playlist flips.
  */
 internal fun castSuccessorRearm(
     awaitSuccessor: Boolean,
     playbackState: Int,
     stateReady: Int,
     stateBuffering: Int,
+    loadInFlight: Boolean = false,
+    loadStarted: Boolean = true,
 ): CastStallArm? {
     if (!awaitSuccessor) return null
+    if (loadInFlight || !loadStarted) return null
     if (playbackState != stateReady && playbackState != stateBuffering) return null
     return CastStallArm(
         castItemStarted = true,
