@@ -3087,20 +3087,12 @@ fun PlayerScreen(
             PlayerMenuPage.Subs -> {
                 if (onPickAudio != null) {
                     PlayerMenuSectionLabel("Audio")
-                    PlayerMenuRow(
-                        label = "Sub",
-                        selected = audio != "dub",
-                        onClick = {
+                    GlassResolutionChipRow(
+                        options = listOf("sub" to "Sub", "dub" to "Dub"),
+                        selectedId = glassAudioModeSelectedId(audio),
+                        onSelect = { id ->
                             selectedAudioId = "auto"
-                            onPickAudio.invoke("sub")
-                        },
-                    )
-                    PlayerMenuRow(
-                        label = "Dub",
-                        selected = audio == "dub",
-                        onClick = {
-                            selectedAudioId = "auto"
-                            onPickAudio.invoke("dub")
+                            onPickAudio.invoke(id)
                         },
                     )
                 }
@@ -3119,32 +3111,19 @@ fun PlayerScreen(
                         )
                     }
                 }
-                PlayerMenuRow(
-                    label = "Off",
-                    selected = !subsEnabled || selectedTextId == "off",
-                    onClick = {
-                        subsEnabled = false
-                        selectedTextId = "off"
+                GlassResolutionChipRow(
+                    options = glassCaptionChipOptions(
+                        textOptions
+                            .filter { it.id != "off" && it.id != "auto" }
+                            .map { it.id to it.label },
+                    ),
+                    selectedId = glassSubsSelectedCaptionId(subsEnabled, selectedTextId),
+                    onSelect = { id ->
+                        val (on, sel) = glassCaptionSelectionAfterTap(id)
+                        subsEnabled = on
+                        selectedTextId = sel
                     },
                 )
-                PlayerMenuRow(
-                    label = "Auto",
-                    selected = subsEnabled && selectedTextId == "auto",
-                    onClick = {
-                        subsEnabled = true
-                        selectedTextId = "auto"
-                    },
-                )
-                textOptions.filter { it.id != "off" && it.id != "auto" }.forEach { opt ->
-                    PlayerMenuRow(
-                        label = opt.label,
-                        selected = subsEnabled && selectedTextId == opt.id,
-                        onClick = {
-                            subsEnabled = true
-                            selectedTextId = opt.id
-                        },
-                    )
-                }
                 PlayerMenuSectionLabel("Style")
                 CaptionPreview(subStyle)
                 Spacer(modifier = Modifier.height(10.dp))
@@ -3177,38 +3156,37 @@ fun PlayerScreen(
             }
             PlayerMenuPage.Audio -> {
                 if (onPickAudio != null) {
-                    PlayerMenuRow(
-                        label = "Subtitled",
-                        selected = audio != "dub",
-                        onClick = {
+                    GlassResolutionChipRow(
+                        options = listOf("sub" to "Sub", "dub" to "Dub"),
+                        selectedId = glassAudioModeSelectedId(audio),
+                        onSelect = { id ->
                             selectedAudioId = "auto"
-                            onPickAudio.invoke("sub")
-                        },
-                    )
-                    PlayerMenuRow(
-                        label = "Dubbed",
-                        selected = audio == "dub",
-                        onClick = {
-                            selectedAudioId = "auto"
-                            onPickAudio.invoke("dub")
+                            onPickAudio.invoke(id)
                         },
                     )
                 }
                 val embedded = audioOptions
                 if (embedded.isNotEmpty()) {
-                    embedded.forEach { opt ->
-                        PlayerMenuRow(
-                            label = opt.label,
-                            selected = selectedAudioId == opt.id ||
-                                (selectedAudioId == "auto" && opt.selectedByPlayer),
-                            onClick = { selectedAudioId = opt.id },
-                        )
-                    }
+                    GlassResolutionChipRow(
+                        options = embedded.map { it.id to it.label },
+                        selectedId = embedded
+                            .firstOrNull {
+                                selectedAudioId == it.id ||
+                                    (selectedAudioId == "auto" && it.selectedByPlayer)
+                            }
+                            ?.id
+                            ?: selectedAudioId,
+                        onSelect = { selectedAudioId = it },
+                    )
                 } else if (onPickAudio == null) {
-                    PlayerMenuRow(
-                        label = if (audio == "dub") "Dubbed" else "Subtitled",
-                        selected = true,
-                        onClick = { selectedAudioId = "auto" },
+                    GlassResolutionChipRow(
+                        options = listOf(
+                            "auto" to glassAudioModeChipLabel(
+                                if (audio == "dub") "Dub" else "Sub",
+                            ),
+                        ),
+                        selectedId = "auto",
+                        onSelect = { selectedAudioId = "auto" },
                     )
                 }
             }
