@@ -104,6 +104,60 @@ class ShadowStandbyTest {
     }
 
     @Test
+    fun castStallBudgetIsLooserAndGatesOnReceiverClock() {
+        assertTrue(CAST_STALL_MS > SHADOW_STALL_MS)
+        assertTrue(CAST_COLD_STALL_MS > COLD_STALL_MS)
+        assertEquals(CAST_STALL_MS, castStallBudgetMs(standbyFresh = true))
+        assertEquals(CAST_COLD_STALL_MS, castStallBudgetMs(standbyFresh = false))
+        assertTrue(
+            castTrickleStallAllowed(
+                isCasting = true,
+                castItemStarted = true,
+                castClockStale = false,
+            ),
+        )
+        assertFalse(
+            castTrickleStallAllowed(
+                isCasting = true,
+                castItemStarted = false,
+                castClockStale = false,
+            ),
+        )
+        assertFalse(
+            castTrickleStallAllowed(
+                isCasting = true,
+                castItemStarted = true,
+                castClockStale = true,
+            ),
+        )
+        assertFalse(
+            castTrickleStallAllowed(
+                isCasting = false,
+                castItemStarted = true,
+                castClockStale = false,
+            ),
+        )
+        // Cast trickle still trips the shared detector on a wider budget.
+        val arm = trickleStallTick(
+            prevBuffered = -1L,
+            stallSince = 0L,
+            nowBuffered = 500L,
+            nowMs = 1_000L,
+            stalled = true,
+            budgetMs = CAST_STALL_MS,
+        )
+        val trip = trickleStallTick(
+            prevBuffered = arm.stallBuffered,
+            stallSince = arm.stallSince,
+            nowBuffered = 520L,
+            nowMs = 1_000L + CAST_STALL_MS,
+            stalled = true,
+            budgetMs = CAST_STALL_MS,
+        )
+        assertTrue(trip.trip)
+    }
+
+    @Test
     fun trickleStallTripsWhenBufferedCreepsUnderEpsilon() {
         // First sample arms the clock.
         val arm = trickleStallTick(
