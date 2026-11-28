@@ -117,6 +117,8 @@ import site.anikitty.app.cast.CastSessionHelper
 import site.anikitty.app.cast.CastStartup
 import site.anikitty.app.cast.CAST_STILL_STARTING
 import site.anikitty.app.cast.castAudioKey
+import site.anikitty.app.cast.CAST_CAPTION_PUSH_MAX_POLLS
+import site.anikitty.app.cast.CAST_CAPTION_PUSH_POLL_MS
 import site.anikitty.app.cast.castCaptionKey
 import site.anikitty.app.cast.castShouldPushCaptions
 import site.anikitty.app.cast.castJoin
@@ -1937,7 +1939,7 @@ fun PlayerScreen(
     LaunchedEffect(librarySubtitles) {
         if (!castShouldPushCaptions(isCasting, castSentSubtitleKey, librarySubtitles)) return@LaunchedEffect
         val helper = castHelper ?: return@LaunchedEffect
-        repeat(8) {
+        repeat(CAST_CAPTION_PUSH_MAX_POLLS) {
             if (!castAlive.get()) return@LaunchedEffect
             val tracks = latestLibrarySubtitles
             if (!castShouldPushCaptions(isCasting || helper.casting, castSentSubtitleKey, tracks)) {
@@ -1948,7 +1950,7 @@ fun PlayerScreen(
                 castSentSubtitleKey = castCaptionKey(tracks)
                 return@LaunchedEffect
             }
-            delay(400)
+            delay(CAST_CAPTION_PUSH_POLL_MS)
         }
     }
 

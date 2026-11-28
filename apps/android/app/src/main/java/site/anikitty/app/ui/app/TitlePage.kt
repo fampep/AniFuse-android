@@ -112,6 +112,7 @@ import site.anikitty.app.ui.components.EpisodeCardRow
 import site.anikitty.app.ui.components.EpisodeCardSkeletonRow
 import site.anikitty.app.ui.components.EpisodeSlide
 import site.anikitty.app.ui.components.HeroBanner
+import site.anikitty.app.ui.components.StageProgressBar
 import site.anikitty.app.ui.components.StageSlider
 import site.anikitty.app.ui.components.enrichEpisodeSlides
 import site.anikitty.app.ui.components.rememberDockScroll
@@ -121,6 +122,8 @@ import site.anikitty.app.ui.components.KittyImage
 import site.anikitty.app.ui.components.KittySectionHeading
 import site.anikitty.app.ui.components.QualityMarks
 import site.anikitty.app.ui.components.sharedPoster
+import site.anikitty.app.ui.theme.KittyHaptics
+import androidx.compose.ui.platform.LocalView
 import site.anikitty.app.ui.theme.KittyRadius
 import site.anikitty.app.ui.theme.KittySpace
 import site.anikitty.app.ui.theme.LocalKittyPalette
@@ -1351,26 +1354,19 @@ private fun PlayButton(
                 }
             }
             if (fraction > 0f) {
-                Box(
-                    Modifier
+                StageProgressBar(
+                    fraction = fraction.coerceIn(0.04f, 1f),
+                    barHeight = 3.dp,
+                    modifier = Modifier
                         .padding(top = 8.dp)
-                        .width(220.dp)
-                        .height(3.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(Color.White.copy(alpha = 0.22f)),
-                ) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth(fraction.coerceIn(0.04f, 1f))
-                            .height(3.dp)
-                            .background(Color.White),
-                    )
-                }
+                        .width(220.dp),
+                )
             }
         }
         return
     }
     val palette = LocalKittyPalette.current
+    val playView = LocalView.current
     val playShape = RoundedCornerShape(22.dp)
     Column(
         modifier = Modifier
@@ -1383,7 +1379,15 @@ private fun PlayButton(
                 ),
             )
             .border(1.dp, Color.White.copy(alpha = 0.22f), playShape)
-            .spacePress(onClick = { if (!busy) onClick() }, grabFocus = isTelevision()),
+            .spacePress(
+                onClick = {
+                    if (!busy) {
+                        KittyHaptics.perform(playView, KittyHaptics.Kind.Confirm)
+                        onClick()
+                    }
+                },
+                grabFocus = isTelevision(),
+            ),
     ) {
         Box(
             modifier = Modifier
@@ -1428,19 +1432,11 @@ private fun PlayButton(
             }
         }
         if (fraction > 0f && !busy) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(3.dp)
-                    .background(palette.onAccent.copy(alpha = 0.18f)),
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(fraction.coerceIn(0.04f, 1f))
-                        .height(3.dp)
-                        .background(palette.onAccent),
-                )
-            }
+            StageProgressBar(
+                fraction = fraction.coerceIn(0.04f, 1f),
+                barHeight = 3.dp,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
@@ -1472,6 +1468,7 @@ private fun TitleAction(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalKittyPalette.current
+    val view = LocalView.current
     val shape = RoundedCornerShape(KittyRadius.md)
     Column(
         modifier = modifier
@@ -1479,11 +1476,18 @@ private fun TitleAction(
             .kittyGlassSoft(shape)
             .background(
                 Brush.verticalGradient(
-                    listOf(Color.White.copy(alpha = 0.08f), Color.Transparent),
+                    listOf(
+                        Color.White.copy(alpha = 0.14f),
+                        Color.White.copy(alpha = 0.04f),
+                        Color.Transparent,
+                    ),
                 ),
             )
-            .border(1.dp, Color.White.copy(alpha = 0.14f), shape)
-            .spacePress(onClick)
+            .border(1.dp, Color.White.copy(alpha = 0.18f), shape)
+            .spacePress {
+                KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
+                onClick()
+            }
             .padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

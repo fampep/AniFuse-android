@@ -124,6 +124,19 @@ internal fun castShouldPushCaptions(
     return castCaptionKey(tracks) != sentKey
 }
 
+/**
+ * Late library captions used to wait ~3s (400ms × 8) before giving up.
+ * Mirror phone subtitle attach: a tight 2s ceiling so the TV catches the
+ * sidecar as soon as the relay can take a new MediaItem.
+ */
+internal const val CAST_CAPTION_PUSH_POLL_MS = 50L
+internal const val CAST_CAPTION_PUSH_MAX_POLLS = 40
+
+internal fun castCaptionPushBudgetMs(
+    pollMs: Long = CAST_CAPTION_PUSH_POLL_MS,
+    maxPolls: Int = CAST_CAPTION_PUSH_MAX_POLLS,
+): Long = pollMs.coerceAtLeast(1L) * maxPolls.coerceAtLeast(1)
+
 /** Pick an active text-track id from the live cast session tracks. */
 internal fun castPickTextTrackId(
     tracks: List<MediaTrack>,

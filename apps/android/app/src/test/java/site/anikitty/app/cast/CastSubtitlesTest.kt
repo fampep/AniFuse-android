@@ -69,6 +69,13 @@ class CastSubtitlesTest {
     }
 
     @Test
+    fun lateCaptionPushBudgetIsTwoSeconds() {
+        assertEquals(2_000L, castCaptionPushBudgetMs())
+        assertEquals(50L, CAST_CAPTION_PUSH_POLL_MS)
+        assertEquals(40, CAST_CAPTION_PUSH_MAX_POLLS)
+    }
+
+    @Test
     fun librarySubripWithoutExtensionStillRelays() {
         val library = "http://143.246.203.212/api/file?id=" + "b".repeat(64)
         assertTrue(castRelaySubtitleEligible(library, "application/x-subrip"))
