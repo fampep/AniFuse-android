@@ -3,10 +3,15 @@
 
 package site.anikitty.app.data.servers
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -58,15 +63,38 @@ internal data class HostProbeHit(val code: Int, val latencyMs: Long)
 internal const val HOST_PROBE_LIMIT = 6
 internal const val HOST_PROBE_TIMEOUT_MS = 1_200L
 
+/** True when a second refresh should join the in-flight probe wave. */
+internal fun shouldReuseProbeFlight(flightActive: Boolean): Boolean = flightActive
+
 internal object HostHealthProbe {
+    private val refreshGate = Mutex()
+    private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile
+    private var refreshFlight: Deferred<List<HostProbeSample>>? = null
+
+    /**
+     * Home, Extension Store, and cold Play used to stamp three parallel probe
+     * waves. Coalesce into one flight so Race dock RTT is not thrashed.
+     */
     suspend fun refreshRemembered(
         limit: Int = HOST_PROBE_LIMIT,
         timeoutMs: Long = HOST_PROBE_TIMEOUT_MS,
         nowMs: Long = System.currentTimeMillis(),
     ): List<HostProbeSample> {
-        val hosts = PlaybackHostHealth.rememberedHosts(nowMs).take(limit)
-        if (hosts.isEmpty()) return emptyList()
-        return probeHosts(hosts, timeoutMs, nowMs)
+        val work = refreshGate.withLock {
+            refreshFlight?.takeIf { it.isActive }?.let { return@withLock it }
+            refreshScope.async {
+                val hosts = PlaybackHostHealth.rememberedHosts(nowMs).take(limit)
+                if (hosts.isEmpty()) emptyList() else probeHosts(hosts, timeoutMs, nowMs)
+            }.also { refreshFlight = it }
+        }
+        return try {
+            work.await()
+        } finally {
+            refreshGate.withLock {
+                if (refreshFlight === work) refreshFlight = null
+            }
+        }
     }
 
     suspend fun probeHosts(

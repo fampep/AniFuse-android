@@ -29,7 +29,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -3369,18 +3371,25 @@ fun PlayerScreen(
         }
         AnimatedVisibility(
             visible = seekFlashMs != 0L,
-            enter = fadeIn(tween(90)),
-            exit = fadeOut(tween(160)),
+            enter = fadeIn(tween(90)) + scaleIn(
+                initialScale = 0.86f,
+                animationSpec = spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMedium),
+            ),
+            exit = fadeOut(tween(160)) + scaleOut(targetScale = 0.92f, animationSpec = tween(160)),
             modifier = Modifier
                 .align(if (seekFlashMs < 0L) Alignment.CenterStart else Alignment.CenterEnd)
                 .padding(horizontal = 28.dp),
         ) {
-            val secs = (kotlin.math.abs(seekFlashMs) / 1000L).toInt().coerceAtLeast(1)
-            val label = if (seekFlashMs < 0L) "−${secs}s" else "+${secs}s"
+            val label = seekFlashLabel(seekFlashMs)
             val flashShape = RoundedCornerShape(20.dp)
             Column(
                 modifier = Modifier
                     .stageGlassPlate(shape = flashShape, elevated = true)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
+                        ),
+                    )
                     .clearAndSetSemantics {
                         contentDescription = seekFlashDescription(seekFlashMs)
                         liveRegion = LiveRegionMode.Polite

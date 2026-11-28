@@ -39,4 +39,10 @@ class HostHealthProbeTest {
         assertEquals(40L, hostProbeLatencyToStamp(previousMs = 90L, sampleMs = 40L))
         assertEquals(55L, hostProbeLatencyToStamp(previousMs = null, sampleMs = 55L))
     }
+
+    @Test
+    fun concurrentRefreshJoinsTheActiveFlight() {
+        assertTrue(shouldReuseProbeFlight(flightActive = true))
+        assertFalse(shouldReuseProbeFlight(flightActive = false))
+    }
 }
