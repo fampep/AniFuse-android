@@ -88,13 +88,23 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import site.anikitty.app.AnikittyApp
+import site.anikitty.app.data.download.DownloadPhase
+import site.anikitty.app.data.download.DownloadShelfAction
 import site.anikitty.app.data.download.EpisodeDownloadEntity
+import site.anikitty.app.data.download.EpisodeDownloads
 import site.anikitty.app.data.download.LaneCandidate
+import site.anikitty.app.data.download.decodeHeaders
 import site.anikitty.app.data.download.downloadAhead
+import site.anikitty.app.data.download.downloadShelfAction
 import site.anikitty.app.data.download.downloadShelfCover
+import site.anikitty.app.data.download.downloadShelfPhaseChip
+import site.anikitty.app.data.download.downloadShelfStorageLabel
 import site.anikitty.app.data.download.downloadShelfSubtitle
+import site.anikitty.app.data.download.downloadShelfUsedBytes
+import site.anikitty.app.data.servers.PlayableSource
 import site.anikitty.app.data.servers.PlaybackHostHealth
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.delay
 import site.anikitty.app.data.anilist.AniListClient
 import site.anikitty.app.data.anilist.AniListMediaListEntry
 import site.anikitty.app.data.anilist.AniListOAuth
@@ -121,6 +131,9 @@ fun MySpaceFeed(
     libraryFilter: String,
     onSync: () -> Unit,
     onOpen: (AnimeSummary) -> Unit,
+    onOpenDownload: (anilistId: Int, episode: Int, title: String) -> Unit = { id, _, title ->
+        onOpen(AnimeSummary(id = id, title = title, coverImageUrl = null, episodes = null, format = null, averageScore = null))
+    },
     onOpenAccount: () -> Unit,
     onSignOut: () -> Unit,
     onSeeAllContinue: () -> Unit = {},
@@ -137,10 +150,13 @@ fun MySpaceFeed(
     var loadingCloud by remember { mutableStateOf(false) }
     var downloads by remember { mutableStateOf<List<EpisodeDownloadEntity>>(emptyList()) }
     LaunchedEffect(Unit) {
-        downloads = withContext(Dispatchers.IO) {
-            runCatching {
-                (context.applicationContext as AnikittyApp).database.episodeDownloadDao().recent()
-            }.getOrDefault(emptyList())
+        while (isActive) {
+            downloads = withContext(Dispatchers.IO) {
+                runCatching {
+                    (context.applicationContext as AnikittyApp).database.episodeDownloadDao().recent()
+                }.getOrDefault(emptyList())
+            }
+            delay(2_400L)
         }
     }
     var selectedTab by remember(libraryFilter) {
@@ -492,6 +508,33 @@ fun MySpaceFeed(
                     onConnect = { AniListOAuth.openAuthorize(context) },
                     onSignOut = onSignOut,
                     onOpen = onOpen,
+                    onOpenDownload = onOpenDownload,
+                    onRetryDownload = { row ->
+                        scope.launch {
+                            runCatching {
+                                EpisodeDownloads.enqueue(
+                                    context = context,
+                                    anilistId = row.anilistId,
+                                    episode = row.episode,
+                                    title = row.title,
+                                    source = PlayableSource(
+                                        url = row.url,
+                                        headers = decodeHeaders(row.headersJson),
+                                        hls = row.hls,
+                                        stripBytes = row.stripBytes,
+                                    ),
+                                )
+                            }
+                        }
+                    },
+                    onRemoveDownload = { row ->
+                        scope.launch {
+                            runCatching { EpisodeDownloads.remove(context, row) }
+                            downloads = downloads.filterNot {
+                                it.anilistId == row.anilistId && it.episode == row.episode
+                            }
+                        }
+                    },
                     selection = selection,
                 )
             }
@@ -591,6 +634,9 @@ private fun CloudSyncBlock(
     onConnect: () -> Unit,
     onSignOut: () -> Unit,
     onOpen: (AnimeSummary) -> Unit,
+    onOpenDownload: (anilistId: Int, episode: Int, title: String) -> Unit = { _, _, _ -> },
+    onRetryDownload: (EpisodeDownloadEntity) -> Unit = {},
+    onRemoveDownload: (EpisodeDownloadEntity) -> Unit = {},
     selection: ShowSelection,
 ) {
     val palette = LocalKittyPalette.current
@@ -779,37 +825,250 @@ private fun CloudSyncBlock(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-            val row = postersForTab(selectedTab, favourites, cloudLists, history, downloads)
-            if (row.isEmpty()) {
-                Text(
-                    "Nothing in $selectedTab yet.",
-                    color = palette.muted,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            if (selectedTab == "Downloads") {
+                OfflineDownloadsShelf(
+                    downloads = downloads,
+                    history = history,
+                    selection = selection,
+                    onOpenDownload = onOpenDownload,
+                    onRetryDownload = onRetryDownload,
+                    onRemoveDownload = onRemoveDownload,
+                    onOpenAnime = onOpen,
                 )
             } else {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    items(row, key = { "cloud-${it.key}" }, contentType = { "poster" }) { card ->
-                        SpacePoster(
-                            title = card.title,
-                            imageUrl = card.imageUrl,
-                            subtitle = card.subtitle,
-                            progress = card.progress,
-                            selected = card.anime.id in selection.ids,
-                            selecting = selection.active,
-                            onClick = {
-                                if (selection.active) selection.onToggle(card.anime.id)
-                                else onOpen(card.anime)
-                            },
-                            onLongClick = { selection.onStart(card.anime.id) },
-                        )
+                val row = postersForTab(selectedTab, favourites, cloudLists, history, downloads)
+                if (row.isEmpty()) {
+                    Text(
+                        "Nothing in $selectedTab yet.",
+                        color = palette.muted,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                    )
+                } else {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(row, key = { "cloud-${it.key}" }, contentType = { "poster" }) { card ->
+                            SpacePoster(
+                                title = card.title,
+                                imageUrl = card.imageUrl,
+                                subtitle = card.subtitle,
+                                progress = card.progress,
+                                selected = card.anime.id in selection.ids,
+                                selecting = selection.active,
+                                onClick = {
+                                    if (selection.active) selection.onToggle(card.anime.id)
+                                    else onOpen(card.anime)
+                                },
+                                onLongClick = { selection.onStart(card.anime.id) },
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun OfflineDownloadsShelf(
+    downloads: List<EpisodeDownloadEntity>,
+    history: List<WatchHistoryEntity>,
+    selection: ShowSelection,
+    onOpenDownload: (anilistId: Int, episode: Int, title: String) -> Unit,
+    onRetryDownload: (EpisodeDownloadEntity) -> Unit,
+    onRemoveDownload: (EpisodeDownloadEntity) -> Unit,
+    onOpenAnime: (AnimeSummary) -> Unit,
+) {
+    val palette = LocalKittyPalette.current
+    val playing = PlaybackHostHealth.playingHost()
+    val covers = history.associate { it.anilistId to it.coverImageUrl }
+    val lane = downloads.filter { it.phase == "QUEUED" || it.phase == "RUNNING" }.map { row ->
+        LaneCandidate(row.anilistId, row.episode, row.url, row.updatedAtEpochMs)
+    }
+    val used = downloadShelfUsedBytes(downloads)
+    val free = remember {
+        runCatching { java.io.File(android.os.Environment.getDataDirectory().path).usableSpace }
+            .getOrDefault(0L)
+    }
+    if (downloads.isEmpty()) {
+        Text(
+            "Nothing in Downloads yet.",
+            color = palette.muted,
+            fontSize = 14.sp,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+        )
+        return
+    }
+    Text(
+        downloadShelfStorageLabel(used, free),
+        color = palette.text.copy(alpha = 0.55f),
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.6.sp,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
+    )
+    Spacer(modifier = Modifier.height(6.dp))
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items(downloads, key = { "dl-${it.anilistId}-${it.episode}" }, contentType = { "offline" }) { row ->
+            val ahead = downloadAhead(row.updatedAtEpochMs, row.anilistId, row.episode, lane)
+            val chip = downloadShelfPhaseChip(
+                phase = row.phase,
+                percent = row.progressPercent,
+                url = row.url,
+                playingHost = playing,
+                ahead = ahead,
+            )
+            val action = downloadShelfAction(row.phase)
+            OfflineDownloadCard(
+                title = row.title.ifBlank { "Episode ${row.episode}" },
+                episode = row.episode,
+                imageUrl = downloadShelfCover(row.anilistId, covers),
+                phaseChip = chip,
+                progress = (row.progressPercent / 100f).coerceIn(0f, 1f),
+                selected = row.anilistId in selection.ids,
+                selecting = selection.active,
+                onClick = {
+                    if (selection.active) {
+                        selection.onToggle(row.anilistId)
+                        return@OfflineDownloadCard
+                    }
+                    when (action) {
+                        DownloadShelfAction.Play ->
+                            onOpenDownload(row.anilistId, row.episode, row.title)
+                        DownloadShelfAction.Retry -> onRetryDownload(row)
+                        DownloadShelfAction.Cancel -> onRemoveDownload(row)
+                        DownloadShelfAction.Open -> onOpenAnime(
+                            AnimeSummary(
+                                id = row.anilistId,
+                                title = row.title,
+                                coverImageUrl = downloadShelfCover(row.anilistId, covers),
+                                episodes = null,
+                                format = null,
+                                averageScore = null,
+                            ),
+                        )
+                    }
+                },
+                onLongClick = {
+                    if (selection.active) {
+                        onRemoveDownload(row)
+                    } else {
+                        selection.onStart(row.anilistId)
+                    }
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun OfflineDownloadCard(
+    title: String,
+    episode: Int,
+    imageUrl: String?,
+    phaseChip: String,
+    progress: Float,
+    onClick: () -> Unit,
+    selected: Boolean = false,
+    selecting: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
+) {
+    val palette = LocalKittyPalette.current
+    val width = 156.dp
+    val height = 88.dp
+    val frame by animateColorAsState(
+        if (selected) palette.text else Color.Transparent,
+        tween(KittyMotion.duration(160)),
+        label = "offlineFrame",
+    )
+    Column(
+        modifier = Modifier
+            .width(width)
+            .spaceHold(
+                onClick = onClick,
+                onLongClick = { onLongClick?.invoke() },
+            )
+            .border(1.5.dp, frame, RoundedCornerShape(12.dp))
+            .padding(2.dp),
+    ) {
+        val artShape = RoundedCornerShape(10.dp)
+        Box(
+            modifier = Modifier
+                .width(width)
+                .height(height)
+                .clip(artShape)
+                .stageGlassPlate(shape = artShape, elevated = true),
+        ) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f)),
+                        ),
+                    ),
+            )
+            Text(
+                text = phaseChip,
+                color = Color.White,
+                fontWeight = FontWeight.Black,
+                fontSize = 10.sp,
+                letterSpacing = 0.8.sp,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .border(0.5.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(999.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+            Text(
+                text = "EP $episode",
+                color = Color.White.copy(alpha = 0.9f),
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+            )
+            if (progress > 0f && progress < 1f) {
+                StageProgressBar(
+                    fraction = progress.coerceIn(0.04f, 1f),
+                    barHeight = 3.5.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomStart),
+                )
+            }
+            if (selecting) {
+                SelectMark(
+                    selected = selected,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp),
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = title,
+            color = palette.text,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 12.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

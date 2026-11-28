@@ -202,6 +202,56 @@ internal fun downloadShelfSubtitle(
     return "EP $episode · $place"
 }
 
+/** Glass phase chip for the offline Downloads shelf — not a poster caption. */
+internal fun downloadShelfPhaseChip(
+    phase: String,
+    percent: Int,
+    url: String,
+    playingHost: String?,
+    ahead: Int,
+): String = when {
+    phase == DownloadPhase.READY.name -> "SAVED"
+    phase == DownloadPhase.FAILED.name -> "FAILED"
+    downloadYields(url, playingHost, phase) -> "WAITING"
+    phase == DownloadPhase.RUNNING.name -> if (percent > 0) "SAVING $percent%" else "SAVING"
+    phase == DownloadPhase.QUEUED.name && ahead > 0 -> "QUEUED"
+    phase == DownloadPhase.QUEUED.name -> "QUEUED"
+    else -> "QUEUED"
+}
+
+internal enum class DownloadShelfAction { Play, Retry, Open, Cancel }
+
+/** Tap routing for a download shelf card. */
+internal fun downloadShelfAction(phase: String): DownloadShelfAction = when (phase) {
+    DownloadPhase.READY.name -> DownloadShelfAction.Play
+    DownloadPhase.FAILED.name -> DownloadShelfAction.Retry
+    DownloadPhase.QUEUED.name, DownloadPhase.RUNNING.name -> DownloadShelfAction.Cancel
+    else -> DownloadShelfAction.Open
+}
+
+/** Monochrome storage headroom for the Downloads shelf header. */
+internal fun downloadShelfStorageLabel(usedBytes: Long, freeBytes: Long): String {
+    val used = formatDownloadBytes(usedBytes.coerceAtLeast(0L))
+    val free = formatDownloadBytes(freeBytes.coerceAtLeast(0L))
+    return "$used used · $free free"
+}
+
+internal fun formatDownloadBytes(bytes: Long): String {
+    if (bytes < 1024L) return "${bytes}B"
+    val kb = bytes / 1024.0
+    if (kb < 1024.0) return String.format("%.0fKB", kb)
+    val mb = kb / 1024.0
+    if (mb < 1024.0) return String.format("%.1fMB", mb)
+    return String.format("%.2fGB", mb / 1024.0)
+}
+
+/** Sum local progressive file sizes; HLS rows without a path contribute 0. */
+internal fun downloadShelfUsedBytes(rows: List<EpisodeDownloadEntity>): Long =
+    rows.sumOf { row ->
+        val path = row.localPath?.takeIf { it.isNotBlank() } ?: return@sumOf 0L
+        runCatching { java.io.File(path).length().coerceAtLeast(0L) }.getOrDefault(0L)
+    }
+
 internal fun downloadButtonLabel(status: DownloadStatus): String = when {
     status.label == "Waiting" -> "Waiting"
     status.label == "In line" -> "In line"

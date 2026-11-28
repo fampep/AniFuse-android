@@ -74,6 +74,25 @@ class DownloadLaneTest {
     }
 
     @Test
+    fun glassPhaseChipsAndTapActionsRouteTheShelf() {
+        assertEquals(
+            "WAITING",
+            downloadShelfPhaseChip("QUEUED", 0, "https://cdn-a.example/a.mp4", "cdn-a.example", 0),
+        )
+        assertEquals(
+            "SAVING 40%",
+            downloadShelfPhaseChip("RUNNING", 40, "https://cdn-b.example/a.mp4", null, 0),
+        )
+        assertEquals("SAVED", downloadShelfPhaseChip("READY", 100, "https://x", null, 0))
+        assertEquals("FAILED", downloadShelfPhaseChip("FAILED", 0, "https://x", null, 0))
+        assertEquals(DownloadShelfAction.Play, downloadShelfAction("READY"))
+        assertEquals(DownloadShelfAction.Retry, downloadShelfAction("FAILED"))
+        assertEquals(DownloadShelfAction.Cancel, downloadShelfAction("QUEUED"))
+        assertEquals("12KB used · 1.5MB free", downloadShelfStorageLabel(12L * 1024, (1.5 * 1024 * 1024).toLong()))
+        assertEquals(0L, downloadShelfUsedBytes(emptyList()))
+    }
+
+    @Test
     fun theShelfSaysWaitingWhilePlaybackOwnsTheHost() {
         val line = downloadShelfSubtitle(
             episode = 4,
