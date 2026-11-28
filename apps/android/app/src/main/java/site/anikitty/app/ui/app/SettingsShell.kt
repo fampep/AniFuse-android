@@ -297,6 +297,7 @@ internal fun AniListProfileCard(
     auth: AniListAuthStore,
     fallbackName: String,
     syncLabel: String?,
+    pendingPushCount: Int = 0,
     onOpenList: (String) -> Unit = {},
     onSignOut: () -> Unit = {},
 ) {
@@ -304,7 +305,8 @@ internal fun AniListProfileCard(
     val name = auth.username?.takeIf { it.isNotBlank() } ?: fallbackName
     val days = auth.minutesWatched / 1440
     val score = if (auth.meanScore <= 0f) "—" else auth.meanScore.toInt().toString()
-    val syncing = cloudSyncIsBusy(syncLabel)
+    val glassSyncLabel = cloudSyncStatusLabel(syncLabel, pendingPushCount)
+    val syncing = cloudSyncIsBusy(glassSyncLabel)
     val onBanner = !auth.bannerUrl.isNullOrBlank()
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(
@@ -400,7 +402,7 @@ internal fun AniListProfileCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = cloudSyncStatusLabel(syncLabel),
+                        text = glassSyncLabel,
                         color = if (onBanner) Color.White.copy(alpha = if (syncing) 1f else 0.72f) else palette.muted,
                         style = MaterialTheme.typography.labelSmall,
                     )
@@ -514,6 +516,7 @@ internal fun SettingsFeed(
     anifuseStore: AnifuseApiStore,
     accountLabel: String,
     syncLabel: String?,
+    pendingPushCount: Int = 0,
     onSyncLabel: (String?) -> Unit,
     linkStatus: String?,
     onLinkStatus: (String?) -> Unit,
@@ -655,6 +658,7 @@ internal fun SettingsFeed(
                                 auth = aniListAuth,
                                 fallbackName = accountLabel.ifBlank { "AniList" },
                                 syncLabel = syncLabel,
+                                pendingPushCount = pendingPushCount,
                                 onOpenList = onOpenLibrary,
                                 onSignOut = onSignOut,
                             )
@@ -737,6 +741,7 @@ internal fun SettingsFeed(
                                 auth = aniListAuth,
                                 fallbackName = accountLabel.ifBlank { "AniList" },
                                 syncLabel = syncLabel,
+                                pendingPushCount = pendingPushCount,
                                 onOpenList = onOpenLibrary,
                                 onSignOut = onSignOut,
                             )
