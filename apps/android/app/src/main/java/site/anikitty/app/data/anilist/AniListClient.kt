@@ -331,7 +331,9 @@ class AniListClient(
             val body = execute(payload, accessToken)
             val root = JSONObject(body)
             val errors = root.optJSONArray("errors")
-            errors == null && root.optJSONObject("data")?.optJSONObject("SaveMediaListEntry") != null
+            val ok = errors == null && root.optJSONObject("data")?.optJSONObject("SaveMediaListEntry") != null
+            if (ok) cache?.invalidatePrefix("mediaList:")
+            ok
         }.getOrDefault(false)
     }
 
@@ -402,10 +404,12 @@ class AniListClient(
             val body = execute(payload, accessToken)
             val root = JSONObject(body)
             val errors = root.optJSONArray("errors")
-            errors == null &&
+            val ok = errors == null &&
                 root.optJSONObject("data")
                     ?.optJSONObject("DeleteMediaListEntry")
                     ?.optBoolean("deleted") == true
+            if (ok) cache?.invalidatePrefix("mediaList:")
+            ok
         }.getOrDefault(false)
     }
 
