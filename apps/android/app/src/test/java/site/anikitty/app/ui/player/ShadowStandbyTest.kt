@@ -10,9 +10,12 @@ import org.junit.Test
 
 class ShadowStandbyTest {
     @Test
-    fun liveShadowAllowsHlsAndRemoteButNotProgressiveFile() {
-        assertTrue(liveShadowAllowed(playbackLocal = false))
-        assertFalse(liveShadowAllowed(playbackLocal = true))
+    fun armAllowsHlsCacheButSwapWaitsUntilOfflineEnds() {
+        assertTrue(liveShadowArmAllowed(playbackLocal = false))
+        assertFalse(liveShadowArmAllowed(playbackLocal = true))
+        assertFalse(liveShadowSwapAllowed(playbackLocal = false, playingOffline = true))
+        assertTrue(liveShadowSwapAllowed(playbackLocal = false, playingOffline = false))
+        assertFalse(liveShadowSwapAllowed(playbackLocal = true, playingOffline = false))
     }
 
     @Test

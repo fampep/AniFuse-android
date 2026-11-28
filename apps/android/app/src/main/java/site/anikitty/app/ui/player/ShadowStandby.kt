@@ -19,9 +19,19 @@ internal enum class ShadowArm { Hold, Arm }
 
 /**
  * Progressive file:// has no CDN peer. HLS offline cache and live remote still do —
- * the offline session latch must not block shadow for those.
+ * arm a standby so file→live / later edge playback can swap fast.
  */
-internal fun liveShadowAllowed(playbackLocal: Boolean): Boolean = !playbackLocal
+internal fun liveShadowArmAllowed(playbackLocal: Boolean): Boolean = !playbackLocal
+
+/**
+ * Never swap off a download onto a live CDN on a seek hiccup — only after
+ * the session has left offline / HLS-cache playback.
+ */
+internal fun liveShadowSwapAllowed(playbackLocal: Boolean, playingOffline: Boolean): Boolean =
+    !playbackLocal && !playingOffline
+
+/** @deprecated Prefer [liveShadowArmAllowed] / [liveShadowSwapAllowed]. */
+internal fun liveShadowAllowed(playbackLocal: Boolean): Boolean = liveShadowArmAllowed(playbackLocal)
 
 /**
  * Arm the moment playback is ready, and again when failover lands on a new host.
