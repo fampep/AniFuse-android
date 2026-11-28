@@ -1454,8 +1454,11 @@ fun PlayerScreen(
                 }
             }
             SourceRecovery.NextSource -> {
-                // Offline / HLS-cache: stay on the download — do not walk to a live sibling.
-                if (!fromCast && offlinePlaybackHoldsSource(playingOffline)) {
+                // Offline / HLS-cache: one seek/prepare like RetrySame. A second
+                // failure falls through so a corrupt/evicted download can leave
+                // for a live sibling or shadow instead of looping forever.
+                if (!fromCast && offlinePlaybackHoldsSource(playingOffline) && !retriedSource) {
+                    retriedSource = true
                     runCatching {
                         target?.seekTo(decision.resumeMs.coerceAtLeast(0L))
                         target?.prepare()
