@@ -34,10 +34,52 @@ class HostHealthProbeTest {
     }
 
     @Test
-    fun stampKeepsTheFasterRtt() {
-        assertEquals(90L, hostProbeLatencyToStamp(previousMs = 90L, sampleMs = 1_200L))
-        assertEquals(40L, hostProbeLatencyToStamp(previousMs = 90L, sampleMs = 40L))
+    fun stampRulesDifferForHeadAndRangeGet() {
+        // HEAD replaces — live edge truth for ABR soft-cap / Race dock.
+        assertEquals(
+            800L,
+            hostProbeLatencyToStamp(
+                previousMs = 40L,
+                sampleMs = 800L,
+                method = HostProbeMethod.Head,
+            ),
+        )
+        assertEquals(
+            40L,
+            hostProbeLatencyToStamp(
+                previousMs = 90L,
+                sampleMs = 40L,
+                method = HostProbeMethod.Head,
+            ),
+        )
+        // Range-GET still mins so a slow fallback cannot wipe a fast stamp.
+        assertEquals(
+            40L,
+            hostProbeLatencyToStamp(
+                previousMs = 40L,
+                sampleMs = 800L,
+                method = HostProbeMethod.RangeGet,
+            ),
+        )
         assertEquals(55L, hostProbeLatencyToStamp(previousMs = null, sampleMs = 55L))
+    }
+
+    @Test
+    fun probeWavePrefersLeadAndSkipsSunkBudget() {
+        val healthy = listOf("cdn.new", "cdn.old", "cdn.mid")
+        assertEquals(
+            listOf("cdn.old", "cdn.new", "cdn.mid"),
+            hostsForProbeWave(healthy, preferredHost = "cdn.old", limit = 6),
+        )
+        assertEquals(
+            listOf("cdn.new", "cdn.old"),
+            hostsForProbeWave(healthy, preferredHost = null, limit = 2),
+        )
+        // Preferred not in the healthy list → just take the freshest.
+        assertEquals(
+            listOf("cdn.new"),
+            hostsForProbeWave(healthy, preferredHost = "cdn.sunk", limit = 1),
+        )
     }
 
     @Test

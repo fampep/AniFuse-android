@@ -5,6 +5,7 @@ package site.anikitty.app.data.servers
 
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -144,6 +145,24 @@ class PlaybackHostHealthTest {
             listOf("cdn.new", "cdn.old"),
             PlaybackHostHealth.rememberedHosts(nowMs = 2_500L),
         )
+    }
+
+    @Test
+    fun healthyOnlyProbeWaveDropsSunkMarks() {
+        PlaybackHostHealth.detach()
+        PlaybackHostHealth.note("cdn.live", ok = true, latencyMs = 50L, nowMs = 2_000L)
+        PlaybackHostHealth.note("cdn.dead", ok = false, latencyMs = 0L, nowMs = 2_100L)
+        assertEquals(
+            listOf("cdn.dead", "cdn.live"),
+            PlaybackHostHealth.rememberedHosts(nowMs = 2_500L),
+        )
+        assertEquals(
+            listOf("cdn.live"),
+            PlaybackHostHealth.rememberedHosts(nowMs = 2_500L, healthyOnly = true),
+        )
+        PlaybackHostHealth.noteProviderCdn("anikoto", "cdn.live", nowMs = 2_000L)
+        assertEquals("cdn.live", PlaybackHostHealth.providerCdnHost("anikoto", nowMs = 2_500L))
+        assertNull(PlaybackHostHealth.providerCdnHost("missing", nowMs = 2_500L))
     }
 
     @Test
