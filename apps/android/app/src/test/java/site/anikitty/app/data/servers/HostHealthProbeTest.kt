@@ -108,6 +108,17 @@ class HostHealthProbeTest {
                 limit = 4,
             ),
         )
+        // Quality sheet open: live host + affinity seeds fill the first Race wave
+        // even when the short HOLD window has already dropped every remembered CDN.
+        assertEquals(
+            listOf("cdn.live", "play.anien.top", "cdn.affinity"),
+            hostsForProbeWave(
+                healthyHostsNewestFirst = emptyList(),
+                preferredHost = "cdn.live",
+                seedHosts = listOf("play.anien.top", "cdn.affinity"),
+                limit = 4,
+            ),
+        )
         // Invalid hostnames never steal a slot.
         assertEquals(
             listOf("cdn.hold"),
