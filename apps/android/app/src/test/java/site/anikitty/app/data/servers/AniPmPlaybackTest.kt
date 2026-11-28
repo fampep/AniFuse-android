@@ -76,4 +76,33 @@ class AniPmPlaybackTest {
         assertTrue(tracks[0].url.contains("t=tok"))
         assertEquals(listOf("Frieren"), anipmTitles("Frieren || mal:52991"))
     }
+
+    @Test
+    fun sessionCacheSkipsColdRoundTripUntilSkew() {
+        AnipmSessionCache.clear()
+        val session = AnipmSession(token = "warm-tok", expiresAt = 10_000_000L)
+        AnipmSessionCache.put("https://anipm.pk", 52991, 1, "sub", session)
+        assertEquals(
+            "warm-tok",
+            AnipmSessionCache.get("https://anipm.pk/", 52991, 1, "SUB", nowMs = 1_000L)?.token,
+        )
+        // Inside skew window → miss so Media3 never rides an expiring token.
+        assertNull(
+            AnipmSessionCache.get(
+                "https://anipm.pk",
+                52991,
+                1,
+                "sub",
+                nowMs = session.expiresAt - AnipmSessionCache.SKEW_MS + 1L,
+            ),
+        )
+        // Papa origin is a separate lane from ani.pm.
+        assertNull(AnipmSessionCache.get(HinataTvServer.PAPA, 52991, 1, "sub", nowMs = 1_000L))
+        AnipmSessionCache.put(HinataTvServer.PAPA, 61990, 1, "dub", AnipmSession("papa", 9_999_999L))
+        assertEquals(
+            "papa",
+            AnipmSessionCache.get(HinataTvServer.PAPA, 61990, 1, "dub", nowMs = 1_000L)?.token,
+        )
+        AnipmSessionCache.clear()
+    }
 }

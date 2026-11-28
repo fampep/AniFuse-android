@@ -56,4 +56,21 @@ class HinataTvPlaybackTest {
         assertFalse(hinataChallenged(200, "#EXTM3U"))
         assertTrue(hinataChallenged(403, "Just a moment…"))
     }
+
+    @Test
+    fun malLookupFailureMarksOutagesHardAndMissesSoft() {
+        assertEquals(HinataTvServer.BLOCKED, hinataMalLookupFailure(reached = false, challenged = false))
+        assertEquals(HinataTvServer.BLOCKED, hinataMalLookupFailure(reached = true, challenged = true))
+        assertEquals(HinataTvServer.MISSING, hinataMalLookupFailure(reached = true, challenged = false))
+        assertTrue(isHardProviderFailure(HinataTvServer.BLOCKED))
+        assertFalse(isHardProviderFailure(HinataTvServer.MISSING))
+        assertEquals(
+            "https://animepapa.cyou/embed/mal/61990/1/sub",
+            hinataAbsolutizePapaUrl("/embed/mal/61990/1/sub"),
+        )
+        assertEquals(
+            "https://animepapa.cyou/embed/mal/61990/1/sub",
+            hinataAbsolutizePapaUrl("https://animepapa.cyou/embed/mal/61990/1/sub"),
+        )
+    }
 }
