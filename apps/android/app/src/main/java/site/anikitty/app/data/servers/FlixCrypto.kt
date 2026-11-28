@@ -244,7 +244,8 @@ internal object FlixCrypto {
 
     /** Legacy ids that pointed at a different site. ani.pm stays ani.pm. */
     fun migrateServerId(saved: String?): String? = when (saved) {
-        "settlar", "yozora" -> "anipm"
+        // ani.nz was never its own product — only an ani.pm mirror domain.
+        "settlar", "yozora", "aninz" -> "anipm"
         "anivault" -> "anirex"
         else -> saved
     }

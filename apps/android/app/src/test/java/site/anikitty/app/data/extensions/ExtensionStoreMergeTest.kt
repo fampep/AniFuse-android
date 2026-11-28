@@ -20,9 +20,11 @@ class ExtensionStoreMergeTest {
         assertTrue(isRetiredExtension("miruro", "Miruro"))
         assertFalse(isRetiredExtension("reanime", "reanime"))
         assertFalse(isRetiredExtension("anigato", "AniGato"))
-        // Only the bundled anipm card stays — every other ani.pm pack is retired.
+        // Only the bundled anipm card stays — every other ani.pm / ani.nz pack is retired.
         assertTrue(isRetiredExtension("site.anikitty.anipm", "Ani.pm"))
         assertTrue(isRetiredExtension("extra", "ani.pm", "https://anipm.pk"))
+        assertTrue(isRetiredExtension("aninz", "ani.nz"))
+        assertTrue(isRetiredExtension("legacy", "Ani NZ", "https://ani.nz"))
     }
 
     @Test

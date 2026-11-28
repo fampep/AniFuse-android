@@ -66,18 +66,20 @@ data class StoreListing(
  * Settlar and Yozora are retired aliases.
  * Anime Nexus and Miruro are removed from the app.
  * The only live ani.pm card is the bundled [anipm] resolver — every other
- * ani.pm / anipm.pk listing (community mirrors, old settlar packs) is retired
- * so the Store never shows two ani.pm extensions.
+ * ani.pm / anipm.pk / ani.nz listing (community mirrors, old settlar packs,
+ * the former standalone ani.nz card) is retired so the Store and Race dock
+ * never show two ani.pm sites.
  */
 internal fun isRetiredExtension(id: String, name: String = "", siteUrl: String? = null): Boolean {
     fun norm(raw: String) = raw.trim().lowercase().replace(".", "").replace(" ", "").replace("-", "").replace("_", "")
     val key = norm(id)
-    if (key == "settlar" || key == "yozora" || key == "animenexus" || key == "miruro") {
+    if (key == "settlar" || key == "yozora" || key == "animenexus" || key == "miruro" || key == "aninz") {
         return true
     }
     val label = norm(name)
     if (label == "settlar" || label == "yozora" ||
-        label == "animenexus" || label == "miruro"
+        label == "animenexus" || label == "miruro" ||
+        label == "aninz"
     ) {
         return true
     }
@@ -86,10 +88,14 @@ internal fun isRetiredExtension(id: String, name: String = "", siteUrl: String? 
     return false
 }
 
-/** True when a listing is clearly ani.pm / anipm.pk but not the bundled id. */
+/** True when a listing is clearly ani.pm / anipm.pk / ani.nz but not the bundled id. */
 internal fun isAniPmAlias(idNorm: String, nameNorm: String, siteUrl: String?): Boolean {
-    if (nameNorm == "anipm" || nameNorm == "anipmpk") return true
-    if (idNorm == "anipmpk" || idNorm.endsWith("anipm") || idNorm.contains("anipmpk")) return true
+    if (nameNorm == "anipm" || nameNorm == "anipmpk" || nameNorm == "aninz") return true
+    if (idNorm == "anipmpk" || idNorm == "aninz" ||
+        idNorm.endsWith("anipm") || idNorm.contains("anipmpk")
+    ) {
+        return true
+    }
     val host = siteUrl
         ?.trim()
         ?.lowercase()
@@ -99,7 +105,7 @@ internal fun isAniPmAlias(idNorm: String, nameNorm: String, siteUrl: String?): B
         ?.substringBefore(':')
         ?.removePrefix("www.")
         .orEmpty()
-    return host == "ani.pm" || host == "anipm.pk"
+    return host == "ani.pm" || host == "anipm.pk" || host == "ani.nz"
 }
 
 data class StoreIndex(

@@ -64,7 +64,6 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         KaaServer(cache = resolveCache),
         AnimexServer(cache = resolveCache),
         XanimeServer(cache = resolveCache),
-        AniNzServer(cache = resolveCache),
         AniPmServer(cache = resolveCache),
         GogoAnimeServer(cache = resolveCache),
         AnizoneServer(cache = resolveCache),

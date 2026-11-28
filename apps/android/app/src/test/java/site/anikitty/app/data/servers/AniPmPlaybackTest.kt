@@ -16,14 +16,39 @@ class AniPmPlaybackTest {
         assertEquals("anipm", AniPmServer.ID)
         assertEquals("ani.pm", AniPmServer(cache = null).server.name)
         assertEquals(AniPmServer.SITE, AniPmServer(cache = null).server.siteUrl)
-        assertEquals(listOf("https://anipm.pk", "https://ani.pm"), AniPmServer.ORIGINS)
+        assertEquals(
+            listOf("https://anipm.pk", "https://ani.pm", "https://ani.nz"),
+            AniPmServer.ORIGINS,
+        )
         assertFalse(isRetiredExtension("anipm", "ani.pm", "https://ani.pm"))
-        // Second / community ani.pm packs are retired so the Store shows one card.
+        // Second / community ani.pm packs + former ani.nz card are retired.
         assertTrue(isRetiredExtension("site.anikitty.anipm", "Ani.pm", "https://anipm.pk"))
         assertTrue(isRetiredExtension("anipm-mirror", "ani.pm", null))
         assertTrue(isRetiredExtension("community-pack", "Something", "https://anipm.pk/watch"))
+        assertTrue(isRetiredExtension("aninz", "ani.nz", "https://ani.nz"))
+        assertTrue(isRetiredExtension("mirror", "Something", "https://ani.nz/watch"))
         assertFalse(AniPmServer.MISSING.contains("404"))
         assertFalse(AniPmServer.BLOCKED.contains("403"))
+    }
+
+    @Test
+    fun orderedOriginsPreferWarmMirror() {
+        assertEquals(
+            listOf("https://ani.nz", "https://anipm.pk", "https://ani.pm"),
+            anipmOrderedOrigins(
+                AniPmServer.ORIGINS,
+                "https://ani.nz/embed/mal/13601",
+            ),
+        )
+        assertEquals(
+            AniPmServer.ORIGINS,
+            anipmOrderedOrigins(AniPmServer.ORIGINS, null),
+        )
+        assertEquals(
+            "https://anipm.pk",
+            anipmOriginFromWatchUrl("https://anipm.pk/embed/mal/21", AniPmServer.ORIGINS),
+        )
+        assertNull(anipmOriginFromWatchUrl("https://other.example/x", AniPmServer.ORIGINS))
     }
 
     @Test
