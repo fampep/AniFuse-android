@@ -5,6 +5,7 @@ package site.anikitty.app.data.anilist
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import site.anikitty.app.data.local.WatchHistoryEntity
@@ -175,6 +176,41 @@ class AniListSyncTest {
         assertEquals(3, warms[1].anilistId)
         assertEquals(2, warms[1].episode)
         assertTrue(frontierWarmTargets(merged, emptyList()).isEmpty())
+    }
+
+    @Test
+    fun frontierWarmSkipsNonContinueStatuses() {
+        val completed = history(episode = 12, positionMs = 0L, durationMs = 0L, status = "COMPLETED")
+            .copy(anilistId = 10)
+        val paused = history(episode = 5, positionMs = 0L, durationMs = 0L, status = "PAUSED")
+            .copy(anilistId = 11)
+        val dropped = history(episode = 3, positionMs = 0L, durationMs = 0L, status = "DROPPED")
+            .copy(anilistId = 12)
+        val planning = history(episode = 1, positionMs = 0L, durationMs = 0L, status = "PLANNING")
+            .copy(anilistId = 13)
+        val unstarted = history(episode = 0, positionMs = 0L, durationMs = 0L, status = "CURRENT")
+            .copy(anilistId = 14)
+        val watching = history(episode = 4, positionMs = 0L, durationMs = 0L, status = "CURRENT")
+            .copy(anilistId = 15)
+        assertNull(frontierWarmEpisode(completed))
+        assertNull(frontierWarmEpisode(paused))
+        assertNull(frontierWarmEpisode(dropped))
+        assertNull(frontierWarmEpisode(planning))
+        assertNull(frontierWarmEpisode(unstarted))
+        assertEquals(4, frontierWarmEpisode(watching))
+        assertTrue(
+            frontierWarmTargets(
+                listOf(completed, paused, dropped, planning, unstarted),
+                listOf(10, 11, 12, 13, 14),
+            ).isEmpty(),
+        )
+        val onlyContinue = frontierWarmTargets(
+            listOf(completed, watching),
+            listOf(10, 15),
+        )
+        assertEquals(1, onlyContinue.size)
+        assertEquals(15, onlyContinue[0].anilistId)
+        assertEquals(4, onlyContinue[0].episode)
     }
 
     @Test

@@ -468,7 +468,9 @@ data class FrontierWarmTarget(
 
 /**
  * Map advanced ids to Continue cue episodes so background warm fills the hole
- * left by [PlayableWarmCache.dropTitle].
+ * left by [PlayableWarmCache.dropTitle]. COMPLETED / PAUSED / DROPPED /
+ * PLANNING (and unstarted CURRENT) never appear on Continue — skip them so
+ * they cannot starve the frontier warm parallel slots.
  */
 internal fun frontierWarmTargets(
     merged: List<WatchHistoryEntity>,
@@ -478,7 +480,7 @@ internal fun frontierWarmTargets(
     val want = advancedIds.toHashSet()
     return merged.mapNotNull { row ->
         if (row.anilistId !in want) return@mapNotNull null
-        val episode = frontierWarmEpisode(row)
+        val episode = frontierWarmEpisode(row) ?: return@mapNotNull null
         if (row.anilistId <= 0 || episode <= 0) return@mapNotNull null
         FrontierWarmTarget(
             anilistId = row.anilistId,
@@ -489,10 +491,13 @@ internal fun frontierWarmTargets(
     }
 }
 
-/** Continue-card episode for a freshly imported frontier row. */
-internal fun frontierWarmEpisode(row: WatchHistoryEntity): Int =
+/**
+ * Continue-card episode for a freshly imported frontier row.
+ * Null when the title would not appear on Continue — do not fall back to
+ * [WatchHistoryEntity.episode] (that warmed COMPLETED shelves).
+ */
+internal fun frontierWarmEpisode(row: WatchHistoryEntity): Int? =
     site.anikitty.app.data.local.continueCue(row)?.episode?.coerceAtLeast(1)
-        ?: row.episode.coerceAtLeast(1)
 
 /** Glass Sync phases — drain first, then MediaList import. */
 enum class AniListSyncPhase {
