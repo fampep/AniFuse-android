@@ -131,6 +131,7 @@ import site.anikitty.app.cast.castDisconnectResumeMs
 import site.anikitty.app.cast.castMayCorrectReceiver
 import site.anikitty.app.cast.castPhoneKnownPosition
 import site.anikitty.app.cast.castPhoneResumeTarget
+import site.anikitty.app.cast.castHandoffChromeVisible
 import site.anikitty.app.cast.castPhoneShouldStayQuiet
 import site.anikitty.app.cast.releaseCastHandoff
 import site.anikitty.app.cast.castClientRetryDelayMs
@@ -955,13 +956,31 @@ fun PlayerScreen(
     }
     val activePlayer: Player? = if (isCasting) castHelper?.castPlayer else player
     val latestPlayer by rememberUpdatedState(player)
+    var castMediaCommitted by remember { mutableStateOf(false) }
+    LaunchedEffect(castHelper, castAttachStarted, castPending, isCasting) {
+        if (isCasting) {
+            castMediaCommitted = true
+            return@LaunchedEffect
+        }
+        if (!castAttachStarted && !castPending) {
+            castMediaCommitted = false
+            return@LaunchedEffect
+        }
+        while (true) {
+            val ready = castHelper?.hasMediaCommitted() == true
+            castMediaCommitted = ready
+            if (ready) return@LaunchedEffect
+            delay(50)
+        }
+    }
     val phoneQuietNow = castPhoneShouldStayQuiet(
         casting = isCasting,
         handoff = castAttachStarted && !isCasting && !castClientGaveUp,
         pending = castPending && !castClientGaveUp,
+        receiverReady = castMediaCommitted,
     )
-    // Keep the phone paused for the whole handoff, including the gap before
-    // the receiver reports that it is playing.
+    // Mute only after the TV has a committed MediaItem — not during the
+    // remoteMediaClient deferred-start poll.
     LaunchedEffect(player, phoneQuietNow) {
         if (!phoneQuietNow) return@LaunchedEffect
         runCatching {
@@ -1024,6 +1043,7 @@ fun PlayerScreen(
             casting = isCasting,
             handoff = castAttachStarted && !isCasting && !castClientGaveUp,
             pending = castPending && !castClientGaveUp,
+            receiverReady = castMediaCommitted,
         )
         exo.setMediaItem(itemBuilder.build(), start)
         exo.prepare()
@@ -1671,10 +1691,8 @@ fun PlayerScreen(
         val pos = castPlayhead()
         castSentPositionMs = pos
         castPlayheadRequested = true
-        runCatching {
-            latestPlayer?.pause()
-            latestPlayer?.playWhenReady = false
-        }
+        // Do not pause yet — phoneQuietNow waits for hasMediaCommitted().
+        castMediaCommitted = false
         isCasting = false
         castHint = "Connecting to your TV"
         controlsVisible = true
@@ -2170,6 +2188,7 @@ fun PlayerScreen(
                     casting = isCasting,
                     handoff = castAttachStarted && !isCasting && !castClientGaveUp,
                     pending = castPending && !castClientGaveUp,
+                    receiverReady = castMediaCommitted,
                 )
                 if (quiet && isPlaying) {
                     activePlayer?.pause()
@@ -2724,7 +2743,7 @@ fun PlayerScreen(
     }
 
     val handoffToCast = castAttachStarted && !isCasting && !castClientGaveUp
-    val castScreenUp = castPhoneShouldStayQuiet(
+    val castScreenUp = castHandoffChromeVisible(
         casting = isCasting,
         handoff = castAttachStarted && !castClientGaveUp,
         pending = castPending && !castClientGaveUp,

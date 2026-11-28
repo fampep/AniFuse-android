@@ -169,9 +169,29 @@ class CastAttachTest {
     @Test
     fun thePhoneStaysQuietWhileTheTvHasTheEpisode() {
         assertTrue(castPhoneShouldStayQuiet(casting = true, handoff = false, pending = false))
-        assertTrue(castPhoneShouldStayQuiet(casting = false, handoff = true, pending = false))
-        assertTrue(castPhoneShouldStayQuiet(casting = false, handoff = false, pending = true))
+        // Handoff / pending without a committed MediaItem keeps the phone playing.
+        assertFalse(castPhoneShouldStayQuiet(casting = false, handoff = true, pending = false))
+        assertFalse(castPhoneShouldStayQuiet(casting = false, handoff = false, pending = true))
+        assertTrue(
+            castPhoneShouldStayQuiet(
+                casting = false,
+                handoff = true,
+                pending = false,
+                receiverReady = true,
+            ),
+        )
+        assertTrue(
+            castPhoneShouldStayQuiet(
+                casting = false,
+                handoff = false,
+                pending = true,
+                receiverReady = true,
+            ),
+        )
         assertFalse(castPhoneShouldStayQuiet(casting = false, handoff = false, pending = false))
+        assertTrue(castHandoffChromeVisible(casting = false, handoff = true, pending = false))
+        assertTrue(castHandoffChromeVisible(casting = false, handoff = false, pending = true))
+        assertFalse(castHandoffChromeVisible(casting = false, handoff = false, pending = false))
     }
 
     @Test

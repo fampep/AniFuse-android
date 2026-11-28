@@ -231,6 +231,9 @@ class CastSessionHelper private constructor(
     /** True from the moment a load is requested until that load settles or a newer one replaces it. */
     fun isLoadInFlight(): Boolean = activeLoadTicket.get() != 0
 
+    /** True after [start] handed a MediaItem to CastPlayer for the active ticket. */
+    fun hasMediaCommitted(): Boolean = mediaCommittedTicket.get() != 0
+
     /** Fires once per load when the receiver finishes the current item. */
     fun setPlaybackEndedListener(listener: (() -> Unit)?) {
         playbackEndedListener.set(listener)
