@@ -74,3 +74,28 @@ internal fun downloadTransferValidated(
         DownloadTransfer.Restart
     }
 }
+
+/**
+ * Expected progressive size: Content-Length (+ prior on 206), else Content-Range
+ * total, else unknown (-1).
+ */
+internal fun downloadExpectedTotal(
+    priorBytes: Long,
+    bodyContentLength: Long,
+    contentRange: String?,
+): Long {
+    if (bodyContentLength > 0L) return priorBytes.coerceAtLeast(0L) + bodyContentLength
+    val rangeTotal = contentRangeTotal(contentRange)
+    if (rangeTotal != null && rangeTotal > 0L) return rangeTotal
+    return -1L
+}
+
+/**
+ * Quiet mid-flight truncates must not ship READY. Unknown totals (-1) accept
+ * any positive body so open-ended streams still complete.
+ */
+internal fun downloadBodyComplete(partBytes: Long, expectedTotal: Long): Boolean {
+    if (partBytes <= 0L) return false
+    if (expectedTotal <= 0L) return true
+    return partBytes >= expectedTotal
+}

@@ -4,6 +4,12 @@
 package site.anikitty.app.ui.player
 
 import android.graphics.Bitmap
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -31,6 +37,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import site.anikitty.app.ui.theme.prefersReducedMotion
 
 /** Phone scrubbers stay compact; tablets get a wider glass preview card. */
 internal fun seekPreviewCardWidthDp(maxWidthDp: Float): Float =
@@ -65,78 +72,94 @@ internal fun SeekPreview(
         val clamped = fraction.coerceIn(0f, 1f)
         val x = (maxWidth * clamped - cardWidth / 2).coerceIn(0.dp, (maxWidth - cardWidth).coerceAtLeast(0.dp))
         val frameShape = RoundedCornerShape(12.dp)
+        val fadeMs = scrubPreviewCrossfadeMs(prefersReducedMotion())
         Column(
             modifier = Modifier
                 .offset(x = x)
                 .width(cardWidth),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Empty plate is noise — time chip alone until the VTT frame lands.
-            if (frame != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(cardHeight)
-                        .shadow(
-                            elevation = 18.dp,
-                            shape = frameShape,
-                            ambientColor = Color.Black.copy(alpha = 0.55f),
-                            spotColor = Color.Black.copy(alpha = 0.4f),
-                        )
-                        .clip(frameShape)
-                        .background(Color(0xCC101012))
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
-                            ),
-                        )
-                        .border(1.dp, Color.White.copy(alpha = 0.28f), frameShape),
-                ) {
-                    Image(
-                        bitmap = frame.asImageBitmap(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxWidth().height(cardHeight),
-                    )
+            // Empty plate is noise — time chip alone until the first VTT frame lands.
+            // Crossfade bucket hops so retained plates do not hard-cut.
+            Crossfade(
+                targetState = frame,
+                animationSpec = tween(fadeMs),
+                label = "seekPreviewFrame",
+            ) { bmp ->
+                if (bmp != null) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(cardHeight)
+                            .shadow(
+                                elevation = 18.dp,
+                                shape = frameShape,
+                                ambientColor = Color.Black.copy(alpha = 0.55f),
+                                spotColor = Color.Black.copy(alpha = 0.4f),
+                            )
+                            .clip(frameShape)
+                            .background(Color(0xCC101012))
                             .background(
                                 Brush.verticalGradient(
-                                    listOf(
-                                        Color.White.copy(alpha = 0.08f),
-                                        Color.Transparent,
-                                        Color.Black.copy(alpha = 0.22f),
+                                    listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
+                                ),
+                            )
+                            .border(1.dp, Color.White.copy(alpha = 0.28f), frameShape),
+                    ) {
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxWidth().height(cardHeight),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(cardHeight)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            Color.White.copy(alpha = 0.08f),
+                                            Color.Transparent,
+                                            Color.Black.copy(alpha = 0.22f),
+                                        ),
                                     ),
                                 ),
-                            ),
-                    )
+                        )
+                    }
                 }
             }
             val chipShape = RoundedCornerShape(999.dp)
-            if (!chapterLabel.isNullOrBlank()) {
-                Box(
-                    modifier = Modifier
-                        .padding(top = 6.dp)
-                        .clip(chipShape)
-                        .background(Color(0xE6101012))
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
-                            ),
+            AnimatedContent(
+                targetState = chapterLabel?.takeIf { it.isNotBlank() },
+                transitionSpec = {
+                    fadeIn(tween(fadeMs)) togetherWith fadeOut(tween(fadeMs))
+                },
+                label = "seekPreviewChapter",
+            ) { label ->
+                if (label != null) {
+                    Box(
+                        modifier = Modifier
+                            .padding(top = 6.dp)
+                            .clip(chipShape)
+                            .background(Color(0xE6101012))
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
+                                ),
+                            )
+                            .border(1.dp, Color.White.copy(alpha = 0.34f), chipShape)
+                            .padding(horizontal = 10.dp, vertical = 3.dp),
+                    ) {
+                        Text(
+                            label,
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.SansSerif,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.6.sp,
                         )
-                        .border(1.dp, Color.White.copy(alpha = 0.34f), chipShape)
-                        .padding(horizontal = 10.dp, vertical = 3.dp),
-                ) {
-                    Text(
-                        chapterLabel,
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.SansSerif,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.6.sp,
-                    )
+                    }
                 }
             }
             Box(

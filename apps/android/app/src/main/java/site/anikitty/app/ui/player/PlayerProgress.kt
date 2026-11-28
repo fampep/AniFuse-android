@@ -113,12 +113,13 @@ internal fun LiveTimeline(
     }
     val scrubBucket = if (scrubMs >= 0L) scrubPreviewBucketMs(scrubMs) else -1L
     // Key on the bucket, not every scrub pixel — long drags stay zero-jank.
+    // Decode misses keep the last plate so the glass preview never blanks mid-scrub.
     LaunchedEffect(scrubbing, scrubBucket, durationMs, loader) {
-        if (!scrubbing || scrubBucket < 0L || durationMs <= 0L) {
+        if (scrubPreviewShouldClear(scrubbing, scrubBucket) || durationMs <= 0L) {
             frame = null
             return@LaunchedEffect
         }
-        frame = loader.frame(scrubBucket)
+        frame = scrubPreviewRetainFrame(frame, loader.frame(scrubBucket))
     }
     Box(modifier) {
         GlassScrubber(

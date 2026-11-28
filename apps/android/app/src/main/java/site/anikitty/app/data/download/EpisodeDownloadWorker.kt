@@ -138,6 +138,7 @@ class EpisodeDownloadWorker(
         val part = File(dest.path + ".part")
         val already = if (part.exists()) part.length() else 0L
         val resume = progressiveResume(already)
+        var expectedTotal = -1L
         try {
             withContext(Dispatchers.IO) {
                 val request = Request.Builder().url(row.url)
@@ -172,11 +173,12 @@ class EpisodeDownloadWorker(
                     val body = response.body ?: throw DownloadRejectedException("Couldn't save this episode")
                     val append = resume.appendOnPartial && response.code == 206
                     val prior = if (append) already else 0L
-                    val bodyLength = body.contentLength()
-                    val total = when {
-                        bodyLength > 0L -> prior + bodyLength
-                        else -> -1L
-                    }
+                    val total = downloadExpectedTotal(
+                        priorBytes = prior,
+                        bodyContentLength = body.contentLength(),
+                        contentRange = response.header("Content-Range"),
+                    )
+                    expectedTotal = total
                     var stopped = false
                     body.byteStream().use { input ->
                         java.io.FileOutputStream(part, append).use { output ->
@@ -220,6 +222,10 @@ class EpisodeDownloadWorker(
         if (part.length() <= 0L) {
             part.delete()
             throw DownloadRejectedException("Couldn't save this episode")
+        }
+        // Quiet mid-flight truncate — keep the partial for Range resume, do not READY.
+        if (!downloadBodyComplete(part.length(), expectedTotal)) {
+            throw IOException("Download incomplete")
         }
         if (dest.exists()) dest.delete()
         if (!part.renameTo(dest)) {

@@ -171,4 +171,18 @@ class DownloadLaneTest {
             downloadTransferValidated(200, partBytes = 40L, contentRange = null),
         )
     }
+
+    @Test
+    fun shortEofDoesNotCountAsComplete() {
+        assertEquals(1_040L, downloadExpectedTotal(40L, bodyContentLength = 1_000L, contentRange = null))
+        assertEquals(
+            2_000L,
+            downloadExpectedTotal(40L, bodyContentLength = -1L, contentRange = "bytes 40-1999/2000"),
+        )
+        assertEquals(-1L, downloadExpectedTotal(0L, bodyContentLength = -1L, contentRange = null))
+        assertTrue(downloadBodyComplete(2_000L, expectedTotal = 2_000L))
+        assertFalse(downloadBodyComplete(1_500L, expectedTotal = 2_000L))
+        assertTrue(downloadBodyComplete(80L, expectedTotal = -1L))
+        assertFalse(downloadBodyComplete(0L, expectedTotal = -1L))
+    }
 }
