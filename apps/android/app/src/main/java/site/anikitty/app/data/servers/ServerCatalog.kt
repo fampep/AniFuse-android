@@ -267,6 +267,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
         ) { index ->
             val resolver = ordered[index]
             onAttempt?.invoke(resolver.server.name, index, ordered.size)
+            val startedAt = android.os.SystemClock.elapsedRealtime()
             val sources = try {
                 resolver.resolve(anilistId, episode, audio, titleHint)
             } catch (err: Exception) {
@@ -276,6 +277,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
                 rememberProviderDown(resolver, msg)
                 null
             }
+            val resolveMs = (android.os.SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L)
             when {
                 sources.isNullOrEmpty() -> {
                     if (sources != null) {
@@ -291,17 +293,17 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
                         errors += "${resolver.server.name}: same host"
                         null
                     } else {
-                        resolver to accepted
+                        Triple(resolver, accepted, resolveMs)
                     }
                 }
             }
         }
         if (raced != null) {
-            val (resolver, sources) = raced.second
+            val (resolver, sources, resolveMs) = raced.second
             rememberProviderUp(resolver)
             val leadHost = playableHost(sources.firstOrNull()?.url.orEmpty())
             if (leadHost.isNotEmpty()) {
-                PlaybackHostHealth.note(leadHost, ok = true)
+                PlaybackHostHealth.note(leadHost, ok = true, latencyMs = resolveMs)
                 PlaybackHostHealth.noteProviderCdn(resolver.server.id, leadHost)
             }
             // Shadow / credits races pass avoidHost — never overwrite the playing live lane.

@@ -53,6 +53,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -66,6 +67,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import site.anikitty.app.BuildConfig
 import site.anikitty.app.data.friendlyFailure
@@ -79,6 +81,7 @@ import site.anikitty.app.data.extensions.isCatalogSite
 import site.anikitty.app.data.extensions.isRetiredExtension
 import site.anikitty.app.data.extensions.storeCardRole
 import site.anikitty.app.data.extensions.storeListingMatches
+import site.anikitty.app.data.servers.PlaybackHostHealth
 import site.anikitty.app.data.servers.ServerCatalog
 import site.anikitty.app.data.servers.StreamServer
 import site.anikitty.app.ui.components.AnimatedSearchIcon
@@ -157,11 +160,22 @@ fun ExtensionStoreFeed(
     val bundledIds = catalog.bundledIds
     val coldKeys = remember(resolvers, selectedId) { catalog.coldProviderKeys() }
     val view = LocalView.current
-    val liveDock = remember(resolvers, bundledIds, selectedId) {
-        resolvers
-            .map { it.server }
-            .filter { it.id in bundledIds }
-            .distinctBy { it.id }
+    var healthTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(2_400)
+            healthTick++
+        }
+    }
+    val liveDock = remember(resolvers, bundledIds, selectedId, healthTick) {
+        raceDockOrdered(
+            resolvers
+                .map { it.server }
+                .filter { it.id in bundledIds }
+                .distinctBy { it.id },
+        ) { server ->
+            PlaybackHostHealth.scoreProvider(server.id, server.siteUrl)
+        }
     }
 
     // Always surface on-device resolvers even if the remote index is stale/offline.
@@ -355,6 +369,14 @@ fun ExtensionStoreFeed(
                             val selected = server.id == selectedId
                             val cold = server.id.lowercase() in coldKeys ||
                                 server.name.trim().lowercase() in coldKeys
+                            val score = PlaybackHostHealth.scoreProvider(server.id, server.siteUrl)
+                            val latency = PlaybackHostHealth.providerLatencyMs(server.id, server.siteUrl)
+                            val pulse = raceDockPulseLabel(
+                                selected = selected,
+                                cold = cold,
+                                score = score,
+                                latencyMs = latency,
+                            )
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
@@ -387,25 +409,25 @@ fun ExtensionStoreFeed(
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                                     fontSize = 12.sp,
                                 )
-                                if (cold && !selected) {
+                                if (pulse != null) {
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        "·",
-                                        color = palette.faint,
+                                        pulse,
+                                        color = when {
+                                            selected -> palette.onAccent
+                                            pulse == "DOWN" -> palette.faint
+                                            else -> palette.muted
+                                        },
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 11.sp,
-                                    )
-                                } else if (selected) {
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        "LEAD",
-                                        color = palette.onAccent,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 9.sp,
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(999.dp))
-                                            .background(palette.accent)
-                                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                                        fontSize = if (selected) 9.sp else 10.sp,
+                                        modifier = if (selected) {
+                                            Modifier
+                                                .clip(RoundedCornerShape(999.dp))
+                                                .background(palette.accent)
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        } else {
+                                            Modifier
+                                        },
                                     )
                                 }
                             }

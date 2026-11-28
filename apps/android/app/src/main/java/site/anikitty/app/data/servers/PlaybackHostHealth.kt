@@ -118,6 +118,21 @@ internal object PlaybackHostHealth {
         return score(playableHost(siteUrl.orEmpty()), nowMs)
     }
 
+    /** Last measured CDN RTT for [providerId], or null when cold / sunk / unknown. */
+    fun providerLatencyMs(
+        providerId: String,
+        siteUrl: String?,
+        nowMs: Long = System.currentTimeMillis(),
+    ): Long? {
+        val id = providerId.trim().lowercase()
+        val host = synchronized(lock) { providerCdns[id] }
+            ?: playableHost(siteUrl.orEmpty()).ifBlank { null }
+            ?: return null
+        val mark = synchronized(lock) { marks[host] } ?: return null
+        if (nowMs - mark.atMs > HOLD_MS || !mark.ok) return null
+        return mark.latencyMs.takeIf { it > 0L }
+    }
+
     fun clear() {
         synchronized(lock) {
             marks.clear()
