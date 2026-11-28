@@ -166,10 +166,10 @@ fun GlassScrubber(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(32.dp)
-                // markerEdges in the key restarts the gesture when late skip
-                // stamps land — rememberUpdatedState alone is not enough on
-                // some OEM gesture loops that cache the first awaitEachGesture.
-                .pointerInput(durationMs, trackWidthPx, markerEdges) {
+                // Do not key on markerEdges — late AniSkip stamps must not
+                // cancel an in-flight drag. Live edges come from
+                // rememberUpdatedState inside the loop.
+                .pointerInput(durationMs, trackWidthPx) {
                     awaitEachGesture {
                         val down = awaitFirstDown()
                         val slop = viewConfiguration.touchSlop
