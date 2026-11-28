@@ -99,6 +99,8 @@ fun GlassScrubber(
     val markerEdges = remember(skipTimes, durationMs) {
         scrubMarkerEdges(skipTimes, durationMs)
     }
+    // Skip stamps often arrive after duration — keep the gesture on live edges.
+    val latestMarkerEdges by rememberUpdatedState(markerEdges)
 
     fun jumpBy(deltaMs: Long) {
         if (durationMs <= 0L) return
@@ -210,7 +212,7 @@ fun GlassScrubber(
                                     }
                                     change.consume()
                                     val next = fractionAt(change.position.x)
-                                    if (scrubCrossedMarker(latest, next, markerEdges)) {
+                                    if (scrubCrossedMarker(latest, next, latestMarkerEdges)) {
                                         KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
                                     }
                                     latest = next
