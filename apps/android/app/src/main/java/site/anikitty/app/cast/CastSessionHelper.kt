@@ -98,7 +98,11 @@ class CastSessionHelper private constructor(
     /** Ticket that last reached [settleReady]. Aborted follow-ups keep this. */
     private val settledTicket = AtomicInteger(0)
 
+    /** Source last confirmed on the receiver — restore the relay after a keep. */
+    @Volatile private var settledSource: PlayableSource? = null
+
     private val ticketItem = AtomicReference<Pair<Int, CastItemKey>?>(null)
+    private val ticketSource = AtomicReference<Pair<Int, PlayableSource>?>(null)
     private var screenProgress: CastProgressTarget? = null
 
     /** History target that outlives the player screen. */
@@ -367,6 +371,7 @@ class CastSessionHelper private constructor(
         )
         loadedItem = item
         ticketItem.set(ticket to item)
+        ticketSource.set(ticket to source)
         val hooks = replaceLoadHooks(onReady, onError)
         // The relay has to outlive the screen that requested this episode.
         CastPlaybackService.promote(appContext, title, episode)
@@ -374,22 +379,20 @@ class CastSessionHelper private constructor(
             val prepared = runCatching { relay.prepare(source) }
             main.post {
                 if (closed.get() || ticket != generation.get()) {
-                    dropLoad(ticket)
+                    abortLoad(ticket, mediaCommitted = false)
                     return@post
                 }
                 prepared.fold(
                     onSuccess = { playback ->
                         runCatching { start(playback, title, episode, positionMs, ticket) }
                             .onFailure {
-                                relay.stop()
                                 Log.w(TAG, "Cast prepare failed", it)
-                                dropLoad(ticket)
+                                abortLoad(ticket, mediaCommitted = false)
                                 if (ticket == generation.get()) fireLoadError(it.message ?: "Cast failed")
                             }
                     },
                     onFailure = {
-                        relay.stop()
-                        dropLoad(ticket)
+                        abortLoad(ticket, mediaCommitted = false)
                         if (ticket == generation.get()) fireLoadError(it.message ?: "Cast failed")
                     },
                 )
@@ -406,29 +409,51 @@ class CastSessionHelper private constructor(
         loadHooks.current?.failed(message)
     }
 
-    /** This load no longer owns the TV. A newer load keeps the service up. */
-    private fun dropLoad(ticket: Int) {
-        if (!activeLoadTicket.compareAndSet(ticket, 0)) return
+    /**
+     * Abort an in-flight ticket. When the receiver never took the new item,
+     * keep the settled episode (relay + yield + loadedItem). Otherwise tear down.
+     */
+    private fun abortLoad(ticket: Int, mediaCommitted: Boolean): Boolean {
+        val claimed = activeLoadTicket.compareAndSet(ticket, 0)
+        if (!claimed && !mediaCommitted) return false
+        if (!claimed) activeLoadTicket.set(0)
         val keep = castKeepPlayingAfterDrop(
             settledTicket = settledTicket.get(),
             abortedTicket = ticket,
             playingItem = playingItem,
+            mediaCommitted = mediaCommitted,
         )
         if (keep) {
-            // Follow-up aborted; previous episode may still be on the TV.
             casting = true
+            loadedItem = castLoadedAfterKeep(keep = true, playingItem = playingItem)
+            restoreSettledRelay()
             val host = playableHost(playingItem!!.url).ifBlank { null }
             if (host != null) {
                 PlaybackHostHealth.notePlaying(host, CastDownloadYieldOwner)
             }
-        } else {
-            casting = false
-            playingItem = null
-            settledTicket.set(0)
-            // First/failed load must not leave CastDownloadYieldOwner stuck.
-            PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
+            CastPlaybackService.demoteIfIdle()
+            return true
         }
+        casting = false
+        playingItem = null
+        loadedItem = null
+        settledTicket.set(0)
+        settledSource = null
+        ticketItem.set(null)
+        ticketSource.set(null)
+        relay.stop()
+        PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
         CastPlaybackService.demoteIfIdle()
+        return false
+    }
+
+    /** Prepare already pointed the relay at the failed follow-up — put the live episode back. */
+    private fun restoreSettledRelay() {
+        val prev = settledSource ?: return
+        runCatching {
+            val playback = relay.prepare(prev)
+            relay.publish(playback)
+        }.onFailure { Log.w(TAG, "Cast relay restore failed", it) }
     }
 
     private fun subtitleConfigurations(tracks: List<RelaySubtitle>): List<MediaItem.SubtitleConfiguration> {
@@ -480,11 +505,11 @@ class CastSessionHelper private constructor(
         ticket: Int,
         waitAttempt: Int = 0,
     ) {
-        relay.publish(playback)
         val client = castContext.sessionManager.currentCastSession?.remoteMediaClient
         if (client == null) {
             // Session often reports connected a beat before remoteMediaClient
             // exists. ~2s here; PlayerScreen retries while still connecting.
+            // Do not publish yet — keep the settled allowlist on the relay.
             if (waitAttempt >= 16 || closed.get() || ticket != generation.get()) {
                 error("Chromecast is not connected")
             }
@@ -494,7 +519,7 @@ class CastSessionHelper private constructor(
                 runCatching {
                     start(playback, title, episode, positionMs, ticket, waitAttempt + 1)
                 }.onFailure {
-                    dropLoad(ticket)
+                    abortLoad(ticket, mediaCommitted = false)
                     if (ticket == generation.get()) {
                         fireLoadError(it.message ?: "Cast failed")
                     }
@@ -502,6 +527,7 @@ class CastSessionHelper private constructor(
             }, 120L)
             return
         }
+        relay.publish(playback)
         watchLoad(client, ticket)
         val subs = subtitleConfigurations(playback.subtitles)
         val item = MediaItem.Builder()
@@ -640,7 +666,9 @@ class CastSessionHelper private constructor(
         casting = true
         activeLoadTicket.compareAndSet(ticket, 0)
         ticketItem.get()?.takeIf { it.first == ticket }?.second?.let { playingItem = it }
+        settledSource = ticketSource.get()?.takeIf { it.first == ticket }?.second
         settledTicket.set(ticket)
+        loadedItem = playingItem
         commitProgress()
         Log.i(TAG, "Cast playback started")
         // Receiver may ignore queue-item activeTrackIds on the first load.
@@ -655,9 +683,8 @@ class CastSessionHelper private constructor(
     private fun settleError(message: String, ticket: Int) {
         if (!loadSettled.compareAndSet(false, true)) return
         Log.w(TAG, "Cast load failed: $message")
-        // Do not null playingItem here — dropLoad keeps a previously settled episode.
-        relay.stop()
-        dropLoad(ticket)
+        // Receiver already took this item — previous episode is gone; full teardown.
+        abortLoad(ticket, mediaCommitted = true)
         main.post { if (ticket == generation.get()) fireLoadError(message) }
     }
 
@@ -669,8 +696,11 @@ class CastSessionHelper private constructor(
         relay.stop()
         casting = false
         playingItem = null
+        loadedItem = null
         settledTicket.set(0)
+        settledSource = null
         ticketItem.set(null)
+        ticketSource.set(null)
         clearProgress()
         PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
         CastPlaybackService.demoteIfIdle()
@@ -693,8 +723,11 @@ class CastSessionHelper private constructor(
         runCatching { multicast?.release() }
         casting = false
         playingItem = null
+        loadedItem = null
         settledTicket.set(0)
+        settledSource = null
         ticketItem.set(null)
+        ticketSource.set(null)
         PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
         clearProgress()
         CastPlaybackService.demoteIfIdle()

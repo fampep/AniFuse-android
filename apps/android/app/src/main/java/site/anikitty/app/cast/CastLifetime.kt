@@ -89,12 +89,24 @@ internal fun castJoin(casting: Boolean, loadInFlight: Boolean, sameItem: Boolean
 /**
  * An aborted follow-up load must not wipe the settled episode still on the TV.
  * Only the ticket that actually started playback may release yield / playingItem.
+ * [mediaCommitted] means CastPlayer already took the new item — previous episode
+ * is gone, so keep is false.
  */
 internal fun castKeepPlayingAfterDrop(
     settledTicket: Int,
     abortedTicket: Int,
     playingItem: CastItemKey?,
-): Boolean = playingItem != null && settledTicket != 0 && settledTicket != abortedTicket
+    mediaCommitted: Boolean = false,
+): Boolean = !mediaCommitted &&
+    playingItem != null &&
+    settledTicket != 0 &&
+    settledTicket != abortedTicket
+
+/** Join/adopt keys off loadedItem — restore the settled episode after a keep. */
+internal fun castLoadedAfterKeep(
+    keep: Boolean,
+    playingItem: CastItemKey?,
+): CastItemKey? = if (keep) playingItem else null
 
 /** The playback service, not the player, hears session end and item end. */
 internal interface CastServiceWatch {

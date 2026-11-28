@@ -38,6 +38,16 @@ class CastLifetimeTest {
         assertFalse(castKeepPlayingAfterDrop(settledTicket = 4, abortedTicket = 4, playingItem = playing))
         assertFalse(castKeepPlayingAfterDrop(settledTicket = 0, abortedTicket = 1, playingItem = playing))
         assertFalse(castKeepPlayingAfterDrop(settledTicket = 2, abortedTicket = 3, playingItem = null))
+        assertFalse(
+            castKeepPlayingAfterDrop(
+                settledTicket = 3,
+                abortedTicket = 4,
+                playingItem = playing,
+                mediaCommitted = true,
+            ),
+        )
+        assertEquals(playing, castLoadedAfterKeep(keep = true, playingItem = playing))
+        assertNull(castLoadedAfterKeep(keep = false, playingItem = playing))
     }
 
     @Test
