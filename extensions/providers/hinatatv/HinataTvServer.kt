@@ -63,12 +63,14 @@ class HinataTvServer(
 
     private fun resolveMal(anilistId: Int, episode: Int, lang: String): Int {
         cache?.getShow(ID, anilistId)?.siteId?.toIntOrNull()?.takeIf { it > 0 }?.let { return it }
+        // Race already warmed MAL via ani.pm — skip Papa ani→mal RTT.
+        cache?.getShow(AniPmServer.ID, anilistId)?.siteId?.toIntOrNull()?.takeIf { it > 0 }?.let {
+            return it
+        }
         val aniEmbed = hinataPapaAniEmbedUrl(anilistId, episode, lang)
-        val redirect = headLocation(aniEmbed, htmlHeaders(PAPA, "$SITE/watch/$anilistId"))
-            ?: getFinalUrl(aniEmbed, htmlHeaders(PAPA, "$SITE/watch/$anilistId"))
-        val mal = hinataMalFromPapaEmbedUrl(redirect)
-            ?: error(MISSING)
-        return mal
+        val headers = htmlHeaders(PAPA, "$SITE/watch/$anilistId")
+        val looked = resolvePapaMalEmbed(aniEmbed, headers)
+        return looked.malId ?: error(looked.failure)
     }
 
     private fun openPapa(malId: Int, episode: Int, lang: String): PlayableSource {
@@ -78,7 +80,7 @@ class HinataTvServer(
         if (page.code == 404) error(MISSING)
         if (page.code !in 200..299) error(BLOCKED)
 
-        val session = postSession(malId, episode, embedRef)
+        val session = postSession(malId, episode, lang, embedRef)
         val mediaUrl = anipmMediaPlaylistUrl(PAPA, malId, episode, lang, session.token)
         val playlist = get(mediaUrl, mediaHeaders(PAPA, embedRef))
         if (hinataChallenged(playlist.code, playlist.text)) error(BLOCKED)
@@ -93,6 +95,9 @@ class HinataTvServer(
             url = mediaUrl,
             headers = mediaHeaders(PAPA, embedRef),
             label = fields.quality ?: if (lang == "dub") "DUB" else "SUB",
+            // Papa PNG HLS: BYTERANGE + single-byte XOR — not MegaPlay strip.
+            stripBytes = 0,
+            pngXor = true,
             hls = true,
             quality = fields.quality,
             audio = fields.audio ?: if (lang == "dub") "DUB" else "SUB",
@@ -103,7 +108,8 @@ class HinataTvServer(
         )
     }
 
-    private fun postSession(malId: Int, episode: Int, referer: String): AnipmSession {
+    private fun postSession(malId: Int, episode: Int, lang: String, referer: String): AnipmSession {
+        AnipmSessionCache.get(PAPA, malId, episode, lang)?.let { return it }
         val body = JSONObject()
             .put("malId", malId)
             .put("episode", episode)
@@ -131,9 +137,91 @@ class HinataTvServer(
                 }
                 error(BLOCKED)
             }
-            anipmParseSession(text) ?: error(MISSING)
+            val session = anipmParseSession(text) ?: error(MISSING)
+            AnipmSessionCache.put(PAPA, malId, episode, lang, session)
+            session
         }
     }
+
+    /**
+     * Follow Papa ani→mal redirects hop-by-hop. Intermediate Location values
+     * that are not yet `/embed/mal/` keep walking; outages/challenges surface
+     * as [BLOCKED] so ServerCatalog soft-blocks the provider.
+     */
+    private fun resolvePapaMalEmbed(
+        startUrl: String,
+        headers: Map<String, String>,
+    ): HinataMalLookup {
+        var url = startUrl
+        var reached = false
+        for (hop in 0 until MAX_REDIRECT_HOPS) {
+            val hopResult = headHop(url, headers)
+            if (!hopResult.networkOk) {
+                return HinataMalLookup(
+                    malId = null,
+                    failure = hinataMalLookupFailure(reached = reached, challenged = false),
+                )
+            }
+            reached = true
+            if (hinataChallenged(hopResult.code, hopResult.body)) {
+                return HinataMalLookup(malId = null, failure = BLOCKED)
+            }
+            val loc = hopResult.location?.let { hinataAbsolutizePapaUrl(it, PAPA) }
+            if (loc != null) {
+                hinataMalFromPapaEmbedUrl(loc)?.let {
+                    return HinataMalLookup(malId = it, failure = MISSING)
+                }
+                url = loc
+                continue
+            }
+            if (hopResult.code == 404) {
+                return HinataMalLookup(malId = null, failure = MISSING)
+            }
+            break
+        }
+        val finalHop = followFinal(url, headers)
+        if (!finalHop.networkOk) {
+            return HinataMalLookup(
+                malId = null,
+                failure = hinataMalLookupFailure(reached = reached, challenged = false),
+            )
+        }
+        if (hinataChallenged(finalHop.code, finalHop.body)) {
+            return HinataMalLookup(malId = null, failure = BLOCKED)
+        }
+        if (finalHop.code == 404) {
+            return HinataMalLookup(malId = null, failure = MISSING)
+        }
+        hinataMalFromPapaEmbedUrl(finalHop.url)?.let {
+            return HinataMalLookup(malId = it, failure = MISSING)
+        }
+        return HinataMalLookup(malId = null, failure = MISSING)
+    }
+
+    private fun headHop(url: String, headers: Map<String, String>): HeadHop {
+        val client = http.newBuilder().followRedirects(false).build()
+        val builder = Request.Builder().url(url).head()
+        headers.forEach { (n, v) -> builder.header(n, v) }
+        val response = runCatching { client.newCall(builder.build()).execute() }
+            .getOrElse { return HeadHop(networkOk = false, code = 0, location = null, body = "") }
+        return response.use {
+            HeadHop(
+                networkOk = true,
+                code = it.code,
+                location = it.header("Location")?.trim()?.takeIf { loc -> loc.isNotEmpty() },
+                body = "",
+            )
+        }
+    }
+
+    private data class HeadHop(
+        val networkOk: Boolean,
+        val code: Int,
+        val location: String?,
+        val body: String,
+    )
+
+    private data class HinataMalLookup(val malId: Int?, val failure: String)
 
     private fun loadSkip(malId: Int, episode: Int, lang: String, referer: String): SkipTimes {
         val body = get(
@@ -159,30 +247,30 @@ class HinataTvServer(
         return anipmSubtitles(body.text, PAPA, token)
     }
 
-    private fun headLocation(url: String, headers: Map<String, String>): String? {
-        val client = http.newBuilder().followRedirects(false).build()
-        val builder = Request.Builder().url(url).head()
-        headers.forEach { (n, v) -> builder.header(n, v) }
-        val response = runCatching { client.newCall(builder.build()).execute() }
-            .getOrElse { return null }
-        return response.use {
-            val loc = it.header("Location")?.trim().orEmpty()
-            when {
-                loc.startsWith("http", ignoreCase = true) -> loc
-                loc.startsWith("/") -> "$PAPA$loc"
-                loc.isNotEmpty() -> "$PAPA/$loc"
-                else -> null
-            }
-        }
-    }
-
-    private fun getFinalUrl(url: String, headers: Map<String, String>): String? {
+    /** Follow redirects; keep status/body so challenges classify as BLOCKED. */
+    private fun followFinal(url: String, headers: Map<String, String>): FinalHop {
         val builder = Request.Builder().url(url).get()
         headers.forEach { (n, v) -> builder.header(n, v) }
         val response = runCatching { http.newCall(builder.build()).execute() }
-            .getOrElse { return null }
-        return response.use { it.request.url.toString() }
+            .getOrElse {
+                return FinalHop(networkOk = false, code = 0, url = null, body = "")
+            }
+        return response.use {
+            FinalHop(
+                networkOk = true,
+                code = it.code,
+                url = it.request.url.toString(),
+                body = it.body?.string().orEmpty().take(800),
+            )
+        }
     }
+
+    private data class FinalHop(
+        val networkOk: Boolean,
+        val code: Int,
+        val url: String?,
+        val body: String,
+    )
 
     private fun get(url: String, headers: Map<String, String>): HttpText {
         val builder = Request.Builder().url(url).get()
@@ -239,6 +327,7 @@ class HinataTvServer(
         const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        private const val MAX_REDIRECT_HOPS = 6
 
         private fun defaultClient(): OkHttpClient =
             OkHttpClient.Builder()
@@ -286,4 +375,24 @@ internal fun hinataChallenged(code: Int, body: String): Boolean {
         "cf-mitigated" in probe ||
         "challenge-platform" in probe ||
         "cf-browser-verification" in probe
+}
+
+/** Absolute Papa URL from a Location header (relative or absolute). */
+internal fun hinataAbsolutizePapaUrl(location: String, origin: String = HinataTvServer.PAPA): String {
+    val loc = location.trim()
+    return when {
+        loc.startsWith("http", ignoreCase = true) -> loc
+        loc.startsWith("/") -> "${origin.trimEnd('/')}$loc"
+        else -> "${origin.trimEnd('/')}/$loc"
+    }
+}
+
+/**
+ * Soft miss vs hard down for Papa ani→mal lookup.
+ * Never-reached / challenge → [HinataTvServer.BLOCKED]; reached without MAL → MISSING.
+ */
+internal fun hinataMalLookupFailure(reached: Boolean, challenged: Boolean): String = when {
+    challenged -> HinataTvServer.BLOCKED
+    !reached -> HinataTvServer.BLOCKED
+    else -> HinataTvServer.MISSING
 }

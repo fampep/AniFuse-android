@@ -63,6 +63,7 @@ internal fun isHlsSource(source: PlayableSource): Boolean =
 
 /** Same strip the player applies, so a cached segment is already unwrapped. */
 internal fun resolvedStripBytes(source: PlayableSource): Int = when {
+    source.pngXor -> 0
     source.gotakuObf != null || source.flix != null -> source.stripBytes.coerceAtLeast(0)
     source.stripBytes > 0 -> source.stripBytes
     else -> SegmentStripDataSource.DEFAULT_STRIP_BYTES
@@ -169,6 +170,7 @@ internal fun sourceForPlayback(remote: PlayableSource, saved: SavedEpisode?): Pl
         headers = emptyMap(),
         hls = false,
         stripBytes = 0,
+        pngXor = false,
         gotakuObf = null,
         flix = null,
     )

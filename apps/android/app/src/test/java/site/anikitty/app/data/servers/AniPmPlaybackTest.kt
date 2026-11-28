@@ -46,6 +46,11 @@ class AniPmPlaybackTest {
             """{"expiresAt":1795830775,"token":"2.52991.1.tok"}""",
         )
         assertEquals("2.52991.1.tok", session?.token)
+        // Wire expiry is Unix seconds — cache stores millis.
+        assertEquals(1_795_830_775_000L, session?.expiresAt)
+        assertEquals(1_795_830_775_000L, anipmExpiresAtMs(1_795_830_775L))
+        assertEquals(1_795_830_775_000L, anipmExpiresAtMs(1_795_830_775_000L))
+        assertEquals(0L, anipmExpiresAtMs(0L))
         assertEquals(
             "https://anipm.pk/playlists/52991_ep1/sub.direct.pls?t=2.52991.1.tok",
             anipmMediaPlaylistUrl("https://anipm.pk", 52991, 1, "sub", "2.52991.1.tok"),
@@ -75,5 +80,41 @@ class AniPmPlaybackTest {
         assertTrue(tracks[0].url.startsWith("https://anipm.pk/subtitles/"))
         assertTrue(tracks[0].url.contains("t=tok"))
         assertEquals(listOf("Frieren"), anipmTitles("Frieren || mal:52991"))
+    }
+
+    @Test
+    fun sessionCacheSkipsColdRoundTripUntilSkew() {
+        AnipmSessionCache.clear()
+        // Live wire seconds → millis via parse; cache keys compare wall-clock millis.
+        val parsed = anipmParseSession("""{"expiresAt":1795830775,"token":"warm-tok"}""")!!
+        AnipmSessionCache.put("https://anipm.pk", 52991, 1, "sub", parsed)
+        assertEquals(
+            "warm-tok",
+            AnipmSessionCache.get(
+                "https://anipm.pk/",
+                52991,
+                1,
+                "SUB",
+                nowMs = parsed.expiresAt - AnipmSessionCache.SKEW_MS - 1_000L,
+            )?.token,
+        )
+        // Inside skew window → miss so Media3 never rides an expiring token.
+        assertNull(
+            AnipmSessionCache.get(
+                "https://anipm.pk",
+                52991,
+                1,
+                "sub",
+                nowMs = parsed.expiresAt - AnipmSessionCache.SKEW_MS + 1L,
+            ),
+        )
+        // Papa origin is a separate lane from ani.pm.
+        assertNull(AnipmSessionCache.get(HinataTvServer.PAPA, 52991, 1, "sub", nowMs = 1_000L))
+        AnipmSessionCache.put(HinataTvServer.PAPA, 61990, 1, "dub", AnipmSession("papa", 9_999_999L))
+        assertEquals(
+            "papa",
+            AnipmSessionCache.get(HinataTvServer.PAPA, 61990, 1, "dub", nowMs = 1_000L)?.token,
+        )
+        AnipmSessionCache.clear()
     }
 }

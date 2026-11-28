@@ -132,7 +132,7 @@ class AniPmServer(
         if (page.code == 404) error(MISSING)
         if (page.code !in 200..299) error(BLOCKED)
 
-        val session = postSession(origin, malId, episode, embedRef)
+        val session = postSession(origin, malId, episode, lang, embedRef)
         val token = session.token
         val mediaUrl = anipmMediaPlaylistUrl(origin, malId, episode, lang, token)
         val playlist = get(mediaUrl, mediaHeaders(origin, embedRef))
@@ -148,6 +148,9 @@ class AniPmServer(
             url = mediaUrl,
             headers = mediaHeaders(origin, embedRef),
             label = fields.quality ?: if (lang == "dub") "DUB" else "SUB",
+            // PNG HLS trailer + single-byte XOR — same wire as AnimePapa / HinataTV.
+            stripBytes = 0,
+            pngXor = true,
             hls = true,
             quality = fields.quality,
             audio = fields.audio ?: if (lang == "dub") "DUB" else "SUB",
@@ -158,7 +161,14 @@ class AniPmServer(
         )
     }
 
-    private fun postSession(origin: String, malId: Int, episode: Int, referer: String): AnipmSession {
+    private fun postSession(
+        origin: String,
+        malId: Int,
+        episode: Int,
+        lang: String,
+        referer: String,
+    ): AnipmSession {
+        AnipmSessionCache.get(origin, malId, episode, lang)?.let { return it }
         val body = JSONObject()
             .put("malId", malId)
             .put("episode", episode)
@@ -182,7 +192,9 @@ class AniPmServer(
                 }
                 error(BLOCKED)
             }
-            anipmParseSession(text) ?: error(MISSING)
+            val session = anipmParseSession(text) ?: error(MISSING)
+            AnipmSessionCache.put(origin, malId, episode, lang, session)
+            session
         }
     }
 
@@ -300,6 +312,53 @@ internal data class AnipmSession(
     val expiresAt: Long,
 )
 
+/**
+ * Process-wide session tokens for ani.pm / anipm.pk / AnimePapa origins.
+ * Race retries and HinataTV↔ani.pm handoffs skip a cold `/api/session` RTT
+ * when the token is still inside its expiry skew.
+ */
+internal object AnipmSessionCache {
+    private val store = ConcurrentHashMap<String, AnipmSession>()
+
+    fun get(
+        origin: String,
+        malId: Int,
+        episode: Int,
+        lang: String,
+        nowMs: Long = System.currentTimeMillis(),
+    ): AnipmSession? {
+        val key = key(origin, malId, episode, lang)
+        val hit = store[key] ?: return null
+        if (hit.token.isBlank()) {
+            store.remove(key, hit)
+            return null
+        }
+        if (hit.expiresAt > 0L && hit.expiresAt <= nowMs + SKEW_MS) {
+            store.remove(key, hit)
+            return null
+        }
+        return hit
+    }
+
+    fun put(origin: String, malId: Int, episode: Int, lang: String, session: AnipmSession) {
+        if (session.token.isBlank()) return
+        store[key(origin, malId, episode, lang)] = session
+    }
+
+    fun clear() {
+        store.clear()
+    }
+
+    private fun key(origin: String, malId: Int, episode: Int, lang: String): String {
+        val host = origin.trimEnd('/').lowercase()
+        val lane = if (lang.equals("dub", ignoreCase = true)) "dub" else "sub"
+        return "$host|$malId|$episode|$lane"
+    }
+
+    /** Drop tokens this early so Media3 never hits a mid-playback 401. */
+    internal const val SKEW_MS = 30_000L
+}
+
 /** In-memory cookies so ani.pm / anipm.pk share a warm same-origin session. */
 internal class MemoryCookieJar : CookieJar {
     private val store = ConcurrentHashMap<String, ConcurrentHashMap<String, Cookie>>()
@@ -397,8 +456,19 @@ internal fun anipmParseSession(payload: String): AnipmSession? {
     if (token.isEmpty()) return null
     return AnipmSession(
         token = token,
-        expiresAt = root.optLong("expiresAt", 0L),
+        // Wire format is Unix seconds — store millis so the cache matches wall clock.
+        expiresAt = anipmExpiresAtMs(root.optLong("expiresAt", 0L)),
     )
+}
+
+/**
+ * Normalize `/api/session` expiry to epoch millis.
+ * Values below 1e12 are treated as Unix seconds (live ani.pm / Papa tokens).
+ */
+internal fun anipmExpiresAtMs(raw: Long): Long = when {
+    raw <= 0L -> 0L
+    raw < 1_000_000_000_000L -> raw * 1_000L
+    else -> raw
 }
 
 internal fun anipmMediaPlaylistUrl(

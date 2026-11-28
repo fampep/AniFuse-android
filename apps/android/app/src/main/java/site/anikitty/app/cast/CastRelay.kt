@@ -14,6 +14,7 @@ import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import site.anikitty.app.data.servers.AnipmXorDataSource
 import site.anikitty.app.data.servers.FlixUnwrap
 import site.anikitty.app.data.servers.FlixUnwrapDataSource
 import site.anikitty.app.data.servers.GotakuObfDataSource
@@ -34,6 +35,7 @@ import java.net.URLDecoder
 import java.util.Base64
 import java.util.zip.GZIPInputStream
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
@@ -66,13 +68,15 @@ data class RelayPlayback(
 class CastRelay(context: Context) {
     private val appContext = context.applicationContext
     private val stripBytes = AtomicInteger(SegmentStripDataSource.DEFAULT_STRIP_BYTES)
+    private val pngXor = AtomicBoolean(false)
     private val obf = AtomicReference(null as site.anikitty.app.data.servers.GotakuObf?)
     private val httpFactory: OkHttpDataSource.Factory =
         PlaybackHttp.factory(emptyMap(), DEFAULT_UA)
     private val flix = AtomicReference(null as FlixUnwrap?)
     private val gotakuFactory = GotakuObfDataSource.Factory(httpFactory, obf)
     private val flixFactory = FlixUnwrapDataSource.Factory(gotakuFactory, flix)
-    private val factory = SegmentStripDataSource.Factory(flixFactory, stripBytes = stripBytes)
+    private val anipmXorFactory = AnipmXorDataSource.Factory(flixFactory, pngXor)
+    private val factory = SegmentStripDataSource.Factory(anipmXorFactory, stripBytes = stripBytes)
 
     private val allowLock = Any()
     /** URLs the receiver is playing now, plus the previous load so a switch does not 403. */
@@ -107,7 +111,10 @@ class CastRelay(context: Context) {
         obf.set(next.gotakuObf)
         flixFactory.update(next.flix)
         flix.set(next.flix)
+        anipmXorFactory.setEnabled(next.pngXor)
+        pngXor.set(next.pngXor)
         val strip = when {
+            next.pngXor -> 0
             next.gotakuObf != null || next.flix != null -> next.stripBytes.coerceAtLeast(0)
             next.stripBytes > 0 -> next.stripBytes
             else -> SegmentStripDataSource.DEFAULT_STRIP_BYTES
@@ -1249,6 +1256,15 @@ internal fun castRelayUnwrapSegment(seg: ByteArray, scanLimit: Int = 128 * 1024)
     if (seg.size < 12) return seg
     if (seg[0] == 0x47.toByte() && castRelayTsSync(seg, 0)) return seg
     if (castRelayIsoBox(seg, 0)) return seg
+    // Papa / ani.pm PNG trailer + XOR — try before a blind sync scan.
+    val xorClear = site.anikitty.app.data.servers.anipmXorUnwrap(seg)
+    if (xorClear !== seg &&
+        xorClear.isNotEmpty() &&
+        xorClear[0] == 0x47.toByte() &&
+        castRelayTsSync(xorClear, 0)
+    ) {
+        return xorClear
+    }
     val limit = minOf(seg.size, scanLimit.coerceAtLeast(12))
     val packet = 188
     val tsEnd = limit - packet * 3

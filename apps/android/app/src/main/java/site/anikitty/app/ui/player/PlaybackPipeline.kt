@@ -11,12 +11,14 @@ import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import site.anikitty.app.data.download.DOWNLOAD_USER_AGENT
 import site.anikitty.app.data.download.resolvedStripBytes
+import site.anikitty.app.data.servers.AnipmXorDataSource
 import site.anikitty.app.data.servers.FlixUnwrapDataSource
 import site.anikitty.app.data.servers.GotakuObfDataSource
 import site.anikitty.app.data.servers.PlaybackHttp
 import site.anikitty.app.data.servers.PlayableSource
 import site.anikitty.app.data.servers.SegmentStripDataSource
 import site.anikitty.app.data.servers.playbackHeaders
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
@@ -30,6 +32,7 @@ import java.util.concurrent.atomic.AtomicReference
 @OptIn(UnstableApi::class)
 internal class PlaybackPipeline {
     private val stripBytes = AtomicInteger(SegmentStripDataSource.DEFAULT_STRIP_BYTES)
+    private val pngXor = AtomicBoolean(false)
     private val obf = AtomicReference(null as site.anikitty.app.data.servers.GotakuObf?)
     private val flix = AtomicReference(null as site.anikitty.app.data.servers.FlixUnwrap?)
     private val cookies = PlaybackCookieJar()
@@ -38,8 +41,9 @@ internal class PlaybackPipeline {
     val http: OkHttpDataSource.Factory = OkHttpDataSource.Factory(client)
     val gotaku: GotakuObfDataSource.Factory = GotakuObfDataSource.Factory(http, obf)
     val flixFactory: FlixUnwrapDataSource.Factory = FlixUnwrapDataSource.Factory(gotaku, flix)
+    val anipmXor: AnipmXorDataSource.Factory = AnipmXorDataSource.Factory(flixFactory, pngXor)
     val strip: SegmentStripDataSource.Factory = SegmentStripDataSource.Factory(
-        upstreamFactory = flixFactory,
+        upstreamFactory = anipmXor,
         stripBytes = stripBytes,
     )
 
@@ -53,6 +57,7 @@ internal class PlaybackPipeline {
         http.setDefaultRequestProperties(playbackHeaders(playing.headers))
         obf.set(playing.gotakuObf)
         flix.set(playing.flix)
+        pngXor.set(playing.pngXor)
         stripBytes.set(resolvedStripBytes(playing))
     }
 }
