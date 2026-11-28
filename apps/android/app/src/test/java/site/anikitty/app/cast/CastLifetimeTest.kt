@@ -10,6 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import site.anikitty.app.data.local.WatchHistoryEntity
 
+// castHeightKey / castSameItem / CastItemKey / castJoin live in CastLifetime.kt
 class CastLifetimeTest {
     @Test
     fun theCastServiceStaysUpWhenThePlayerLeaves() {
@@ -29,6 +30,11 @@ class CastLifetimeTest {
         assertFalse(
             castSameItem(item, item.copy(episode = 5)),
         )
+        assertFalse(castSameItem(item, item.copy(height = 720)))
+        assertTrue(castSameItem(item.copy(height = 720), item.copy(height = 720)))
+        assertEquals(0, castHeightKey(null))
+        assertEquals(0, castHeightKey(0))
+        assertEquals(1080, castHeightKey(1080))
     }
 
     @Test

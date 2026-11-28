@@ -58,6 +58,9 @@ class CastRelayTest {
         val plain = castRelayContent("http://192.168.1.8:4321/index.m3u8")
         assertEquals("http://192.168.1.8:4321/index.m3u8", plain.url)
         assertEquals(null, plain.pack)
+        val locked = castRelayContent("http://192.168.1.8:4321/index.m3u8?pack=ts&lang=en&h=720")
+        assertEquals("http://192.168.1.8:4321/index.m3u8?lang=en&h=720", locked.url)
+        assertEquals("ts", locked.pack)
     }
 
     @Test
@@ -69,7 +72,53 @@ class CastRelayTest {
             castRelayPlaybackName(hls = true, segmentPack = "ts", audioLanguage = "en"),
         )
         assertEquals("index.m3u8?lang=ja", castRelayPlaybackName(hls = true, segmentPack = null, audioLanguage = "ja"))
+        assertEquals(
+            "index.m3u8?lang=ja&h=720",
+            castRelayPlaybackName(hls = true, segmentPack = null, audioLanguage = "ja", maxHeight = 720),
+        )
+        assertEquals(
+            "index.m3u8?pack=fmp4&h=1080",
+            castRelayPlaybackName(hls = true, segmentPack = "fmp4", audioLanguage = null, maxHeight = 1080),
+        )
         assertEquals("video.mp4", castRelayPlaybackName(hls = false, segmentPack = "ts", audioLanguage = "en"))
+    }
+
+    @Test
+    fun masterDropsVariantsAboveTheQualityCeiling() {
+        val master = """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Japanese",LANGUAGE="jpn",DEFAULT=YES
+            #EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=1280x720,AUDIO="a"
+            720.m3u8
+            #EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1920x1080,AUDIO="a"
+            1080.m3u8
+            #EXT-X-STREAM-INF:BANDWIDTH=400000,RESOLUTION=640x360,AUDIO="a"
+            360.m3u8
+        """.trimIndent()
+        val capped = castRelayCapHeight(master, 720)
+        assertTrue(capped.contains("720.m3u8"))
+        assertTrue(capped.contains("360.m3u8"))
+        assertTrue(!capped.contains("1080.m3u8"))
+        assertTrue(!capped.contains("1920x1080"))
+        assertTrue(capped.contains("TYPE=AUDIO"))
+        assertEquals(master, castRelayCapHeight(master, null))
+        assertEquals(master, castRelayCapHeight(master, 0))
+        assertEquals(master, castRelayCapHeight(master, 2160))
+    }
+
+    @Test
+    fun ceilingAboveEveryRungKeepsTheLowest() {
+        val master = """
+            #EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1920x1080
+            1080.m3u8
+            #EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=2560x1440
+            1440.m3u8
+        """.trimIndent()
+        val capped = castRelayCapHeight(master, 480)
+        assertTrue(capped.contains("1080.m3u8"))
+        assertTrue(!capped.contains("1440.m3u8"))
+        assertTrue(capped.contains("1920x1080"))
     }
 
     @Test

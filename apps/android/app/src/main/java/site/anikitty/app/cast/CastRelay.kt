@@ -85,6 +85,8 @@ class CastRelay(context: Context) {
     private val collecting = ThreadLocal<MutableSet<String>>()
     private var pool = newPool()
     @Volatile private var source: PlayableSource? = null
+    /** Picture height ceiling from the glass Quality chip. Null / 0 = Auto. */
+    @Volatile private var maxVideoHeight: Int? = null
     @Volatile private var cachedPlaylist: ByteArray? = null
     /** "ts" or "fmp4" only when the playlist proves it. Null lets the receiver sniff. */
     @Volatile var segmentPack: String? = null
@@ -97,9 +99,10 @@ class CastRelay(context: Context) {
     private var multicast: WifiManager.MulticastLock? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
-    fun prepare(next: PlayableSource): RelayPlayback {
+    fun prepare(next: PlayableSource, maxHeight: Int? = null): RelayPlayback {
         val host = lanIpv4() ?: error("Connect the phone and Chromecast to the same Wi-Fi")
         source = next
+        maxVideoHeight = maxHeight?.takeIf { it > 0 }
         httpFactory.setUserAgent(
             next.headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value
                 ?: DEFAULT_UA,
@@ -145,7 +148,12 @@ class CastRelay(context: Context) {
         } finally {
             collecting.remove()
         }
-        val file = castRelayPlaybackName(mime == HLS_MIME, segmentPack, next.audioLanguage)
+        val file = castRelayPlaybackName(
+            hls = mime == HLS_MIME,
+            segmentPack = segmentPack,
+            audioLanguage = next.audioLanguage,
+            maxHeight = maxVideoHeight,
+        )
         return RelayPlayback(
             url = "http://$host:$port/$file",
             mimeType = mime,
@@ -481,7 +489,10 @@ class CastRelay(context: Context) {
     }
 
     private fun presentPlaylist(text: String, baseUrl: String): String =
-        castRelayPreferAudio(rewritePlaylist(text, baseUrl), source?.audioLanguage)
+        castRelayCapHeight(
+            castRelayPreferAudio(rewritePlaylist(text, baseUrl), source?.audioLanguage),
+            maxVideoHeight,
+        )
 
     private fun rewritePlaylist(text: String, baseUrl: String): String =
         castRelayRewritePlaylist(text, baseUrl) { absolute, kind ->
@@ -812,19 +823,25 @@ internal fun castRelayCorsLines(): List<String> = listOf(
 )
 
 /**
- * File the receiver opens. The language is part of the query so a Sub/Dub
- * switch is a new URL and Chromecast refetches the master instead of replaying
- * the cached default rendition.
+ * File the receiver opens. Language and height ride the query so a Sub/Dub
+ * or Quality chip change is a new URL and Chromecast refetches the master
+ * instead of replaying a cached ABR ladder.
  */
-internal fun castRelayPlaybackName(hls: Boolean, segmentPack: String?, audioLanguage: String?): String {
+internal fun castRelayPlaybackName(
+    hls: Boolean,
+    segmentPack: String?,
+    audioLanguage: String?,
+    maxHeight: Int? = null,
+): String {
     if (!hls) return "video.mp4"
-    return "index.m3u8${castRelayPlaybackQuery(segmentPack, audioLanguage)}"
+    return "index.m3u8${castRelayPlaybackQuery(segmentPack, audioLanguage, maxHeight)}"
 }
 
 /**
  * Address Chromecast should open. `pack` stays a segment-format hint and is
- * not part of the fetch. `lang` stays on the URL so Sub and Dub are different
- * media items and the receiver cannot reuse the previous master.
+ * not part of the fetch. `lang` and `h` stay on the URL so Sub/Dub and a
+ * Quality ceiling are different media items and the receiver cannot reuse
+ * the previous master.
  */
 internal fun castRelayContent(raw: String): CastRelayContent {
     val query = raw.substringAfter('?', "")
@@ -832,8 +849,12 @@ internal fun castRelayContent(raw: String): CastRelayContent {
     val lang = queryValue(query, "lang")?.takeIf { value ->
         value.length == 2 && value.all { it in 'a'..'z' }
     }
+    val height = queryValue(query, "h")?.toIntOrNull()?.takeIf { it in 144..4320 }
     val base = raw.substringBefore('?')
-    val url = if (lang == null) base else "$base?lang=$lang"
+    val parts = ArrayList<String>(2)
+    lang?.let { parts += "lang=$it" }
+    height?.let { parts += "h=$it" }
+    val url = if (parts.isEmpty()) base else parts.joinToString("&", prefix = "$base?")
     return CastRelayContent(url = url, pack = pack)
 }
 
@@ -847,8 +868,12 @@ private fun queryValue(query: String, name: String): String? {
     return null
 }
 
-internal fun castRelayPlaybackQuery(segmentPack: String?, audioLanguage: String?): String {
-    val parts = ArrayList<String>(2)
+internal fun castRelayPlaybackQuery(
+    segmentPack: String?,
+    audioLanguage: String?,
+    maxHeight: Int? = null,
+): String {
+    val parts = ArrayList<String>(3)
     segmentPack?.trim()?.takeIf { it.isNotEmpty() }?.let { parts += "pack=$it" }
     audioLanguage
         ?.trim()
@@ -856,6 +881,7 @@ internal fun castRelayPlaybackQuery(segmentPack: String?, audioLanguage: String?
         ?.substringBefore('-')
         ?.takeIf { it.length == 2 && it.all { char -> char in 'a'..'z' } }
         ?.let { parts += "lang=$it" }
+    maxHeight?.takeIf { it in 144..4320 }?.let { parts += "h=$it" }
     return if (parts.isEmpty()) "" else parts.joinToString("&", prefix = "?")
 }
 
@@ -877,6 +903,59 @@ internal fun castRelayHeader(headers: Map<String, List<String>>, name: String): 
     val values = headers[name]
         ?: headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
     return values?.joinToString(",")?.substringBefore(';')?.trim().orEmpty()
+}
+
+/**
+ * Drop `#EXT-X-STREAM-INF` variants taller than the glass Quality ceiling.
+ * Chromecast ignores the phone TrackSelector, so the only way to lock 720p
+ * on the TV is to rewrite the master before the receiver ABR sees it.
+ * Variants with no RESOLUTION stay; when every rung is above the ceiling the
+ * lowest available height is kept so the stream still plays.
+ */
+internal fun castRelayCapHeight(playlist: String, maxHeight: Int?): String {
+    val ceiling = maxHeight?.takeIf { it > 0 } ?: return playlist
+    if (!playlist.contains("#EXT-X-STREAM-INF", ignoreCase = true)) return playlist
+    val lines = playlist.lines()
+    data class Variant(val inf: Int, val uri: Int, val height: Int?)
+    val variants = ArrayList<Variant>(8)
+    var i = 0
+    while (i < lines.size) {
+        val trimmed = lines[i].trimStart()
+        if (!trimmed.startsWith("#EXT-X-STREAM-INF", ignoreCase = true)) {
+            i++
+            continue
+        }
+        val height = Regex("""RESOLUTION=\d+x(\d+)""", RegexOption.IGNORE_CASE)
+            .find(trimmed)
+            ?.groupValues
+            ?.get(1)
+            ?.toIntOrNull()
+        var j = i + 1
+        while (j < lines.size) {
+            val next = lines[j].trimStart()
+            if (next.isNotEmpty() && !next.startsWith("#")) break
+            j++
+        }
+        if (j >= lines.size) break
+        variants += Variant(inf = i, uri = j, height = height)
+        i = j + 1
+    }
+    if (variants.isEmpty()) return playlist
+    val under = variants.filter { it.height == null || it.height <= ceiling }
+    val keep = if (under.isNotEmpty()) {
+        under
+    } else {
+        val floor = variants.mapNotNull { it.height }.minOrNull() ?: return playlist
+        variants.filter { it.height == null || it.height == floor }
+    }
+    if (keep.size == variants.size) return playlist
+    val drop = HashSet<Int>(variants.size * 2)
+    for (v in variants) {
+        if (keep.any { it.inf == v.inf }) continue
+        drop += v.inf
+        drop += v.uri
+    }
+    return lines.filterIndexed { index, _ -> index !in drop }.joinToString("\n")
 }
 
 /**
