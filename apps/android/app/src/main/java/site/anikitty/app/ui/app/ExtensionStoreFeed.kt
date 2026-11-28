@@ -61,6 +61,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -423,20 +424,31 @@ fun ExtensionStoreFeed(
                                 )
                                 if (pulse != null) {
                                     Spacer(modifier = Modifier.width(6.dp))
+                                    val pulseShape = RoundedCornerShape(999.dp)
                                     Text(
                                         pulse,
                                         color = when {
-                                            selected -> palette.onAccent
+                                            selected -> Color.White
                                             pulse == "DOWN" -> palette.faint
                                             else -> palette.muted
                                         },
                                         fontWeight = FontWeight.Bold,
                                         fontSize = if (selected) 9.sp else 10.sp,
+                                        letterSpacing = if (selected) 0.5.sp else 0.sp,
                                         modifier = if (selected) {
                                             Modifier
-                                                .clip(RoundedCornerShape(999.dp))
-                                                .background(palette.accent)
-                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                .clip(pulseShape)
+                                                .background(Color(0xE6101012))
+                                                .background(
+                                                    Brush.verticalGradient(
+                                                        listOf(
+                                                            Color.White.copy(alpha = 0.18f),
+                                                            Color.Transparent,
+                                                        ),
+                                                    ),
+                                                )
+                                                .border(1.dp, Color.White.copy(alpha = 0.34f), pulseShape)
+                                                .padding(horizontal = 7.dp, vertical = 2.dp)
                                         } else {
                                             Modifier
                                         },
