@@ -32,19 +32,31 @@ internal class ThumbnailLoader(
     private var cues: List<ThumbnailCue> = emptyList()
     private var indexed = false
     private var retryAtMs = 0L
-    private val sprites = object : android.util.LruCache<String, Sprite>(4) {}
+    private val sprites = object : android.util.LruCache<String, Sprite>(8) {}
     private val localFrames = object : android.util.LruCache<Long, Bitmap>(6) {}
 
     suspend fun frame(positionMs: Long): Bitmap? = withContext(Dispatchers.IO) {
         ensureIndex()
         val cue = cueAt(cues, positionMs)
-        if (cue != null) return@withContext crop(cue)
+        if (cue != null) {
+            val bitmap = crop(cue)
+            warmNeighbors(positionMs)
+            return@withContext bitmap
+        }
         localFrame(positionMs)
     }
 
     /** Prefetch the VTT index so the first scrub already has cues. */
     suspend fun warm() = withContext(Dispatchers.IO) {
         ensureIndex()
+    }
+
+    /** Soft-prefetch adjacent sprite sheets while the current cue is on screen. */
+    private fun warmNeighbors(positionMs: Long) {
+        for (url in thumbnailNeighborSpriteUrls(cues, positionMs)) {
+            if (sprites.get(url) != null) continue
+            loadSprite(url)
+        }
     }
 
     private suspend fun ensureIndex() {

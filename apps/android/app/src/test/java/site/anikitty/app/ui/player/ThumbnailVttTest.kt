@@ -81,4 +81,22 @@ class ThumbnailVttTest {
         assertEquals("https://cdn.example/thumbs/sheet.jpg?own=1", cues[0].spriteUrl)
         assertEquals("https://cdn.example/thumbs/sheet-2.jpg?token=abc", cues[1].spriteUrl)
     }
+
+    @Test
+    fun neighborSpritesSkipTheCurrentSheet() {
+        val cues = listOf(
+            ThumbnailCue(0, 5_000, "https://cdn/a.jpg", 0, 0, 160, 90),
+            ThumbnailCue(5_000, 10_000, "https://cdn/a.jpg", 160, 0, 160, 90),
+            ThumbnailCue(10_000, 15_000, "https://cdn/b.jpg", 0, 0, 160, 90),
+            ThumbnailCue(15_000, 20_000, "https://cdn/c.jpg", 0, 0, 160, 90),
+        )
+        assertEquals(
+            listOf("https://cdn/b.jpg"),
+            thumbnailNeighborSpriteUrls(cues, 2_000L, limit = 1),
+        )
+        assertEquals(
+            listOf("https://cdn/c.jpg", "https://cdn/a.jpg"),
+            thumbnailNeighborSpriteUrls(cues, 12_000L, limit = 2),
+        )
+    }
 }

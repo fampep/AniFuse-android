@@ -19,3 +19,13 @@ internal fun abrFailoverHoldMs(seedBitrate: Int): Long = when {
     seedBitrate >= 1_800_000 -> 2_600L
     else -> 2_000L
 }
+
+/**
+ * After the hold, climb through a soft release instead of jumping to uncapped.
+ * Instant MAX invites a stall on a still-cold meter; 1.6× the seed (bounded)
+ * lets ABR step up without a bitrate thrash.
+ */
+internal fun abrFailoverReleaseBitrate(seedBitrate: Int): Int {
+    val seed = seedBitrate.coerceAtLeast(500_000)
+    return (seed * 8L / 5L).toInt().coerceIn(1_200_000, 4_000_000)
+}

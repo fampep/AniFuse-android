@@ -21,4 +21,15 @@ class AbrFailoverTest {
         assertEquals(2_000L, abrFailoverHoldMs(900_000))
         assertEquals(3_200L, abrFailoverHoldMs(3_500_000))
     }
+
+    @Test
+    fun softReleaseSitsBetweenTheCapAndAnUncappedLadder() {
+        val seed = 1_500_000
+        val release = abrFailoverReleaseBitrate(seed)
+        assertTrue(release > abrFailoverCapBitrate(seed))
+        assertTrue(release < Int.MAX_VALUE)
+        assertEquals(2_400_000, release)
+        assertEquals(1_200_000, abrFailoverReleaseBitrate(400_000))
+        assertEquals(4_000_000, abrFailoverReleaseBitrate(5_000_000))
+    }
 }

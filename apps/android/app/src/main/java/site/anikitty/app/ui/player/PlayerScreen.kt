@@ -842,6 +842,12 @@ fun PlayerScreen(
         val previous = selector.parameters
         selector.parameters = previous.buildUpon().setMaxVideoBitrate(cap).build()
         delay(holdMs)
+        if (trackSelector !== selector) return@LaunchedEffect
+        // Soft release first — uncapping immediately thrash-climbs on a cold meter.
+        selector.parameters = selector.parameters.buildUpon()
+            .setMaxVideoBitrate(abrFailoverReleaseBitrate(seed))
+            .build()
+        delay(1_400L)
         if (trackSelector === selector) {
             selector.parameters = selector.parameters.buildUpon()
                 .setMaxVideoBitrate(Int.MAX_VALUE)
