@@ -18,10 +18,19 @@ internal const val COLD_STALL_MS = 4_500L
 internal enum class ShadowArm { Hold, Arm }
 
 /**
- * Progressive file:// has no CDN peer. HLS offline cache and live remote still do —
- * arm a standby so file→live / later edge playback can swap fast.
+ * Synthetic host key while a progressive file:// is on screen — empty
+ * [playbackHost] would otherwise refuse to arm a live CDN standby.
  */
-internal fun liveShadowArmAllowed(playbackLocal: Boolean): Boolean = !playbackLocal
+internal const val LOCAL_SHADOW_HOST = "local"
+
+/**
+ * Live remote and HLS-cache always arm. Progressive file:// arms only while
+ * playingOffline so a spent offline hold can leave onto a probed CDN.
+ */
+internal fun liveShadowArmAllowed(
+    playbackLocal: Boolean,
+    playingOffline: Boolean = false,
+): Boolean = !playbackLocal || playingOffline
 
 /**
  * Never swap off a download onto a live CDN on a seek hiccup — only after
@@ -33,11 +42,21 @@ internal fun liveShadowSwapAllowed(playbackLocal: Boolean, playingOffline: Boole
 /** Stall walk / NextSource must not abandon an offline or HLS-cache copy. */
 internal fun offlinePlaybackHoldsSource(playingOffline: Boolean): Boolean = playingOffline
 
-/** After the offline hold is spent, leaveOffline may use an armed shadow. */
+/**
+ * After the offline hold is spent, leaveOffline may use an armed shadow —
+ * including progressive file:// (host key [LOCAL_SHADOW_HOST]).
+ */
 internal fun liveShadowLeaveOfflineAllowed(
     playbackLocal: Boolean,
     leaveOffline: Boolean,
-): Boolean = leaveOffline && !playbackLocal
+): Boolean = leaveOffline
+
+/** Host identity for shadow arm/swap — progressive file uses [LOCAL_SHADOW_HOST]. */
+internal fun shadowPlayingHost(url: String, playbackLocal: Boolean): String {
+    val live = playbackHost(url)
+    if (live.isNotEmpty()) return live
+    return if (playbackLocal) LOCAL_SHADOW_HOST else ""
+}
 
 /** @deprecated Prefer [liveShadowArmAllowed] / [liveShadowSwapAllowed]. */
 internal fun liveShadowAllowed(playbackLocal: Boolean): Boolean = liveShadowArmAllowed(playbackLocal)

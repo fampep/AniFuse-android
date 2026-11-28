@@ -12,15 +12,21 @@ class ShadowStandbyTest {
     @Test
     fun armAllowsHlsCacheButSwapWaitsUntilOfflineEnds() {
         assertTrue(liveShadowArmAllowed(playbackLocal = false))
-        assertFalse(liveShadowArmAllowed(playbackLocal = true))
+        assertFalse(liveShadowArmAllowed(playbackLocal = true, playingOffline = false))
+        // Progressive file:// arms a live CDN standby while the download plays.
+        assertTrue(liveShadowArmAllowed(playbackLocal = true, playingOffline = true))
         assertFalse(liveShadowSwapAllowed(playbackLocal = false, playingOffline = true))
         assertTrue(liveShadowSwapAllowed(playbackLocal = false, playingOffline = false))
         assertFalse(liveShadowSwapAllowed(playbackLocal = true, playingOffline = false))
         assertTrue(offlinePlaybackHoldsSource(playingOffline = true))
         assertFalse(offlinePlaybackHoldsSource(playingOffline = false))
         assertTrue(liveShadowLeaveOfflineAllowed(playbackLocal = false, leaveOffline = true))
-        assertFalse(liveShadowLeaveOfflineAllowed(playbackLocal = true, leaveOffline = true))
+        // Progressive leaveOffline may use the armed CDN after the offline hold.
+        assertTrue(liveShadowLeaveOfflineAllowed(playbackLocal = true, leaveOffline = true))
         assertFalse(liveShadowLeaveOfflineAllowed(playbackLocal = false, leaveOffline = false))
+        assertEquals(LOCAL_SHADOW_HOST, shadowPlayingHost("file:///data/ep.mp4", playbackLocal = true))
+        assertEquals("cdn.example", shadowPlayingHost("https://cdn.example/a.m3u8", playbackLocal = false))
+        assertEquals(LOCAL_SHADOW_HOST, shadowPlayingHost("content://downloads/1", playbackLocal = true))
     }
 
     @Test

@@ -1217,16 +1217,17 @@ fun PlayerScreen(
         }
     }
     val latestArmShadow by rememberUpdatedState(onArmShadow)
-    LaunchedEffect(ready, source?.url, anilistId, episode, playbackLocal) {
-        if (!ready || !liveShadowArmAllowed(playbackLocal)) return@LaunchedEffect
-        val host = playbackHost(source?.url.orEmpty())
+    LaunchedEffect(ready, source?.url, anilistId, episode, playbackLocal, playingOffline) {
+        if (!ready || !liveShadowArmAllowed(playbackLocal, playingOffline)) return@LaunchedEffect
+        val host = shadowPlayingHost(source?.url.orEmpty(), playbackLocal)
         if (shadowArm(playbackReady = true, armedHost = shadowArmedHost, playingHost = host) != ShadowArm.Arm) {
             return@LaunchedEffect
         }
         val arm = latestArmShadow ?: return@LaunchedEffect
         delay(SHADOW_ARM_DELAY_MS)
-        if (playbackHost(source?.url.orEmpty()) != host) return@LaunchedEffect
-        PlaybackHostHealth.note(host, ok = true)
+        if (shadowPlayingHost(source?.url.orEmpty(), playbackLocal) != host) return@LaunchedEffect
+        // Progressive file has no CDN mark — do not invent a "local" host score.
+        if (host != LOCAL_SHADOW_HOST) PlaybackHostHealth.note(host, ok = true)
         val armed = try {
             arm(host, latestSources)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -1234,7 +1235,7 @@ fun PlayerScreen(
         } catch (_: Exception) {
             emptyList()
         }
-        if (playbackHost(source?.url.orEmpty()) != host || armed.isEmpty()) {
+        if (shadowPlayingHost(source?.url.orEmpty(), playbackLocal) != host || armed.isEmpty()) {
             shadowArmedHost = host
             return@LaunchedEffect
         }
@@ -1392,10 +1393,12 @@ fun PlayerScreen(
 
     fun shadowReadyNow(leaveOffline: Boolean = false): Boolean {
         if (!leaveOffline && !liveShadowSwapAllowed(playbackLocal, playingOffline)) return false
-        if (leaveOffline && playbackLocal) return false
+        if (leaveOffline && !liveShadowLeaveOfflineAllowed(playbackLocal, leaveOffline = true)) {
+            return false
+        }
         val age = if (shadowAt <= 0L) Long.MAX_VALUE else System.currentTimeMillis() - shadowAt
         return shadowList.isNotEmpty() && shadowStandbyReady(
-            playingHost = playbackHost(source?.url.orEmpty()),
+            playingHost = shadowPlayingHost(source?.url.orEmpty(), playbackLocal),
             standbyHost = shadowHost,
             standbyAgeMs = age,
         )
