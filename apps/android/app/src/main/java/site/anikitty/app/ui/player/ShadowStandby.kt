@@ -51,11 +51,10 @@ internal fun liveShadowLeaveOfflineAllowed(
     leaveOffline: Boolean,
 ): Boolean = leaveOffline
 
-/** Host identity for shadow arm/swap — progressive file uses [LOCAL_SHADOW_HOST]. */
+/** Host identity for shadow arm/swap — progressive local always uses [LOCAL_SHADOW_HOST]. */
 internal fun shadowPlayingHost(url: String, playbackLocal: Boolean): String {
-    val live = playbackHost(url)
-    if (live.isNotEmpty()) return live
-    return if (playbackLocal) LOCAL_SHADOW_HOST else ""
+    if (playbackLocal) return LOCAL_SHADOW_HOST
+    return playbackHost(url)
 }
 
 /** @deprecated Prefer [liveShadowArmAllowed] / [liveShadowSwapAllowed]. */
