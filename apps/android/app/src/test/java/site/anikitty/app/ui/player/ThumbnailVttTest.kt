@@ -99,4 +99,15 @@ class ThumbnailVttTest {
             thumbnailNeighborSpriteUrls(cues, 12_000L, limit = 2),
         )
     }
+
+    @Test
+    fun cueSpanMatchesActiveThumbnailWindow() {
+        val cues = listOf(
+            ThumbnailCue(0, 5_000, "https://cdn/a.jpg", 0, 0, 160, 90),
+            ThumbnailCue(5_000, 6_500, "https://cdn/a.jpg", 160, 0, 160, 90),
+        )
+        assertEquals(5_000L, cueSpanMs(cues, 1_000L))
+        assertEquals(1_500L, cueSpanMs(cues, 5_500L))
+        assertNull(cueSpanMs(emptyList(), 0L))
+    }
 }

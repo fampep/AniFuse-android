@@ -21,6 +21,28 @@ internal fun scrubPreviewBucketMs(
     return (positionMs.coerceAtLeast(0L) / step) * step
 }
 
+/**
+ * Prefer the live VTT cue span when it is known so long cues do not
+ * thrash decode and short cues stay responsive.
+ */
+internal fun scrubPreviewBucketForCues(
+    positionMs: Long,
+    cueSpanMs: Long?,
+): Long {
+    val step = (cueSpanMs ?: SCRUB_PREVIEW_BUCKET_MS).coerceIn(250L, 2_000L)
+    return scrubPreviewBucketMs(positionMs, step)
+}
+
+/** Stable crop LRU key for a sprite sheet cell. */
+internal fun thumbnailCropCacheKey(
+    spriteUrl: String,
+    x: Int,
+    y: Int,
+    w: Int,
+    h: Int,
+    sample: Int,
+): String = "$spriteUrl#$x,$y,$w,$h@$sample"
+
 /** Keep the last decoded plate while the next bucket is still cold. */
 internal fun <T> scrubPreviewRetainFrame(previous: T?, decoded: T?): T? = decoded ?: previous
 

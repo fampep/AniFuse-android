@@ -117,7 +117,12 @@ internal fun LiveTimeline(
     } else {
         -1L
     }
-    val scrubBucket = if (scrubMs >= 0L) scrubPreviewBucketMs(scrubMs) else -1L
+    val cueSpan = if (scrubMs >= 0L) loader.activeCueSpanMs(scrubMs) else null
+    val scrubBucket = if (scrubMs >= 0L) {
+        scrubPreviewBucketForCues(scrubMs, cueSpan)
+    } else {
+        -1L
+    }
     // Key on the bucket, not every scrub pixel — long drags stay zero-jank.
     // Decode misses keep the last plate so the glass preview never blanks mid-scrub.
     LaunchedEffect(scrubbing, scrubBucket, durationMs, loader) {
@@ -146,6 +151,7 @@ internal fun LiveTimeline(
                     frame = frame,
                     chapterLabel = scrubChapterLabel(skipTimes, shown),
                     chapterKind = scrubChapterKind(skipTimes, shown),
+                    frameKey = scrubBucket,
                 )
             }
         }
