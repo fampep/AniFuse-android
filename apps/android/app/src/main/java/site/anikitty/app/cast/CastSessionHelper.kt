@@ -660,7 +660,10 @@ class CastSessionHelper private constructor(
                 ) {
                     return@runCatching null
                 }
-                val result = relay.prepare(prev)
+                // Keep the settled Quality ceiling — prepare(null) would publish
+                // an uncapped master while playingItem.height still claims the lock.
+                val ceiling = playingItem?.height?.takeIf { it > 0 }
+                val result = relay.prepare(prev, maxHeight = ceiling)
                 if (!castRelayPrepareStillOwns(claim, prepareEpoch.get(), closed.get())) {
                     synchronized(relayLock) { relay.stop() }
                     return@runCatching null

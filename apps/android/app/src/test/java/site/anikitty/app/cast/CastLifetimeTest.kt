@@ -35,6 +35,33 @@ class CastLifetimeTest {
         assertEquals(0, castHeightKey(null))
         assertEquals(0, castHeightKey(0))
         assertEquals(1080, castHeightKey(1080))
+        // Reopen on Auto must join a locked TV without dropping the ceiling.
+        assertTrue(
+            castSameItem(
+                item.copy(height = 720),
+                item.copy(height = 0),
+                adoptAutoHeight = true,
+            ),
+        )
+        assertFalse(
+            castSameItem(
+                item.copy(height = 720),
+                item.copy(height = 0),
+                adoptAutoHeight = false,
+            ),
+        )
+        // Intentional Quality change still mismatches.
+        assertFalse(
+            castSameItem(
+                item.copy(height = 720),
+                item.copy(height = 1080),
+                adoptAutoHeight = true,
+            ),
+        )
+        assertTrue(castHeightMatches(720, 0, adoptAuto = true))
+        assertFalse(castHeightMatches(720, 0, adoptAuto = false))
+        assertEquals("720p", castVideoIdForHeight(720))
+        assertEquals("auto", castVideoIdForHeight(0))
     }
 
     @Test

@@ -77,13 +77,39 @@ internal fun castAudioKey(audio: String?): String = audio?.trim()?.lowercase().o
 /** Normalize a Quality chip into the Cast item key. 0 = Auto. */
 internal fun castHeightKey(height: Int?): Int = height?.takeIf { it > 0 } ?: 0
 
-internal fun castSameItem(loaded: CastItemKey?, screen: CastItemKey): Boolean {
+/**
+ * Height match for Cast identity. Exact match always wins. [adoptAuto] lets a
+ * phone that opened on Auto (height 0) join a TV already locked to 720p/1080p
+ * without forcing a reload that would drop the theater ceiling.
+ */
+internal fun castHeightMatches(
+    loadedHeight: Int,
+    screenHeight: Int,
+    adoptAuto: Boolean = false,
+): Boolean {
+    val loaded = castHeightKey(loadedHeight)
+    val screen = castHeightKey(screenHeight)
+    if (loaded == screen) return true
+    return adoptAuto && screen == 0 && loaded > 0
+}
+
+internal fun castSameItem(
+    loaded: CastItemKey?,
+    screen: CastItemKey,
+    adoptAutoHeight: Boolean = false,
+): Boolean {
     if (loaded == null || loaded.url.isBlank() || screen.url.isBlank()) return false
     if (loaded.url != screen.url || loaded.episode != screen.episode) return false
     if (castAudioKey(loaded.audio) != castAudioKey(screen.audio)) return false
-    if (castHeightKey(loaded.height) != castHeightKey(screen.height)) return false
+    if (!castHeightMatches(loaded.height, screen.height, adoptAuto = adoptAutoHeight)) return false
     if (loaded.anilistId > 0 && screen.anilistId > 0 && loaded.anilistId != screen.anilistId) return false
     return true
+}
+
+/** Quality chip id for a settled Cast height lock. */
+internal fun castVideoIdForHeight(height: Int): String {
+    val h = castHeightKey(height)
+    return if (h > 0) "${h}p" else "auto"
 }
 
 internal enum class CastJoin { Load, Adopt }
