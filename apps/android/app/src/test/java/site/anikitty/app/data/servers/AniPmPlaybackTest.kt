@@ -17,16 +17,11 @@ class AniPmPlaybackTest {
         assertEquals("ani.pm", AniPmServer(cache = null).server.name)
         assertEquals(AniPmServer.SITE, AniPmServer(cache = null).server.siteUrl)
         assertEquals(
-            listOf(
-                "https://animepapa.cyou",
-                "https://anipm.pk",
-                "https://ani.pm",
-                "https://ani.nz",
-            ),
+            listOf("https://anipm.pk", "https://ani.pm", "https://ani.nz"),
             AniPmServer.ORIGINS,
         )
-        // Papa first — brand CF edges often challenge OkHttp while Papa plays.
-        assertEquals(AniPmServer.PAPA, AniPmServer.ORIGINS.first())
+        // AnimePapa is a different product — HinataTV only, never an ani.pm origin.
+        assertFalse(AniPmServer.ORIGINS.contains(AniPmServer.PAPA))
         assertEquals(AniPmServer.PAPA, HinataTvServer.PAPA)
         assertFalse(isRetiredExtension("anipm", "ani.pm", "https://ani.pm"))
         // Second / community ani.pm packs + former ani.nz card are retired.
@@ -42,12 +37,7 @@ class AniPmPlaybackTest {
     @Test
     fun orderedOriginsPreferWarmMirror() {
         assertEquals(
-            listOf(
-                "https://ani.nz",
-                "https://animepapa.cyou",
-                "https://anipm.pk",
-                "https://ani.pm",
-            ),
+            listOf("https://ani.nz", "https://anipm.pk", "https://ani.pm"),
             anipmOrderedOrigins(
                 AniPmServer.ORIGINS,
                 "https://ani.nz/embed/mal/13601",
@@ -57,10 +47,8 @@ class AniPmPlaybackTest {
             AniPmServer.ORIGINS,
             anipmOrderedOrigins(AniPmServer.ORIGINS, null),
         )
-        assertEquals(
-            AniPmServer.PAPA,
-            anipmOriginFromWatchUrl("${AniPmServer.PAPA}/embed/mal/21", AniPmServer.ORIGINS),
-        )
+        // Papa watch URLs must not pin ani.pm resolve — not in ORIGINS.
+        assertNull(anipmOriginFromWatchUrl("${AniPmServer.PAPA}/embed/mal/21", AniPmServer.ORIGINS))
         assertEquals(
             "https://anipm.pk",
             anipmOriginFromWatchUrl("https://anipm.pk/embed/mal/21", AniPmServer.ORIGINS),

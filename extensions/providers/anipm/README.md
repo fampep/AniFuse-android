@@ -16,10 +16,13 @@ embed docs):
 
 Live origins tried in order (warm last-good first when cached):
 
-- `https://animepapa.cyou` — Player API apex (OkHttp-reachable)
 - `https://anipm.pk`
 - `https://ani.pm`
 - `https://ani.nz`
+
+`animepapa.cyou` is **not** ani.pm — different SDK (`Animepapa.Player` vs
+`AniPM.Player`), CF zone, and TLS. HinataTV embeds AnimePapa; this card
+only races ani.pm brand hosts.
 
 The old `embed.settlar.io` session path and the standalone `aninz` Race card
 are not used.
