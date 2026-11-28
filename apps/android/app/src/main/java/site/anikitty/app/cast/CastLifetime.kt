@@ -160,6 +160,10 @@ internal fun castWarmMatches(warmUrl: String?, nextUrl: String): Boolean {
  * Warm may [CastRelay.bindTransport] only when it cannot stomp a live settled
  * episode's unwrap factories. A pending switch after a failed follow-up must
  * wait for [CastSessionHelper.load] → prepare under [prepareGate].
+ *
+ * [settledUrl] is authoritative even when [casting] still reads false (IO thread
+ * vs [settleReady] / stop teardown ordering). [casting] with a blank settled
+ * URL covers the [settleReady] window that flips casting before writing settled.
  */
 internal fun castWarmMayBind(
     casting: Boolean,
@@ -169,9 +173,12 @@ internal fun castWarmMayBind(
 ): Boolean {
     if (nextUrl.isBlank()) return false
     if (loadInFlight) return false
-    if (!casting) return true
-    if (settledUrl.isNullOrBlank()) return true
-    return castWarmMatches(settledUrl, nextUrl)
+    if (!settledUrl.isNullOrBlank()) {
+        return castWarmMatches(settledUrl, nextUrl)
+    }
+    // settleReady sets casting before settledSource — refuse until settled lands.
+    if (casting) return false
+    return true
 }
 
 /**

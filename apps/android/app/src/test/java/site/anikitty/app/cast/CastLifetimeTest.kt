@@ -310,6 +310,34 @@ class CastLifetimeTest {
                 loadInFlight = false,
             ),
         )
+        // casting=false but settled still set (stale flag / teardown race) —
+        // settledUrl wins; do not rewrite factories for a different URL.
+        assertFalse(
+            castWarmMayBind(
+                casting = false,
+                settledUrl = "https://cdn/settled.m3u8",
+                nextUrl = "https://cdn/next.m3u8",
+                loadInFlight = false,
+            ),
+        )
+        // Same settled URL with casting=false is still a safe idempotent warm.
+        assertTrue(
+            castWarmMayBind(
+                casting = false,
+                settledUrl = "https://cdn/a.m3u8",
+                nextUrl = "https://cdn/a.m3u8",
+                loadInFlight = false,
+            ),
+        )
+        // settleReady flipped casting before writing settledSource — refuse.
+        assertFalse(
+            castWarmMayBind(
+                casting = true,
+                settledUrl = null,
+                nextUrl = "https://cdn/next.m3u8",
+                loadInFlight = false,
+            ),
+        )
         // Load already owns prepareGate path — warm stays out.
         assertFalse(
             castWarmMayBind(
