@@ -33,7 +33,11 @@ internal object PlaybackHostHealth {
     @Volatile
     private var playingOwner: Any? = null
 
-    /** Bumps on every [note] so probe coalesce can drop empty/stale flights. */
+    /**
+     * Bumps only when a **new** CDN host enters the ledger — not on probe RTT
+     * refreshes of hosts already remembered. That way an in-flight probe wave
+     * can [PlaybackHostHealth.note] without invalidating its own coalesce.
+     */
     @Volatile
     private var generation: Long = 0L
 
@@ -98,7 +102,8 @@ internal object PlaybackHostHealth {
                 val oldest = marks.entries.minByOrNull { it.value.atMs }?.key ?: break
                 marks.remove(oldest)
             }
-            generation += 1L
+            // Probe RTT updates must not thrash coalesce — only a new host key.
+            if (previous == null) generation += 1L
             persistLocked()
         }
     }

@@ -16,11 +16,17 @@ class PlaybackHostHealthTest {
     }
 
     @Test
-    fun noteAdvancesLedgerGeneration() {
+    fun noteAdvancesLedgerGenerationOnlyForNewHosts() {
         PlaybackHostHealth.detach()
         val before = PlaybackHostHealth.ledgerGeneration()
         PlaybackHostHealth.note("cdn.gen.example", ok = true, latencyMs = 40L, nowMs = 1_000L)
-        assertTrue(PlaybackHostHealth.ledgerGeneration() > before)
+        val afterInsert = PlaybackHostHealth.ledgerGeneration()
+        assertTrue(afterInsert > before)
+        // Probe RTT refresh of the same host must keep coalesce joinable.
+        PlaybackHostHealth.note("cdn.gen.example", ok = true, latencyMs = 25L, nowMs = 1_100L)
+        assertEquals(afterInsert, PlaybackHostHealth.ledgerGeneration())
+        PlaybackHostHealth.note("cdn.other.example", ok = true, latencyMs = 30L, nowMs = 1_200L)
+        assertTrue(PlaybackHostHealth.ledgerGeneration() > afterInsert)
     }
 
     @Test

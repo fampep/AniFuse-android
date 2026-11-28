@@ -70,6 +70,8 @@ internal fun shouldReuseProbeFlight(flightActive: Boolean): Boolean = flightActi
 /**
  * Empty/stale coalesce: a flight started before a resolve stamp must not
  * poison joiners after [PlaybackHostHealth.ledgerGeneration] advances.
+ * Generation only moves when a **new** host is noted — probe RTT refreshes
+ * of hosts already in the ledger keep the active flight joinable.
  */
 internal fun shouldInvalidateProbeFlight(
     flightActive: Boolean,
@@ -111,6 +113,8 @@ internal object HostHealthProbe {
             ) {
                 return@withLock active
             }
+            // Drop the empty/stale wave so it cannot keep joining after a resolve stamp.
+            active?.cancel()
             refreshScope.async {
                 val hosts = PlaybackHostHealth.rememberedHosts(nowMs).take(limit)
                 if (hosts.isEmpty()) emptyList() else probeHosts(hosts, timeoutMs, nowMs)
