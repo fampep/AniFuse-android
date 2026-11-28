@@ -598,7 +598,13 @@ class CastSessionHelper private constructor(
                     hasPlayingItem = playingItem != null,
                 ) || closed.get()
             ) {
-                if (castRelayDiscardShouldStop(claim, prepareEpoch.get(), closed.get())) {
+                if (castRelayDiscardShouldStop(
+                        claim = claim,
+                        prepareEpoch = prepareEpoch.get(),
+                        closed = closed.get(),
+                        activeLoadTicket = activeLoadTicket.get(),
+                    )
+                ) {
                     relay.stop()
                 }
                 return

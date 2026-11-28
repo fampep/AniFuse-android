@@ -111,9 +111,40 @@ class CastLifetimeTest {
         assertTrue(castRelayPrepareStillOwns(claim = 4, prepareEpoch = 4, closed = false))
         assertFalse(castRelayPrepareStillOwns(claim = 4, prepareEpoch = 5, closed = false))
         assertFalse(castRelayPrepareStillOwns(claim = 4, prepareEpoch = 4, closed = true))
-        assertTrue(castRelayDiscardShouldStop(claim = 4, prepareEpoch = 5, closed = false))
-        assertTrue(castRelayDiscardShouldStop(claim = 4, prepareEpoch = 4, closed = true))
-        assertFalse(castRelayDiscardShouldStop(claim = 4, prepareEpoch = 4, closed = false))
+        // Stale claim after stopCasting (no active load) must tear down a revive.
+        assertTrue(
+            castRelayDiscardShouldStop(
+                claim = 4,
+                prepareEpoch = 5,
+                closed = false,
+                activeLoadTicket = 0,
+            ),
+        )
+        assertTrue(
+            castRelayDiscardShouldStop(
+                claim = 4,
+                prepareEpoch = 4,
+                closed = true,
+                activeLoadTicket = 0,
+            ),
+        )
+        assertFalse(
+            castRelayDiscardShouldStop(
+                claim = 4,
+                prepareEpoch = 4,
+                closed = false,
+                activeLoadTicket = 0,
+            ),
+        )
+        // Newer load owns the relay — never kill its server.
+        assertFalse(
+            castRelayDiscardShouldStop(
+                claim = 4,
+                prepareEpoch = 5,
+                closed = false,
+                activeLoadTicket = 9,
+            ),
+        )
     }
 
     @Test

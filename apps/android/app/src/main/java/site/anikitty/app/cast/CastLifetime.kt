@@ -146,11 +146,21 @@ internal fun castRelayPrepareStillOwns(claim: Int, prepareEpoch: Int, closed: Bo
 
 /**
  * A discarded prepare may have reopened the socket after [CastRelay.stop].
- * Tear down again when our claim is stale or the helper is closed — not when a
- * newer load still owns the relay (claim matches, publish merely lost the race).
+ * Tear down only when closed, or when our claim is stale and no newer load
+ * owns the relay. A follow-up [CastSessionHelper.load] bumps prepareEpoch and
+ * sets activeLoadTicket — stopping then kills its live server (publish does
+ * not restart it).
  */
-internal fun castRelayDiscardShouldStop(claim: Int, prepareEpoch: Int, closed: Boolean): Boolean =
-    closed || claim != prepareEpoch
+internal fun castRelayDiscardShouldStop(
+    claim: Int,
+    prepareEpoch: Int,
+    closed: Boolean,
+    activeLoadTicket: Int,
+): Boolean {
+    if (closed) return true
+    if (claim == prepareEpoch) return false
+    return activeLoadTicket == 0
+}
 
 /** The playback service, not the player, hears session end and item end. */
 internal interface CastServiceWatch {

@@ -217,20 +217,27 @@ internal fun NextEpisodePrompt(
             fontSize = 18.sp,
         )
         Spacer(modifier = Modifier.height(4.dp))
-        val statusLine = when {
-            busy -> "Loading next episode…"
-            ended -> "Starting automatically in ${secondsLeft}s"
-            countdown > 0 -> "Episode ends in ${countdown}s"
-            else -> "Episode $nextEpisode is ready"
+        // Animate kind changes only — ticking seconds must not crossfade every beat.
+        val statusKind = when {
+            busy -> "busy"
+            ended -> "ended"
+            countdown > 0 -> "ending"
+            else -> "ready"
         }
         val fadeMs = if (prefersReducedMotion()) 0 else 160
         AnimatedContent(
-            targetState = statusLine,
+            targetState = statusKind,
             transitionSpec = {
                 fadeIn(tween(fadeMs)) togetherWith fadeOut(tween(fadeMs))
             },
             label = "nextEpisodeStatus",
-        ) { line ->
+        ) { kind ->
+            val line = when (kind) {
+                "busy" -> "Loading next episode…"
+                "ended" -> "Starting automatically in ${secondsLeft}s"
+                "ending" -> "Episode ends in ${countdown}s"
+                else -> "Episode $nextEpisode is ready"
+            }
             Text(
                 line,
                 color = PlayerChrome.Graphite,
