@@ -304,28 +304,47 @@ fun GlassScrubber(
                 }
             }
 
-            val thumbR = 7.dp.toPx() * thumbScale
+            val thumbR = (if (scrubbing) 8.dp else 7.dp).toPx() * thumbScale
             val thumbX = progressW.coerceIn(thumbR, (size.width - thumbR).coerceAtLeast(thumbR))
+            val thumbCenter = Offset(thumbX, cy)
+            // Soft ground shadow under the glass thumb.
             drawCircle(
-                color = Color.Black.copy(alpha = 0.35f),
-                radius = thumbR + 3.dp.toPx(),
-                center = Offset(thumbX, cy),
+                color = Color.Black.copy(alpha = if (scrubbing) 0.48f else 0.35f),
+                radius = thumbR + 3.5.dp.toPx(),
+                center = thumbCenter,
+            )
+            // Specular rim — reads as floating glass, not a flat white disc.
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.55f),
+                        Color.White.copy(alpha = 0.18f),
+                        Color.Transparent,
+                    ),
+                    center = thumbCenter,
+                    radius = thumbR + 2.4.dp.toPx(),
+                ),
+                radius = thumbR + 2.4.dp.toPx(),
+                center = thumbCenter,
             )
             drawCircle(
-                color = Color.White.copy(alpha = 0.22f),
-                radius = thumbR + 1.5.dp.toPx(),
-                center = Offset(thumbX, cy),
-            )
-            drawCircle(
-                color = Color.White,
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color.White,
+                        Color(0xFFF2F2F4),
+                        Color(0xFFE8E8EC),
+                    ),
+                    center = Offset(thumbX - thumbR * 0.28f, cy - thumbR * 0.32f),
+                    radius = thumbR * 1.35f,
+                ),
                 radius = thumbR,
-                center = Offset(thumbX, cy),
+                center = thumbCenter,
             )
             if (scrubbing) {
                 drawCircle(
-                    color = Color.Black.copy(alpha = 0.18f),
-                    radius = thumbR * 0.32f,
-                    center = Offset(thumbX, cy),
+                    color = Color.Black.copy(alpha = 0.14f),
+                    radius = thumbR * 0.28f,
+                    center = thumbCenter,
                 )
             }
         }

@@ -21,6 +21,13 @@ internal fun subtitleAttachMayProceed(playbackState: Int): Boolean =
         playbackState == PLAYBACK_STATE_READY ||
         playbackState == PLAYBACK_STATE_ENDED
 
+/**
+ * After the poll budget, still-idle players must hard-reload via setMediaItem —
+ * abandoning the attach leaves the first spoken lines caption-dark.
+ */
+internal fun subtitleAttachShouldHardReload(playbackState: Int): Boolean =
+    playbackState == PLAYBACK_STATE_IDLE
+
 internal fun subtitleConfigsUnchanged(
     existingUris: List<String>,
     nextUris: List<String>,

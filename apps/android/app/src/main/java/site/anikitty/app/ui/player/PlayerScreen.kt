@@ -885,15 +885,17 @@ fun PlayerScreen(
             delay(SUBTITLE_ATTACH_POLL_MS)
             guard++
         }
-        if (exo.playbackState == Player.STATE_IDLE) return@LaunchedEffect
         val resume = exo.playWhenReady
         val playing = source?.let { sourceForPlayback(it, playbackSaved) }
         if (playing != null) playerBundle?.pipeline?.apply(playing)
         val updated = current.buildUpon().setSubtitleConfigurations(configs).build()
         val itemIndex = exo.currentMediaItemIndex
-        // replaceMediaItem keeps the playhead. setMediaItem would drop the
-        // buffer and the captions would come back late, off the spoken line.
-        if (exo.playbackState != Player.STATE_IDLE && itemIndex >= 0 && exo.mediaItemCount > itemIndex) {
+        // Soft replace keeps the playhead when live. Still-idle after the budget
+        // hard-reloads so captions are not abandoned for the opening lines.
+        if (!subtitleAttachShouldHardReload(exo.playbackState) &&
+            itemIndex >= 0 &&
+            exo.mediaItemCount > itemIndex
+        ) {
             exo.replaceMediaItem(itemIndex, updated)
         } else {
             exo.setMediaItem(updated, false)

@@ -35,6 +35,8 @@ class SubtitleAttachTest {
         assertTrue(subtitleAttachMayProceed(PLAYBACK_STATE_READY))
         assertTrue(subtitleAttachMayProceed(PLAYBACK_STATE_ENDED))
         assertFalse(subtitleAttachMayProceed(PLAYBACK_STATE_IDLE))
+        assertTrue(subtitleAttachShouldHardReload(PLAYBACK_STATE_IDLE))
+        assertFalse(subtitleAttachShouldHardReload(PLAYBACK_STATE_READY))
     }
 
     @Test
