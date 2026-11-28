@@ -168,6 +168,49 @@ internal fun castStallArmAfterSourceChange(
 }
 
 /**
+ * After a source walk, re-arm on READY **or** BUFFERING so a zombie successor
+ * that never reaches READY still enters the trickle detector. Always returns a
+ * fresh stall arm — predecessor BUFFERING must not inherit its wall clock.
+ */
+internal fun castSuccessorRearm(
+    awaitSuccessor: Boolean,
+    playbackState: Int,
+    stateReady: Int,
+    stateBuffering: Int,
+): CastStallArm? {
+    if (!awaitSuccessor) return null
+    if (playbackState != stateReady && playbackState != stateBuffering) return null
+    return CastStallArm(
+        castItemStarted = true,
+        stallBuffered = -1L,
+        stallSince = 0L,
+    )
+}
+
+/**
+ * Seek grace must wipe the pre-seek stall clock. Otherwise the first tick after
+ * [CAST_SEEK_STALL_GRACE_MS] trips immediately on an aged [stallSince].
+ */
+internal fun castSeekGraceClearsStall(
+    seekSuppressing: Boolean,
+    stallBuffered: Long,
+    stallSince: Long,
+): CastStallArm {
+    if (!seekSuppressing) {
+        return CastStallArm(
+            castItemStarted = true,
+            stallBuffered = stallBuffered,
+            stallSince = stallSince,
+        )
+    }
+    return CastStallArm(
+        castItemStarted = true,
+        stallBuffered = -1L,
+        stallSince = 0L,
+    )
+}
+
+/**
  * Per-tick buffered advance still counted as a zombie CDN trickle.
  * Real ABR refill jumps hundreds of ms; a dying edge creeps ≤ this.
  */

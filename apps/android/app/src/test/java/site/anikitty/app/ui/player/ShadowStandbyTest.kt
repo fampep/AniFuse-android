@@ -5,6 +5,8 @@ package site.anikitty.app.ui.player
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -234,6 +236,93 @@ class ShadowStandbyTest {
                 ),
             ),
         )
+
+        // Seek grace must wipe the aged stall clock — else the first post-grace
+        // tick would trip immediately on pre-seek stallSince.
+        val wiped = castSeekGraceClearsStall(
+            seekSuppressing = true,
+            stallBuffered = 900L,
+            stallSince = 1L,
+        )
+        assertEquals(-1L, wiped.stallBuffered)
+        assertEquals(0L, wiped.stallSince)
+        val kept = castSeekGraceClearsStall(
+            seekSuppressing = false,
+            stallBuffered = 900L,
+            stallSince = 4_000L,
+        )
+        assertEquals(900L, kept.stallBuffered)
+        assertEquals(4_000L, kept.stallSince)
+        val freshArm = trickleStallTick(
+            prevBuffered = wiped.stallBuffered,
+            stallSince = wiped.stallSince,
+            nowBuffered = 900L,
+            nowMs = 20_000L,
+            stalled = true,
+            budgetMs = CAST_STALL_MS,
+        )
+        assertFalse(freshArm.trip)
+        assertEquals(20_000L, freshArm.stallSince)
+    }
+
+    @Test
+    fun castSuccessorRearmsOnBufferingWithFreshStallArm() {
+        // IDLE while awaiting — stay disarmed.
+        assertNull(
+            castSuccessorRearm(
+                awaitSuccessor = true,
+                playbackState = 1, // IDLE
+                stateReady = 3,
+                stateBuffering = 2,
+            ),
+        )
+        // BUFFERING successor — re-arm with a fresh stall clock.
+        val buffering = castSuccessorRearm(
+            awaitSuccessor = true,
+            playbackState = 2,
+            stateReady = 3,
+            stateBuffering = 2,
+        )
+        assertNotNull(buffering)
+        assertTrue(buffering!!.castItemStarted)
+        assertEquals(-1L, buffering.stallBuffered)
+        assertEquals(0L, buffering.stallSince)
+        // READY still re-arms.
+        val ready = castSuccessorRearm(
+            awaitSuccessor = true,
+            playbackState = 3,
+            stateReady = 3,
+            stateBuffering = 2,
+        )
+        assertNotNull(ready)
+        assertTrue(ready!!.castItemStarted)
+        // Not awaiting — no rearm.
+        assertNull(
+            castSuccessorRearm(
+                awaitSuccessor = false,
+                playbackState = 2,
+                stateReady = 3,
+                stateBuffering = 2,
+            ),
+        )
+        // Fresh arm then frozen BUFFERING past budget still trips.
+        val arm = trickleStallTick(
+            prevBuffered = buffering.stallBuffered,
+            stallSince = buffering.stallSince,
+            nowBuffered = 500L,
+            nowMs = 1_000L,
+            stalled = true,
+            budgetMs = CAST_STALL_MS,
+        )
+        val trip = trickleStallTick(
+            prevBuffered = arm.stallBuffered,
+            stallSince = arm.stallSince,
+            nowBuffered = 520L,
+            nowMs = 1_000L + CAST_STALL_MS,
+            stalled = true,
+            budgetMs = CAST_STALL_MS,
+        )
+        assertTrue(trip.trip)
     }
 
     @Test
