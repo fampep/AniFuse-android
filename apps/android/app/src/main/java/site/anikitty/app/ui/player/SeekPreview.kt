@@ -41,6 +41,16 @@ import site.anikitty.app.ui.theme.prefersReducedMotion
 internal fun seekPreviewCardWidthDp(maxWidthDp: Float): Float =
     if (maxWidthDp < 480f) 118f else 156f
 
+/** 16:9 media plane height for the glass card — never collapse to footer-only. */
+internal fun seekPreviewMediaHeightDp(cardWidthDp: Float): Float =
+    (cardWidthDp * 9f / 16f).coerceAtLeast(1f)
+
+/**
+ * Cold scrub still needs the media plane so the card does not jump from a
+ * footer stub to a full still when the first VTT crop lands.
+ */
+internal fun seekPreviewShowsMediaPlane(scrubbing: Boolean): Boolean = scrubbing
+
 /** Footer under the still — `CHAPTER · mm:ss` or just the clock. */
 internal fun seekPreviewFooter(timeLabel: String, chapterLabel: String?): String {
     val chapter = chapterLabel?.takeIf { it.isNotBlank() } ?: return timeLabel
@@ -83,8 +93,9 @@ internal fun SeekPreview(
                 }
             },
     ) {
-        val cardWidth = seekPreviewCardWidthDp(maxWidth.value).dp
-        val cardHeight = cardWidth * 9f / 16f
+        val cardWidthDp = seekPreviewCardWidthDp(maxWidth.value)
+        val cardWidth = cardWidthDp.dp
+        val cardHeight = seekPreviewMediaHeightDp(cardWidthDp).dp
         val clamped = fraction.coerceIn(0f, 1f)
         val x = (maxWidth * clamped - cardWidth / 2).coerceIn(0.dp, (maxWidth - cardWidth).coerceAtLeast(0.dp))
         val cardShape = RoundedCornerShape(16.dp)
@@ -109,22 +120,22 @@ internal fun SeekPreview(
                     ),
             ) {
                 Column {
-                    // Crossfade on bucket key — retain keeps [frame] stable across
-                    // decode misses so the plate never blanks mid-drag.
-                    Crossfade(
-                        targetState = if (frame != null) frameKey else Long.MIN_VALUE,
-                        animationSpec = tween(fadeMs),
-                        label = "seekPreviewFrame",
-                    ) { key ->
-                        val bmp = frame
-                        if (key != Long.MIN_VALUE && bmp != null) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(cardHeight)
-                                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                                    .background(Color(0xCC101012)),
-                            ) {
+                    // Always reserve the 16:9 plane — cold VTT must not collapse
+                    // the card to a footer stub that jumps when the first crop lands.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(cardHeight)
+                            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                            .background(Color(0xCC101012)),
+                    ) {
+                        Crossfade(
+                            targetState = if (frame != null) frameKey else Long.MIN_VALUE,
+                            animationSpec = tween(fadeMs),
+                            label = "seekPreviewFrame",
+                        ) { key ->
+                            val bmp = frame
+                            if (key != Long.MIN_VALUE && bmp != null) {
                                 Image(
                                     bitmap = bmp.asImageBitmap(),
                                     contentDescription = null,
@@ -133,22 +144,38 @@ internal fun SeekPreview(
                                         .fillMaxWidth()
                                         .height(cardHeight),
                                 )
+                            } else {
+                                // Cold glass shimmer — monochrome plane until the crop arrives.
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(cardHeight)
                                         .background(
-                                            Brush.verticalGradient(
+                                            Brush.linearGradient(
                                                 listOf(
-                                                    Color.White.copy(alpha = seekChapterGlassSheen(chapterKind)),
-                                                    Color.Transparent,
-                                                    Color.Black.copy(alpha = 0.28f),
+                                                    Color.White.copy(alpha = 0.04f),
+                                                    Color.White.copy(alpha = 0.10f),
+                                                    Color.White.copy(alpha = 0.04f),
                                                 ),
                                             ),
                                         ),
                                 )
                             }
                         }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(cardHeight)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            Color.White.copy(alpha = seekChapterGlassSheen(chapterKind)),
+                                            Color.Transparent,
+                                            Color.Black.copy(alpha = 0.28f),
+                                        ),
+                                    ),
+                                ),
+                        )
                     }
                     Text(
                         footer,

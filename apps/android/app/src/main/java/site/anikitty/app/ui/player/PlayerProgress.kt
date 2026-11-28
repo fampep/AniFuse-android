@@ -123,6 +123,11 @@ internal fun LiveTimeline(
     } else {
         -1L
     }
+    // Mid-episode scrub: warm the cue under the finger, not only cue #0.
+    LaunchedEffect(scrubbing, scrubBucket, loader) {
+        if (!scrubbing || scrubBucket < 0L) return@LaunchedEffect
+        loader.warmAround(scrubBucket)
+    }
     // Key on the bucket, not every scrub pixel — long drags stay zero-jank.
     // Decode misses keep the last plate so the glass preview never blanks mid-scrub.
     LaunchedEffect(scrubbing, scrubBucket, durationMs, loader) {

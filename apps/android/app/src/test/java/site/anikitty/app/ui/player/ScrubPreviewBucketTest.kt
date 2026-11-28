@@ -26,6 +26,11 @@ class ScrubPreviewBucketTest {
         assertEquals(118f, seekPreviewCardWidthDp(479f))
         assertEquals(156f, seekPreviewCardWidthDp(480f))
         assertEquals(156f, seekPreviewCardWidthDp(900f))
+        // 16:9 plane stays reserved — cold scrub must not collapse to footer-only.
+        assertEquals(66.375f, seekPreviewMediaHeightDp(118f), 0.001f)
+        assertEquals(87.75f, seekPreviewMediaHeightDp(156f), 0.001f)
+        assertTrue(seekPreviewShowsMediaPlane(scrubbing = true))
+        assertFalse(seekPreviewShowsMediaPlane(scrubbing = false))
     }
 
     @Test

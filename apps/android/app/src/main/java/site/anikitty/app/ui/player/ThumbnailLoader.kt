@@ -65,6 +65,17 @@ internal class ThumbnailLoader(
         warmNeighborsAsync(first.startMs)
     }
 
+    /**
+     * Prefetch the cue under [positionMs] (or the first cue) so a mid-episode
+     * scrub does not wait on a cold sprite when the finger lands.
+     */
+    suspend fun warmAround(positionMs: Long) = withContext(Dispatchers.IO) {
+        ensureIndex()
+        val cue = cueAt(cues, positionMs.coerceAtLeast(0L)) ?: cues.firstOrNull() ?: return@withContext
+        crop(cue)
+        warmNeighborsAsync(positionMs.coerceAtLeast(cue.startMs))
+    }
+
     /** Live cue span for adaptive scrub buckets, or null when cold. */
     fun activeCueSpanMs(positionMs: Long): Long? = cueSpanMs(cues, positionMs)
 
