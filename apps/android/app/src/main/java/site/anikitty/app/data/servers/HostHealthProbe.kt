@@ -43,6 +43,18 @@ internal fun hostProbeOutcome(httpCode: Int?, connected: Boolean): Boolean =
 /** Background probes only refresh on success — never wipe a working mark. */
 internal fun shouldStampHostProbe(ok: Boolean): Boolean = ok
 
+/**
+ * Keep the better (lower) RTT when a probe follows a resolve stamp.
+ * Never let a HEAD-timeout+GET path blow away a fast resolve sample.
+ */
+internal fun hostProbeLatencyToStamp(previousMs: Long?, sampleMs: Long): Long {
+    val sample = sampleMs.coerceAtLeast(0L)
+    if (previousMs == null || previousMs <= 0L) return sample
+    return minOf(previousMs, sample)
+}
+
+internal data class HostProbeHit(val code: Int, val latencyMs: Long)
+
 internal const val HOST_PROBE_LIMIT = 6
 internal const val HOST_PROBE_TIMEOUT_MS = 1_200L
 
@@ -73,32 +85,44 @@ internal object HostHealthProbe {
         nowMs: Long,
     ): HostProbeSample? {
         val url = hostProbeUrl(host) ?: return null
-        val started = android.os.SystemClock.elapsedRealtime()
-        val code = withContext(Dispatchers.IO) {
-            runCatching { probeCode(url, timeoutMs) }.getOrNull()
+        val hit = withContext(Dispatchers.IO) {
+            runCatching { probeHit(url, timeoutMs) }.getOrNull()
         }
-        val latency = (android.os.SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
-        val ok = hostProbeOutcome(code, connected = code != null)
+        val ok = hostProbeOutcome(hit?.code, connected = hit != null)
+        val sampleMs = hit?.latencyMs ?: 0L
         if (shouldStampHostProbe(ok)) {
-            PlaybackHostHealth.note(host, ok = true, latencyMs = latency, nowMs = nowMs)
+            val stamped = hostProbeLatencyToStamp(
+                previousMs = PlaybackHostHealth.latencyMs(host, nowMs),
+                sampleMs = sampleMs,
+            )
+            PlaybackHostHealth.note(host, ok = true, latencyMs = stamped, nowMs = nowMs)
         }
-        return HostProbeSample(host = host, ok = ok, latencyMs = latency)
+        return HostProbeSample(host = host, ok = ok, latencyMs = sampleMs)
     }
 
-    private fun probeCode(url: String, timeoutMs: Long): Int? {
+    /**
+     * Time only the attempt that answers. A HEAD timeout must not inflate
+     * the GET sample that follows.
+     */
+    private fun probeHit(url: String, timeoutMs: Long): HostProbeHit? {
         val client = probeClient(timeoutMs)
-        val head = Request.Builder().url(url).head().build()
+        val headStart = android.os.SystemClock.elapsedRealtime()
         val headCode = runCatching {
-            client.newCall(head).execute().use { it.code }
+            client.newCall(Request.Builder().url(url).head().build()).execute().use { it.code }
         }.getOrNull()
-        if (headCode != null && headCode != 405 && headCode != 501) return headCode
-        // Many CDNs reject HEAD — ranged GET is the same soft check PlayableWarmProbe uses.
+        if (headCode != null && headCode != 405 && headCode != 501) {
+            val latency = (android.os.SystemClock.elapsedRealtime() - headStart).coerceAtLeast(0L)
+            return HostProbeHit(headCode, latency)
+        }
+        val getStart = android.os.SystemClock.elapsedRealtime()
         val get = Request.Builder()
             .url(url)
             .get()
             .header("Range", "bytes=0-0")
             .build()
-        return client.newCall(get).execute().use { it.code }
+        val getCode = client.newCall(get).execute().use { it.code }
+        val latency = (android.os.SystemClock.elapsedRealtime() - getStart).coerceAtLeast(0L)
+        return HostProbeHit(getCode, latency)
     }
 
     private fun probeClient(timeoutMs: Long): OkHttpClient =

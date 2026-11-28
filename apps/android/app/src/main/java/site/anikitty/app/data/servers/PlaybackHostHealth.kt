@@ -120,6 +120,15 @@ internal object PlaybackHostHealth {
         return (1_000 - (latency / 5L).toInt()).coerceAtLeast(1)
     }
 
+    /** Positive RTT for an ok host still inside [HOLD_MS], else null. */
+    fun latencyMs(host: String, nowMs: Long = System.currentTimeMillis()): Long? {
+        val key = host.trim().lowercase()
+        if (key.isEmpty()) return null
+        val mark = synchronized(lock) { marks[key] } ?: return null
+        if (nowMs - mark.atMs > HOLD_MS || !mark.ok) return null
+        return mark.latencyMs.takeIf { it > 0L }
+    }
+
     /**
      * Prefer the last CDN this provider delivered. Fall back to [siteUrl] only when
      * no CDN has been recorded yet — site hosts and CDN hosts are different keys.

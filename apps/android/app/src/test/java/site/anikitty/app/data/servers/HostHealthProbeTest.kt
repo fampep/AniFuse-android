@@ -32,4 +32,11 @@ class HostHealthProbeTest {
         assertTrue(shouldStampHostProbe(ok = true))
         assertFalse(shouldStampHostProbe(ok = false))
     }
+
+    @Test
+    fun stampKeepsTheFasterRtt() {
+        assertEquals(90L, hostProbeLatencyToStamp(previousMs = 90L, sampleMs = 1_200L))
+        assertEquals(40L, hostProbeLatencyToStamp(previousMs = 90L, sampleMs = 40L))
+        assertEquals(55L, hostProbeLatencyToStamp(previousMs = null, sampleMs = 55L))
+    }
 }
