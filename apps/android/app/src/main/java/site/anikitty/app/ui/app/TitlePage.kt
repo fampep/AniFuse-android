@@ -122,8 +122,6 @@ import site.anikitty.app.ui.components.KittyImage
 import site.anikitty.app.ui.components.KittySectionHeading
 import site.anikitty.app.ui.components.QualityMarks
 import site.anikitty.app.ui.components.sharedPoster
-import site.anikitty.app.ui.theme.KittyHaptics
-import androidx.compose.ui.platform.LocalView
 import site.anikitty.app.ui.theme.KittyRadius
 import site.anikitty.app.ui.theme.KittySpace
 import site.anikitty.app.ui.theme.LocalKittyPalette
@@ -1366,7 +1364,6 @@ private fun PlayButton(
         return
     }
     val palette = LocalKittyPalette.current
-    val playView = LocalView.current
     val playShape = RoundedCornerShape(22.dp)
     Column(
         modifier = Modifier
@@ -1379,15 +1376,8 @@ private fun PlayButton(
                 ),
             )
             .border(1.dp, Color.White.copy(alpha = 0.22f), playShape)
-            .spacePress(
-                onClick = {
-                    if (!busy) {
-                        KittyHaptics.perform(playView, KittyHaptics.Kind.Confirm)
-                        onClick()
-                    }
-                },
-                grabFocus = isTelevision(),
-            ),
+            // spacePress already fires Confirm — do not stack a second pulse here.
+            .spacePress(onClick = { if (!busy) onClick() }, grabFocus = isTelevision()),
     ) {
         Box(
             modifier = Modifier
@@ -1468,7 +1458,6 @@ private fun TitleAction(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalKittyPalette.current
-    val view = LocalView.current
     val shape = RoundedCornerShape(KittyRadius.md)
     Column(
         modifier = modifier
@@ -1484,10 +1473,8 @@ private fun TitleAction(
                 ),
             )
             .border(1.dp, Color.White.copy(alpha = 0.18f), shape)
-            .spacePress {
-                KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
-                onClick()
-            }
+            // spacePress already fires Confirm — skip a second Tick.
+            .spacePress(onClick)
             .padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
