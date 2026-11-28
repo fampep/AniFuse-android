@@ -1219,7 +1219,10 @@ fun PlayerScreen(
     val latestArmShadow by rememberUpdatedState(onArmShadow)
     LaunchedEffect(ready, source?.url, anilistId, episode, playbackLocal, playingOffline) {
         if (!ready || !liveShadowArmAllowed(playbackLocal, playingOffline)) return@LaunchedEffect
-        val host = shadowPlayingHost(source?.url.orEmpty(), playbackLocal)
+        val sourceUrl = source?.url.orEmpty()
+        val host = shadowPlayingHost(sourceUrl, playbackLocal)
+        // Arm-once key stays "local" for progressive; avoidHost is the saved CDN.
+        val avoidHost = shadowArmAvoidHost(playbackLocal, sourceUrl, host)
         if (shadowArm(playbackReady = true, armedHost = shadowArmedHost, playingHost = host) != ShadowArm.Arm) {
             return@LaunchedEffect
         }
@@ -1227,9 +1230,11 @@ fun PlayerScreen(
         delay(SHADOW_ARM_DELAY_MS)
         if (shadowPlayingHost(source?.url.orEmpty(), playbackLocal) != host) return@LaunchedEffect
         // Progressive file has no CDN mark — do not invent a "local" host score.
-        if (host != LOCAL_SHADOW_HOST) PlaybackHostHealth.note(host, ok = true)
+        if (host != LOCAL_SHADOW_HOST && avoidHost.isNotEmpty()) {
+            PlaybackHostHealth.note(avoidHost, ok = true)
+        }
         val armed = try {
-            arm(host, latestSources)
+            arm(avoidHost, latestSources)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -1246,7 +1251,7 @@ fun PlayerScreen(
         val standbyHost = shadowHost
         if (standbyHost != null) {
             SegmentShadow.arm(
-                fromHost = host,
+                fromHost = avoidHost.ifBlank { host },
                 toHost = standbyHost,
                 headers = armed.first().headers,
                 owner = playbackOwner,
@@ -1397,8 +1402,12 @@ fun PlayerScreen(
             return false
         }
         val age = if (shadowAt <= 0L) Long.MAX_VALUE else System.currentTimeMillis() - shadowAt
+        val sourceUrl = source?.url.orEmpty()
+        val armKey = shadowPlayingHost(sourceUrl, playbackLocal)
+        // leaveOffline must compare against the saved CDN, not "local".
+        val playing = shadowArmAvoidHost(playbackLocal, sourceUrl, armKey)
         return shadowList.isNotEmpty() && shadowStandbyReady(
-            playingHost = shadowPlayingHost(source?.url.orEmpty(), playbackLocal),
+            playingHost = playing,
             standbyHost = shadowHost,
             standbyAgeMs = age,
         )
@@ -1419,6 +1428,8 @@ fun PlayerScreen(
         shadowAt = 0L
         shadowArmedHost = null
         offlineRetried = false
+        // Stop remapping the next CDN through the corrupt progressive file.
+        if (leaveOffline) sessionStartedOffline = false
         resumeAtMs = resumeMs
         positionMs = resumeMs
         playhead.ms = resumeMs

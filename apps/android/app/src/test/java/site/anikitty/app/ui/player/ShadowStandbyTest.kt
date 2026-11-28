@@ -27,6 +27,23 @@ class ShadowStandbyTest {
         assertEquals(LOCAL_SHADOW_HOST, shadowPlayingHost("file:///data/ep.mp4", playbackLocal = true))
         assertEquals("cdn.example", shadowPlayingHost("https://cdn.example/a.m3u8", playbackLocal = false))
         assertEquals(LOCAL_SHADOW_HOST, shadowPlayingHost("content://downloads/1", playbackLocal = true))
+        // Progressive arm must avoid the saved CDN — not the synthetic "local" key.
+        assertEquals(
+            "cdn.saved",
+            shadowArmAvoidHost(
+                playbackLocal = true,
+                sourceUrl = "https://cdn.saved/ep.mp4",
+                armKey = LOCAL_SHADOW_HOST,
+            ),
+        )
+        assertEquals(
+            "cdn.live",
+            shadowArmAvoidHost(
+                playbackLocal = false,
+                sourceUrl = "https://cdn.live/ep.m3u8",
+                armKey = "cdn.live",
+            ),
+        )
     }
 
     @Test

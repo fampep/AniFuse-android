@@ -57,6 +57,20 @@ internal fun shadowPlayingHost(url: String, playbackLocal: Boolean): String {
     return playbackHost(url)
 }
 
+/**
+ * Host to feed [armLiveShadow] / [shadowStandbyReady] so progressive offline
+ * excludes the CDN that was saved to disk. Passing [LOCAL_SHADOW_HOST] would
+ * keep that remote URL in the ranked set and arm the same source already on file.
+ */
+internal fun shadowArmAvoidHost(
+    playbackLocal: Boolean,
+    sourceUrl: String,
+    armKey: String,
+): String {
+    if (!playbackLocal) return armKey
+    return playbackHost(sourceUrl).ifBlank { armKey }
+}
+
 /** @deprecated Prefer [liveShadowArmAllowed] / [liveShadowSwapAllowed]. */
 internal fun liveShadowAllowed(playbackLocal: Boolean): Boolean = liveShadowArmAllowed(playbackLocal)
 
