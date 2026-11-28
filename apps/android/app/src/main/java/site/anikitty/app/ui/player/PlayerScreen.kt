@@ -265,6 +265,7 @@ import site.anikitty.app.data.servers.PlaybackHttp
 import site.anikitty.app.data.servers.PlayableSource
 import site.anikitty.app.data.servers.PlayableWarmCache
 import site.anikitty.app.data.servers.PlaybackHostHealth
+import site.anikitty.app.data.servers.playableHost
 import site.anikitty.app.data.servers.SegmentShadow
 import site.anikitty.app.data.servers.playableHost
 import site.anikitty.app.data.servers.SegmentStripDataSource
@@ -3018,56 +3019,45 @@ fun PlayerScreen(
                 val resolutions = videoOptions.ifEmpty {
                     listOf(VideoOption(id = "auto", label = "Auto (best available)"))
                 }
-                // Source chip lands on CDN picks first; Quality chip keeps resolution first.
-                if (sourcePanelFocus && playlist.isNotEmpty()) {
-                    PlayerMenuSectionLabel("Sources")
-                    playlist.forEachIndexed { index, src ->
-                        val meta = listOfNotNull(
-                            src.serverName?.takeIf { it.isNotBlank() },
-                            src.quality?.takeIf { it.isNotBlank() },
-                            src.audio?.takeIf { it.isNotBlank() },
-                        ).joinToString(" · ").ifBlank { null }
-                        PlayerMenuRow(
-                            label = src.label.ifBlank {
-                                src.serverName?.takeIf { it.isNotBlank() } ?: "Source ${index + 1}"
-                            },
-                            value = meta
-                                ?: src.subtitles.joinToString(", ") { it.label }
-                                    .takeIf { src.subtitles.isNotEmpty() }
-                                    .orEmpty(),
-                            selected = index == sourceIndex,
-                            onClick = { pickQuality(index) },
-                        )
-                    }
-                }
-                PlayerMenuSectionLabel("Resolution")
-                resolutions.forEach { opt ->
-                    PlayerMenuRow(
-                        label = opt.label,
-                        selected = selectedVideoId == opt.id,
-                        onClick = { selectedVideoId = opt.id },
+                val resolutionBlock = @Composable {
+                    PlayerMenuSectionLabel("Resolution")
+                    GlassResolutionChipRow(
+                        options = resolutions.map { it.id to it.label },
+                        selectedId = selectedVideoId,
+                        onSelect = { selectedVideoId = it },
                     )
                 }
-                if (!sourcePanelFocus && playlist.isNotEmpty()) {
-                    PlayerMenuSectionLabel("Sources")
-                    playlist.forEachIndexed { index, src ->
-                        val meta = listOfNotNull(
-                            src.serverName?.takeIf { it.isNotBlank() },
-                            src.quality?.takeIf { it.isNotBlank() },
-                            src.audio?.takeIf { it.isNotBlank() },
-                        ).joinToString(" · ").ifBlank { null }
-                        PlayerMenuRow(
-                            label = src.label.ifBlank {
-                                src.serverName?.takeIf { it.isNotBlank() } ?: "Source ${index + 1}"
-                            },
-                            value = meta
-                                ?: src.subtitles.joinToString(", ") { it.label }
-                                    .takeIf { src.subtitles.isNotEmpty() }
-                                    .orEmpty(),
-                            selected = index == sourceIndex,
-                            onClick = { pickQuality(index) },
-                        )
+                val sourcesBlock = @Composable {
+                    if (playlist.isNotEmpty()) {
+                        PlayerMenuSectionLabel("Sources")
+                        playlist.forEachIndexed { index, src ->
+                            val host = playableHost(src.url)
+                            val rtt = PlaybackHostHealth.latencyMs(host)
+                            GlassSourceCard(
+                                title = src.label.ifBlank {
+                                    src.serverName?.takeIf { it.isNotBlank() } ?: "Source ${index + 1}"
+                                },
+                                meta = glassSourceMetaLine(
+                                    serverName = src.serverName,
+                                    quality = src.quality,
+                                    audio = src.audio,
+                                    subtitleFallback = src.subtitles.joinToString(", ") { it.label }
+                                        .takeIf { src.subtitles.isNotEmpty() },
+                                ),
+                                rttLabel = glassSourceRttLabel(rtt),
+                                selected = index == sourceIndex,
+                                onClick = { pickQuality(index) },
+                            )
+                        }
                     }
+                }
+                // Source chip lands on CDN picks first; Quality chip keeps resolution first.
+                if (sourcePanelFocus) {
+                    sourcesBlock()
+                    resolutionBlock()
+                } else {
+                    resolutionBlock()
+                    sourcesBlock()
                 }
             }
             PlayerMenuPage.Subs -> {
