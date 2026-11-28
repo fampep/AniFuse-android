@@ -16,6 +16,15 @@ internal const val CREDITS_STANDBY_FRACTION = 0.70f
 internal enum class StreamWarmAction { None, ResolveNext, ArmCredits }
 
 /**
+ * Caption prefetch for the next episode may start as soon as resolve warms —
+ * even when the CDN list is empty, dialogue still needs to be hot for autoplay.
+ */
+internal fun shouldWarmNextCaptions(
+    hasNext: Boolean,
+    nextWarmed: Boolean,
+): Boolean = hasNext && !nextWarmed
+
+/**
  * 42% starts the next episode's resolve. 70% revalidates it and arms a
  * different host for the file already playing, so a credits-time 403 is not
  * a cold race. A short clip never warms.
@@ -30,7 +39,9 @@ internal fun streamWarmAction(
     if (durationMs < 60_000L || positionMs < 0L || durationMs <= 0L) return StreamWarmAction.None
     val fraction = positionMs.toFloat() / durationMs.toFloat()
     if (!creditsArmed && fraction >= CREDITS_STANDBY_FRACTION) return StreamWarmAction.ArmCredits
-    if (hasNext && !nextWarmed && fraction >= NEXT_EPISODE_WARM_FRACTION) return StreamWarmAction.ResolveNext
+    if (shouldWarmNextCaptions(hasNext, nextWarmed) && fraction >= NEXT_EPISODE_WARM_FRACTION) {
+        return StreamWarmAction.ResolveNext
+    }
     return StreamWarmAction.None
 }
 

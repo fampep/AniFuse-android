@@ -51,4 +51,11 @@ class NextEpisodeWarmTest {
             streamWarmAction(40_000L, 50_000L, hasNext = true, nextWarmed = false, creditsArmed = false),
         )
     }
+
+    @Test
+    fun nextCaptionsWarmWhileResolveIsStillDue() {
+        assertTrue(shouldWarmNextCaptions(hasNext = true, nextWarmed = false))
+        assertFalse(shouldWarmNextCaptions(hasNext = true, nextWarmed = true))
+        assertFalse(shouldWarmNextCaptions(hasNext = false, nextWarmed = false))
+    }
 }

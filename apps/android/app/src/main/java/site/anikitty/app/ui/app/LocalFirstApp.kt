@@ -1002,48 +1002,54 @@ fun LocalFirstApp(
             // Local frontier already moved for this episode, and AniList still needs the same count.
             var localMarked by remember(current.anime.id, current.episode) { mutableStateOf(false) }
             val warmEpisode: suspend (Int) -> Unit = { episodeNumber ->
-                val hint = current.anime.streamTitleHint()
-                val existing = site.anikitty.app.data.servers.PlayableWarmCache.peek(
-                    anilistId = current.anime.id,
-                    episode = episodeNumber,
-                    audio = playerAudio,
-                )
-                val chosen = site.anikitty.app.data.servers.warmPlayable(
-                    existing = existing,
-                    resolve = {
-                        streamServers.resolveWithFailover(
+                // Captions race the CDN resolve so autoplay opens with dialogue ready.
+                coroutineScope {
+                    val captions = async {
+                        site.anikitty.app.data.servers.SubtitleLibrary.prefetch(
+                            current.anime.id,
+                            episodeNumber,
+                        )
+                    }
+                    val hint = current.anime.streamTitleHint()
+                    val existing = site.anikitty.app.data.servers.PlayableWarmCache.peek(
+                        anilistId = current.anime.id,
+                        episode = episodeNumber,
+                        audio = playerAudio,
+                    )
+                    val chosen = site.anikitty.app.data.servers.warmPlayable(
+                        existing = existing,
+                        resolve = {
+                            streamServers.resolveWithFailover(
+                                anilistId = current.anime.id,
+                                episode = episodeNumber,
+                                audio = playerAudio,
+                                titleHint = hint,
+                                warmLead = true,
+                            ).sources
+                        },
+                    )
+                    if (chosen.isEmpty()) {
+                        site.anikitty.app.data.servers.PlayableWarmCache.drop(
                             anilistId = current.anime.id,
                             episode = episodeNumber,
                             audio = playerAudio,
-                            titleHint = hint,
-                            warmLead = true,
-                        ).sources
-                    },
-                )
-                if (chosen.isEmpty()) {
-                    site.anikitty.app.data.servers.PlayableWarmCache.drop(
-                        anilistId = current.anime.id,
-                        episode = episodeNumber,
-                        audio = playerAudio,
-                    )
-                } else {
-                    site.anikitty.app.data.servers.PlayableWarmCache.put(
-                        anilistId = current.anime.id,
-                        episode = episodeNumber,
-                        audio = playerAudio,
-                        sources = chosen,
-                    )
-                    site.anikitty.app.data.servers.StreamWarmPrefetch.touch(chosen.first())
-                    site.anikitty.app.data.servers.SourceBadgeCache.remember(
-                        context,
-                        current.anime.id,
-                        episodeNumber,
-                        chosen,
-                    )
-                    site.anikitty.app.data.servers.SubtitleLibrary.prefetch(
-                        current.anime.id,
-                        episodeNumber,
-                    )
+                        )
+                    } else {
+                        site.anikitty.app.data.servers.PlayableWarmCache.put(
+                            anilistId = current.anime.id,
+                            episode = episodeNumber,
+                            audio = playerAudio,
+                            sources = chosen,
+                        )
+                        site.anikitty.app.data.servers.StreamWarmPrefetch.touch(chosen.first())
+                        site.anikitty.app.data.servers.SourceBadgeCache.remember(
+                            context,
+                            current.anime.id,
+                            episodeNumber,
+                            chosen,
+                        )
+                    }
+                    captions.await()
                 }
             }
             PlayerScreen(
