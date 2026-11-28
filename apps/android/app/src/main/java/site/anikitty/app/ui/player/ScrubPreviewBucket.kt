@@ -24,6 +24,9 @@ internal fun scrubPreviewBucketMs(
 /**
  * Prefer the live VTT cue span when it is known so long cues do not
  * thrash decode and short cues stay responsive.
+ *
+ * Prefer [scrubPreviewCueKey] when the cue start is known — a global grid
+ * of the span can snap into the previous cue near boundaries.
  */
 internal fun scrubPreviewBucketForCues(
     positionMs: Long,
@@ -31,6 +34,20 @@ internal fun scrubPreviewBucketForCues(
 ): Long {
     val step = (cueSpanMs ?: SCRUB_PREVIEW_BUCKET_MS).coerceIn(250L, 2_000L)
     return scrubPreviewBucketMs(positionMs, step)
+}
+
+/**
+ * Stable SeekPreview key for the cue under the finger. Pins to [cueStartMs]
+ * so every position inside the cue shares one plate and never snaps into the
+ * previous cue's window (a 3s cue at 3000ms must not decode at 2000ms).
+ * Falls back to 1s buckets when the VTT index is still cold.
+ */
+internal fun scrubPreviewCueKey(
+    positionMs: Long,
+    cueStartMs: Long?,
+): Long {
+    if (cueStartMs != null && cueStartMs >= 0L) return cueStartMs
+    return scrubPreviewBucketMs(positionMs)
 }
 
 /** Stable crop LRU key for a sprite sheet cell. */

@@ -58,6 +58,19 @@ class ScrubPreviewBucketTest {
     }
 
     @Test
+    fun cueKeyPinsToCueStartNotPreviousPlate() {
+        // 3s cues: scrubbing at 3000ms is cue B — must not snap to 2000 (still cue A).
+        assertEquals(3_000L, scrubPreviewCueKey(3_000L, cueStartMs = 3_000L))
+        assertEquals(3_000L, scrubPreviewCueKey(3_500L, cueStartMs = 3_000L))
+        assertEquals(0L, scrubPreviewCueKey(2_999L, cueStartMs = 0L))
+        // Grid snap of a 3s span would wrongly land at 2000 for position 3000.
+        assertEquals(2_000L, scrubPreviewBucketForCues(3_000L, cueSpanMs = 3_000L))
+        // Cold index falls back to 1s buckets.
+        assertEquals(3_000L, scrubPreviewCueKey(3_250L, cueStartMs = null))
+        assertEquals(0L, scrubPreviewCueKey(400L, cueStartMs = null))
+    }
+
+    @Test
     fun seekPreviewFooterAndTalkBackStayReadable() {
         assertEquals("01:12", seekPreviewFooter("01:12", null))
         assertEquals("Intro · 01:12", seekPreviewFooter("01:12", "Intro"))
