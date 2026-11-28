@@ -119,6 +119,8 @@ import site.anikitty.app.data.episodeCountLabel
 import site.anikitty.app.data.friendlyFailure
 import site.anikitty.app.data.mediaFormatLabel
 import site.anikitty.app.data.anilist.AniListSync
+import site.anikitty.app.data.anilist.AniListSyncPhase
+import site.anikitty.app.data.anilist.aniListSyncResultLabel
 import site.anikitty.app.data.anilist.AnimeEpisodeItem
 import site.anikitty.app.data.anilist.AnimeSummary
 import site.anikitty.app.data.local.ContinueHidden
@@ -339,7 +341,7 @@ fun LocalFirstApp(
         while (true) {
             runCatching {
                 val result = aniListSync.pull()
-                syncLabel = "Synced ${result.imported} from AniList"
+                syncLabel = aniListSyncResultLabel(result)
             }.onFailure { e ->
                 syncLabel = friendlyFailure(e.message)
             }
@@ -675,10 +677,13 @@ fun LocalFirstApp(
                     libraryFilter = libraryFilter,
                     onSync = {
                         scope.launch {
-                            syncLabel = "Syncing…"
+                            syncLabel = cloudSyncPhaseLabel(AniListSyncPhase.Pushing)
                             syncLabel = runCatching {
-                                val result = aniListSync.pull(forceRefresh = true)
-                                "Synced ${result.imported} from AniList"
+                                val result = aniListSync.pull(
+                                    forceRefresh = true,
+                                    onPhase = { syncLabel = cloudSyncPhaseLabel(it) },
+                                )
+                                aniListSyncResultLabel(result)
                             }.getOrElse { e -> friendlyFailure(e.message) }
                         }
                     },

@@ -23,22 +23,32 @@ class AniListSync(
     data class Result(
         val imported: Int,
         val username: String?,
+        /** Pending marks AniList accepted during the pre-import drain. */
+        val pushed: Int = 0,
+        /** Titles whose Continue episode jumped — warm/disk recalls were cleared. */
+        val frontierDrops: Int = 0,
     )
 
     /**
      * @param forceRefresh interactive Sync must bypass the 2-minute MediaList
      * cache so another device's progress lands immediately. Periodic background
      * pulls keep the warm body.
+     * @param onPhase glass Sync subtitle — Pushing marks, then Importing list.
      */
-    suspend fun pull(forceRefresh: Boolean = false): Result {
+    suspend fun pull(
+        forceRefresh: Boolean = false,
+        onPhase: (AniListSyncPhase) -> Unit = {},
+    ): Result {
         val token = auth.accessToken ?: error("AniList not linked")
         // Drain before import so AniList reflects our queue and pending rows
         // still protect merge if a push failed. Never race drain with the list.
         // Interactive Sync paces drain as foreground so it is not stuck behind
         // the background GraphQL pacer.
+        onPhase(AniListSyncPhase.Pushing)
         val drained = drainPendingPushes(interactive = forceRefresh)
         // Warm installs already know the user — skip Viewer so MediaList is the
         // only paced GraphQL hop on the critical sync path.
+        onPhase(AniListSyncPhase.Importing)
         val identity = if (auth.userId > 0) {
             AniListPullIdentity(auth.userId, auth.username)
         } else {
@@ -85,13 +95,17 @@ class AniListSync(
         if (merged.isNotEmpty()) historyDao.upsertAll(merged)
         // Another device moved the Continue frontier — kill warm/disk recalls for
         // the old episode so Home open races the new one instead of a rotten URL.
-        for (row in merged) {
-            val previous = existingById[row.anilistId]?.episode
-            if (!shouldDropWarmOnFrontierAdvance(previous, row.episode)) continue
-            PlayableWarmCache.dropTitle(row.anilistId)
-            onTitleFrontierAdvance(row.anilistId)
+        val advanced = frontierAdvanceIds(merged, existingById)
+        for (anilistId in advanced) {
+            PlayableWarmCache.dropTitle(anilistId)
+            onTitleFrontierAdvance(anilistId)
         }
-        return Result(imported = merged.size, username = identity.username)
+        return Result(
+            imported = merged.size,
+            username = identity.username,
+            pushed = drained,
+            frontierDrops = advanced.size,
+        )
     }
 
     /**
@@ -117,6 +131,7 @@ class AniListSync(
                 )
             }
             val accepted = aniList.saveProgressBatch(token, items, interactive = interactive)
+            val historyWrites = ArrayList<WatchHistoryEntity>(chunk.size)
             for (row in chunk) {
                 if (row.anilistId !in accepted) continue
                 sent++
@@ -126,7 +141,7 @@ class AniListSync(
                 }
                 val existing = historyDao.get(row.anilistId) ?: continue
                 val plan = aniListPushPlan(row.episode, row.totalEpisodes)
-                historyDao.upsert(historyAfterAniListPush(existing, plan.progress, plan.status))
+                historyWrites += historyAfterAniListPush(existing, plan.progress, plan.status)
             }
             // Partial batch: rebatch rejects once, then cap singles so Sync
             // cannot burn N×700ms on a poisoned chunk.
@@ -157,7 +172,7 @@ class AniListSync(
                         }
                         val existing = historyDao.get(row.anilistId) ?: continue
                         val pushPlan = aniListPushPlan(row.episode, row.totalEpisodes)
-                        historyDao.upsert(historyAfterAniListPush(existing, pushPlan.progress, pushPlan.status))
+                        historyWrites += historyAfterAniListPush(existing, pushPlan.progress, pushPlan.status)
                     }
                 }
                 for (item in plan.singles) {
@@ -177,10 +192,11 @@ class AniListSync(
                         pendingPushes.delete(row.anilistId)
                     }
                     val existing = historyDao.get(row.anilistId) ?: continue
-                    historyDao.upsert(historyAfterAniListPush(existing, item.progress, item.status))
+                    historyWrites += historyAfterAniListPush(existing, item.progress, item.status)
                 }
                 // plan.deferred stays queued for the next drain.
             }
+            if (historyWrites.isNotEmpty()) historyDao.upsertAll(historyWrites)
             // Total misses stay queued for the next drain.
         }
         return sent
@@ -340,3 +356,34 @@ internal fun shouldDropWarmOnFrontierAdvance(
     previousEpisode: Int?,
     nextEpisode: Int,
 ): Boolean = previousEpisode != null && previousEpisode > 0 && nextEpisode > previousEpisode
+
+/**
+ * Titles whose Continue episode jumped during import — one pass for warm/disk
+ * recall drops so Home open races the new frontier instead of a rotten URL.
+ */
+internal fun frontierAdvanceIds(
+    merged: List<WatchHistoryEntity>,
+    previousById: Map<Int, WatchHistoryEntity>,
+): List<Int> = merged.mapNotNull { row ->
+    val previous = previousById[row.anilistId]?.episode
+    if (shouldDropWarmOnFrontierAdvance(previous, row.episode)) row.anilistId else null
+}
+
+/** Glass Sync phases — drain first, then MediaList import. */
+enum class AniListSyncPhase {
+    Pushing,
+    Importing,
+}
+
+/** Result line after Sync finishes — surfaces drain + frontier wins. */
+internal fun aniListSyncResultLabel(result: AniListSync.Result): String {
+    val extras = buildList {
+        if (result.pushed > 0) add("pushed ${result.pushed}")
+        if (result.frontierDrops > 0) add("${result.frontierDrops} fresher")
+    }
+    return if (extras.isEmpty()) {
+        "Synced ${result.imported} from AniList"
+    } else {
+        "Synced ${result.imported} · ${extras.joinToString(" · ")} from AniList"
+    }
+}
