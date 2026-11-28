@@ -117,6 +117,8 @@ class AniListSyncTest {
         assertTrue(mediaListForceRefreshAfterDrain(interactiveForceRefresh = true, drainedAccepted = 0))
         assertTrue(mediaListForceRefreshAfterDrain(interactiveForceRefresh = true, drainedAccepted = 3))
         assertFalse(mediaListForceRefreshAfterDrain(interactiveForceRefresh = false, drainedAccepted = 0))
+        assertFalse(aniListMediaListUsesBackgroundPace(interactive = true))
+        assertTrue(aniListMediaListUsesBackgroundPace(interactive = false))
     }
 
     @Test

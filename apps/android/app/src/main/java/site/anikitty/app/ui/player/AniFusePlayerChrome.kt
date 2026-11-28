@@ -28,15 +28,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ClosedCaption
 import androidx.compose.material.icons.outlined.Forward10
+import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Replay10
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SkipNext
+import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.VideoLibrary
-import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,6 +59,12 @@ import site.anikitty.app.ui.components.StageGlassDisc
 import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.KittyHaptics
 
+/**
+ * Phone theater chrome — Plex-inspired transport geometry, AniFuse glass skin.
+ *
+ * Center row: Previous · −10 · Play/Pause · +10 · Next
+ * Bottom: scrubber + Plex elapsed/−remaining clock, then glass dock (Episodes / Sources / Subs / Speed).
+ */
 @Composable
 internal fun AniFusePlayerChrome(
     title: String,
@@ -66,6 +73,7 @@ internal fun AniFusePlayerChrome(
     playing: Boolean,
     speedLabel: String,
     showEpisodes: Boolean,
+    showPrevious: Boolean,
     showNext: Boolean,
     castUnavailable: String?,
     onCastUnavailable: (String) -> Unit,
@@ -83,6 +91,7 @@ internal fun AniFusePlayerChrome(
     onSeekBack: () -> Unit,
     onSeekForward: () -> Unit,
     onEpisodes: () -> Unit,
+    onPrevious: () -> Unit,
     onSources: () -> Unit,
     onSubtitles: () -> Unit,
     onSpeed: () -> Unit,
@@ -95,10 +104,10 @@ internal fun AniFusePlayerChrome(
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(148.dp)
+                .height(160.dp)
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color.Black.copy(alpha = 0.78f), Color.Transparent),
+                        listOf(Color.Black.copy(alpha = 0.82f), Color.Transparent),
                     ),
                 ),
         )
@@ -106,13 +115,15 @@ internal fun AniFusePlayerChrome(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(200.dp)
+                .height(240.dp)
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.86f)),
+                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.90f)),
                     ),
                 ),
         )
+
+        // Top chrome — title / episode stay readable like Plex metadata strip.
         Row(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -122,7 +133,18 @@ internal fun AniFusePlayerChrome(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ChromeIcon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", onBack)
-            Column(Modifier.weight(1f).padding(horizontal = 6.dp)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 6.dp)
+                    .then(
+                        if (showEpisodes) {
+                            Modifier.spacePress(onClick = onEpisodes)
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
                 Text(
                     title,
                     color = Color.White,
@@ -134,8 +156,9 @@ internal fun AniFusePlayerChrome(
                 )
                 Text(
                     episodeLine,
-                    color = Color.White.copy(alpha = 0.62f),
-                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.72f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -160,21 +183,39 @@ internal fun AniFusePlayerChrome(
             )
             ChromeIcon(Icons.Outlined.Settings, "Settings", onSettings)
         }
+
+        // Plex-style center transport — episode change sits next to seek/play.
         Row(
             modifier = Modifier.align(Alignment.Center),
-            horizontalArrangement = Arrangement.spacedBy(24.dp),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (showPrevious) {
+                RoundTransport(
+                    Icons.Outlined.SkipPrevious,
+                    "Previous episode",
+                    48.dp,
+                    onPrevious,
+                )
+            } else {
+                Spacer(Modifier.size(48.dp))
+            }
             RoundTransport(Icons.Outlined.Replay10, "Back 10 seconds", 56.dp, onSeekBack)
             RoundTransport(
                 if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
                 if (playing) "Pause" else "Play",
-                76.dp,
+                84.dp,
                 onPlayPause,
                 primary = true,
             )
             RoundTransport(Icons.Outlined.Forward10, "Forward 10 seconds", 56.dp, onSeekForward)
+            if (showNext) {
+                RoundTransport(Icons.Outlined.SkipNext, "Next episode", 48.dp, onNext)
+            } else {
+                Spacer(Modifier.size(48.dp))
+            }
         }
+
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -193,30 +234,42 @@ internal fun AniFusePlayerChrome(
                 onScrub = onScrub,
                 onScrubFinished = onScrubFinished,
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .stageGlassPlate(shape = RoundedCornerShape(22.dp), elevated = true)
+                    .stageGlassPlate(shape = RoundedCornerShape(24.dp), elevated = true)
                     .padding(horizontal = 10.dp, vertical = 10.dp),
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (showEpisodes) ActionPill(Icons.Outlined.VideoLibrary, "Episodes", onEpisodes)
+                    if (showEpisodes) {
+                        ActionPill(
+                            Icons.Outlined.VideoLibrary,
+                            "Episodes",
+                            onEpisodes,
+                            emphasized = true,
+                        )
+                    }
                     ActionPill(Icons.Outlined.Layers, "Sources", onSources)
                     ActionPill(Icons.Outlined.ClosedCaption, "Subs", onSubtitles)
                     ActionPill(Icons.Outlined.Speed, speedLabel, onSpeed)
-                    if (showNext) ActionPill(Icons.Outlined.SkipNext, "Next", onNext)
                 }
             }
         }
     }
 }
+
+/** Whether the Plex-style transport should show previous / next episode discs. */
+internal fun chromeShowsPreviousEpisode(showEpisodes: Boolean, episode: Int): Boolean =
+    showEpisodes && episode > 1
+
+internal fun chromeShowsNextEpisode(showNext: Boolean): Boolean = showNext
 
 @Composable
 private fun ChromeIcon(icon: ImageVector, description: String, onClick: () -> Unit) {
@@ -256,34 +309,40 @@ private fun RoundTransport(
             icon,
             contentDescription = description,
             tint = if (primary) Color.Black else Color.White,
-            modifier = Modifier.size(if (size > 60.dp) 34.dp else 24.dp),
+            modifier = Modifier.size(if (size >= 80.dp) 38.dp else if (size > 52.dp) 26.dp else 22.dp),
         )
     }
 }
 
 @Composable
-private fun ActionPill(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun ActionPill(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    emphasized: Boolean = false,
+) {
     val view = LocalView.current
     val shape = RoundedCornerShape(999.dp)
-    // Parent dock already carries the glass plate — pills stay flat inside it.
     Row(
         modifier = Modifier
             .clip(shape)
-            .background(Color.White.copy(alpha = 0.08f))
+            .background(
+                if (emphasized) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.08f),
+            )
             .spacePress {
                 KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
                 onClick()
             }
-            .padding(horizontal = 12.dp, vertical = 9.dp),
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-        Spacer(Modifier.width(6.dp))
+        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(17.dp))
+        Spacer(Modifier.width(7.dp))
         Text(
             label,
             color = Color.White,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp,
+            fontWeight = if (emphasized) FontWeight.Bold else FontWeight.SemiBold,
             maxLines = 1,
         )
     }

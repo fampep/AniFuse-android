@@ -32,6 +32,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.SkipNext
+import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -47,8 +49,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -58,6 +62,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import site.anikitty.app.ui.components.EpisodeCarousel
 import site.anikitty.app.ui.components.EpisodeSlide
+import site.anikitty.app.ui.components.StageGlassDisc
+import site.anikitty.app.ui.components.stageGlassPlate
+import site.anikitty.app.ui.theme.KittyHaptics
 import site.anikitty.app.ui.theme.PlayerChrome
 import site.anikitty.app.ui.theme.prefersReducedMotion
 
@@ -65,8 +72,8 @@ private const val EpisodePageSize = 50
 private const val EpisodeGridColumns = 5
 
 /**
- * Glass-dark episode picker for the player chrome. Range chips keep long
- * seasons usable; the number grid and thumb rail both switch the episode.
+ * Plex-inspired episode sheet in AniFuse glass:
+ * now-playing header with prev/next, stills rail first, then jump + ranges + grid.
  */
 @Composable
 internal fun EpisodeSelectorPanel(
@@ -85,6 +92,7 @@ internal fun EpisodeSelectorPanel(
 ) {
     val total = totalEpisodes.coerceAtLeast(1)
     val reduced = prefersReducedMotion()
+    val view = LocalView.current
     val rangeCount = ((total + EpisodePageSize - 1) / EpisodePageSize).coerceAtLeast(1)
     var browseRange by remember(total) {
         mutableIntStateOf(((episode - 1) / EpisodePageSize).coerceIn(0, rangeCount - 1))
@@ -121,6 +129,8 @@ internal fun EpisodeSelectorPanel(
             else -> "E$episode · $title"
         }
     }
+    val canPrev = episode > 1
+    val canNext = episode < total
 
     fun commitJump() {
         val picked = jump.toIntOrNull()
@@ -134,32 +144,128 @@ internal fun EpisodeSelectorPanel(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text(
-            currentTitle,
-            color = PlayerChrome.Paper,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 15.sp,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            if (watchedThrough > 0) {
-                "$total episodes · watched through E$watchedThrough"
-            } else {
-                "$total episodes"
-            },
-            color = PlayerChrome.Faint,
-            fontSize = 12.sp,
-        )
+        // Now-playing strip — change episode without hunting the grid.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .stageGlassPlate(shape = RoundedCornerShape(18.dp), elevated = true)
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            StageGlassDisc(
+                onClick = {
+                    if (!canPrev) return@StageGlassDisc
+                    KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
+                    onPick(episode - 1)
+                },
+                size = 44.dp,
+                selected = canPrev,
+            ) {
+                Icon(
+                    Icons.Outlined.SkipPrevious,
+                    contentDescription = "Previous episode",
+                    tint = if (canPrev) Color.White else Color.White.copy(alpha = 0.28f),
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
+            ) {
+                Text(
+                    "Now playing",
+                    color = Color.White.copy(alpha = 0.55f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.4.sp,
+                )
+                Text(
+                    currentTitle,
+                    color = PlayerChrome.Paper,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    letterSpacing = (-0.2).sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    episodeSelectorMetaLine(total, watchedThrough, minutesLeft),
+                    color = PlayerChrome.Faint,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+                if (positionFraction > 0.02f) {
+                    Box(
+                        modifier = Modifier
+                            .padding(top = 8.dp)
+                            .fillMaxWidth()
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(Color.White.copy(alpha = 0.12f)),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .fillMaxWidth(positionFraction.coerceIn(0.04f, 1f))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(Color.White.copy(alpha = 0.95f), Color.White.copy(alpha = 0.55f)),
+                                    ),
+                                ),
+                        )
+                    }
+                }
+            }
+            StageGlassDisc(
+                onClick = {
+                    if (!canNext) return@StageGlassDisc
+                    KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
+                    onPick(episode + 1)
+                },
+                size = 44.dp,
+                selected = canNext,
+            ) {
+                Icon(
+                    Icons.Outlined.SkipNext,
+                    contentDescription = "Next episode",
+                    tint = if (canNext) Color.White else Color.White.copy(alpha = 0.28f),
+                )
+            }
+        }
+
+        // Stills first — Plex queue energy, AniFuse glass cards.
+        if (rangeSlides.isNotEmpty()) {
+            Text(
+                "Episodes",
+                color = PlayerChrome.Paper,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+            )
+            EpisodeCarousel(
+                slides = rangeSlides,
+                current = episode,
+                watchedThrough = watchedThrough,
+                currentProgress = positionFraction,
+                fallbackArt = fallbackArt,
+                onPick = onPick,
+                onDark = true,
+                minutesLeft = minutesLeft,
+                onToggleWatched = onToggleWatched,
+                anilistId = anilistId,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val jumpShape = RoundedCornerShape(12.dp)
+            val jumpShape = RoundedCornerShape(14.dp)
             BasicTextField(
                 value = jump,
                 onValueChange = { next -> if (next.all(Char::isDigit) && next.length <= 4) jump = next },
@@ -205,8 +311,8 @@ internal fun EpisodeSelectorPanel(
             Box(
                 modifier = Modifier
                     .heightIn(min = 48.dp)
-                    .playerFocusCue(RoundedCornerShape(12.dp))
-                    .clip(RoundedCornerShape(12.dp))
+                    .playerFocusCue(RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(14.dp))
                     .background(PlayerChrome.Accent)
                     .clickable(onClick = ::commitJump)
                     .padding(horizontal = 16.dp),
@@ -267,6 +373,12 @@ internal fun EpisodeSelectorPanel(
             }
         }
 
+        Text(
+            "All in this range",
+            color = PlayerChrome.Faint,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 12.sp,
+        )
         EpisodeNumberGrid(
             numbers = numbers,
             current = episode,
@@ -274,29 +386,21 @@ internal fun EpisodeSelectorPanel(
             positionFraction = positionFraction,
             onPick = onPick,
         )
-
-        if (rangeSlides.isNotEmpty()) {
-            Text(
-                "Stills",
-                color = PlayerChrome.Faint,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 12.sp,
-            )
-            EpisodeCarousel(
-                slides = rangeSlides,
-                current = episode,
-                watchedThrough = watchedThrough,
-                currentProgress = positionFraction,
-                fallbackArt = fallbackArt,
-                onPick = onPick,
-                onDark = true,
-                minutesLeft = minutesLeft,
-                onToggleWatched = onToggleWatched,
-                anilistId = anilistId,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
     }
+}
+
+internal fun episodeSelectorMetaLine(
+    total: Int,
+    watchedThrough: Int,
+    minutesLeft: Int?,
+): String {
+    val base = if (watchedThrough > 0) {
+        "$total episodes · watched through E$watchedThrough"
+    } else {
+        "$total episodes"
+    }
+    val left = minutesLeft?.takeIf { it >= 0 } ?: return base
+    return "$base · ${left}m left"
 }
 
 @Composable

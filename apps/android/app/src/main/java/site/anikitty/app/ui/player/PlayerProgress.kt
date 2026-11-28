@@ -127,26 +127,38 @@ internal fun LiveTimeline(
         }
         frame = scrubPreviewRetainFrame(frame, loader.frame(scrubBucket))
     }
-    Box(modifier) {
-        GlassScrubber(
-            progress = if (durationMs > 0L) (shown / dur).coerceIn(0f, 1f) else 0f,
-            buffered = buffered,
-            durationMs = durationMs,
-            scrubbing = scrubbing,
-            onScrub = onScrub,
-            onScrubFinished = onScrubFinished,
-            skipTimes = skipTimes,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        if (scrubbing && durationMs > 0L) {
-            SeekPreview(
-                fraction = scrubValue,
-                timeLabel = formatClockPadded(shown),
-                frame = frame,
-                chapterLabel = scrubChapterLabel(skipTimes, shown),
-                chapterKind = scrubChapterKind(skipTimes, shown),
+    Column(modifier) {
+        Box {
+            GlassScrubber(
+                progress = if (durationMs > 0L) (shown / dur).coerceIn(0f, 1f) else 0f,
+                buffered = buffered,
+                durationMs = durationMs,
+                scrubbing = scrubbing,
+                onScrub = onScrub,
+                onScrubFinished = onScrubFinished,
+                skipTimes = skipTimes,
+                modifier = Modifier.fillMaxWidth(),
             )
+            if (scrubbing && durationMs > 0L) {
+                SeekPreview(
+                    fraction = scrubValue,
+                    timeLabel = formatClockPadded(shown),
+                    frame = frame,
+                    chapterLabel = scrubChapterLabel(skipTimes, shown),
+                    chapterKind = scrubChapterKind(skipTimes, shown),
+                )
+            }
         }
+        // Plex-style elapsed / −remaining under the scrub map.
+        Spacer(modifier = Modifier.height(8.dp))
+        LiveClockText(
+            player = player,
+            scrubbing = scrubbing,
+            scrubValue = scrubValue,
+            durationMs = durationMs,
+            modifier = Modifier.fillMaxWidth(),
+            spread = true,
+        )
     }
 }
 

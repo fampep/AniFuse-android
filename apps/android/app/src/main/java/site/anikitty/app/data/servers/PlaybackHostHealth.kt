@@ -69,14 +69,33 @@ internal object PlaybackHostHealth {
 
     fun playingHost(): String? = playing
 
-    /** CDN hosts still inside [HOLD_MS] — used by background health probes. */
-    fun rememberedHosts(nowMs: Long = System.currentTimeMillis()): List<String> =
+    /**
+     * CDN hosts still inside [HOLD_MS] — used by background health probes.
+     * [healthyOnly] drops sunk marks so failed CDNs do not steal the probe budget.
+     */
+    fun rememberedHosts(
+        nowMs: Long = System.currentTimeMillis(),
+        healthyOnly: Boolean = false,
+    ): List<String> =
         synchronized(lock) {
             marks.entries
                 .filter { nowMs - it.value.atMs <= HOLD_MS }
+                .filter { !healthyOnly || it.value.ok }
                 .sortedByDescending { it.value.atMs }
                 .map { it.key }
         }
+
+    /** Last CDN host bound to [providerId] while still inside [HOLD_MS]. */
+    fun providerCdnHost(
+        providerId: String,
+        nowMs: Long = System.currentTimeMillis(),
+    ): String? {
+        val id = providerId.trim().lowercase()
+        if (id.isEmpty()) return null
+        return synchronized(lock) {
+            providerCdns[id]?.takeIf { nowMs - it.atMs <= HOLD_MS }?.host
+        }
+    }
 
     fun attach(root: File) {
         synchronized(lock) {

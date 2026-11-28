@@ -57,6 +57,8 @@ class AniListSync(
                 interactiveForceRefresh = forceRefresh,
                 drainedAccepted = drained,
             ),
+            // Periodic pulls yield to Home shelf; Sync stays interactive.
+            interactive = forceRefresh,
         )
         val now = System.currentTimeMillis()
         val entryIds = entries.map { it.media.id }.distinct()
@@ -329,6 +331,9 @@ internal fun mediaListForceRefreshAfterDrain(
     interactiveForceRefresh: Boolean,
     drainedAccepted: Int,
 ): Boolean = interactiveForceRefresh || drainedAccepted > 0
+
+/** Background MediaList pulls must not starve interactive mark/Sync GraphQL. */
+internal fun aniListMediaListUsesBackgroundPace(interactive: Boolean): Boolean = !interactive
 
 /** Cloud progress jumped past the phone's Continue episode. */
 internal fun shouldDropWarmOnFrontierAdvance(

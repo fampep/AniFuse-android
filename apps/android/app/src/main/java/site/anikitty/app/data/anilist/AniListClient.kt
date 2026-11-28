@@ -180,6 +180,8 @@ class AniListClient(
         accessToken: String,
         userId: Int,
         forceRefresh: Boolean = false,
+        /** Sync / My Space stay interactive; periodic pulls yield to Home shelf. */
+        interactive: Boolean = false,
     ): List<AniListMediaListEntry> = withContext(Dispatchers.IO) {
         val cacheKey = mediaListCacheKey(userId)
         if (forceRefresh) {
@@ -215,8 +217,11 @@ class AniListClient(
                     .put("type", "ANIME"),
             )
             .toString()
-        // Interactive — list pull must not yield to Home shelf traffic.
-        val body = execute(payload, accessToken, background = false)
+        val body = execute(
+            payload,
+            accessToken,
+            background = aniListMediaListUsesBackgroundPace(interactive),
+        )
         cache?.put(cacheKey, body)
         parseMediaListBody(body)
     }

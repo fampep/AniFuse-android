@@ -31,3 +31,12 @@ internal fun scrubCrossedMarker(from: Float, to: Float, edges: List<Float>): Boo
         left == 0f || right == 0f || left * right < 0f
     }
 }
+
+/**
+ * Restart the scrub pointerInput only when the drag coordinate space changes.
+ * Duration bumps (0→real) and late AniSkip stamps must never cancel a drag.
+ */
+internal fun scrubGestureShouldRestart(
+    previousTrackWidthPx: Float,
+    nextTrackWidthPx: Float,
+): Boolean = previousTrackWidthPx != nextTrackWidthPx

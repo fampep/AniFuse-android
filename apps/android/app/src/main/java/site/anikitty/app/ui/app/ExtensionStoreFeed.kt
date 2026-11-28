@@ -413,8 +413,10 @@ fun ExtensionStoreFeed(
                                     )
                                     .clickable {
                                         catalog.select(server.id)
-                                        // Re-probe remembered CDNs so LEAD · ms lands fast.
-                                        HostHealthProbe.kickRemembered()
+                                        // Prefer this provider's CDN so LEAD · ms is a live HEAD.
+                                        HostHealthProbe.kickRemembered(
+                                            preferredHost = PlaybackHostHealth.providerCdnHost(server.id),
+                                        )
                                         KittyHaptics.perform(view, KittyHaptics.Kind.Confirm)
                                     }
                                     .padding(horizontal = 10.dp, vertical = 8.dp),
