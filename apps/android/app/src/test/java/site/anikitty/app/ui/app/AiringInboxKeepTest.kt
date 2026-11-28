@@ -9,13 +9,12 @@ import org.junit.Test
 
 class AiringInboxKeepTest {
     @Test
-    fun keepsPremiereAndNextFrontierEpisodes() {
-        // PLANNING / seeded frontier 1 — premiere must still ping.
-        assertTrue(airingInboxKeep(scheduleEpisode = 1, playFrontier = 1))
-        // After finishing ep 5 the play frontier is 6.
-        assertTrue(airingInboxKeep(scheduleEpisode = 6, playFrontier = 6))
-        assertFalse(airingInboxKeep(scheduleEpisode = 5, playFrontier = 6))
-        assertFalse(airingInboxKeep(scheduleEpisode = 4, playFrontier = 6))
-        assertTrue(airingInboxKeep(scheduleEpisode = 1, playFrontier = 0))
+    fun keepsUnfinishedScheduleSlots() {
+        // Catalog seed / no progress — premiere still pings.
+        assertTrue(airingInboxKeep(scheduleEpisode = 1, completedThrough = 0))
+        // AniList progress 5 — drop ep 5, keep ep 6.
+        assertFalse(airingInboxKeep(scheduleEpisode = 5, completedThrough = 5))
+        assertTrue(airingInboxKeep(scheduleEpisode = 6, completedThrough = 5))
+        assertFalse(airingInboxKeep(scheduleEpisode = 4, completedThrough = 5))
     }
 }
