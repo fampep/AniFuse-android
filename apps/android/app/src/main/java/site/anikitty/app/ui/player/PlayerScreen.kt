@@ -631,10 +631,11 @@ fun PlayerScreen(
     }
 
     val television = isTelevision()
-    var phoneTheater by remember { mutableStateOf(playerPrefs.getBoolean("start_theater", false)) }
+    // Phone always uses AniFusePlayerChrome theater — never the old page shell.
+    var phoneTheater by remember { mutableStateOf(true) }
     val theater = playerOpensInTheater(television, phoneTheater)
     fun leaveTheater() {
-        if (leavingTheaterClosesPlayer(television)) onClose() else phoneTheater = false
+        onClose()
     }
     fun enterTheater() {
         phoneTheater = true
@@ -4222,6 +4223,8 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
+                // Phone local playback: AniFuse chrome only. Opening a menu
+                // hides chrome under PlayerMenuFrame — never the old capsules.
                 val phoneChrome = !television && !castScreenUp && panel == PlayerMenuPage.None
                 if (phoneChrome) {
                     val res = shortQuality(qualityLabel)
@@ -4298,6 +4301,8 @@ fun PlayerScreen(
                         },
                     )
                 }
+                // Old TV/cast wash — never under AniFuse phone chrome.
+                if (!phoneChrome && (television || castScreenUp)) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -4309,8 +4314,9 @@ fun PlayerScreen(
                             ),
                         ),
                 )
+                }
 
-                // Title strip — only when settings sheet is closed.
+                // Title strip — TV / cast only (phone uses AniFuse chrome).
                 if (panel == PlayerMenuPage.None && (television || castScreenUp)) {
                     Row(
                         modifier = Modifier
@@ -4409,7 +4415,9 @@ fun PlayerScreen(
                     }
                 }
 
-                if (television || castScreenUp || panel != PlayerMenuPage.None) {
+                // Capsules / Cast transport: TV and cast only — phone menus
+                // sit on PlayerMenuFrame without the old bottom chrome.
+                if (television || castScreenUp) {
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
