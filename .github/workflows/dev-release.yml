@@ -238,29 +238,34 @@ jobs:
               -f target_commitish="${{ steps.commit.outputs.sha }}" \
               --jq .body > notes.md
           fi
-          {
-            if [ "${{ steps.ver.outputs.stable }}" = "true" ]; then
-              printf 'Stable **%s**.\n\n' "$version"
-            else
-              base="${version%b*}"
-              printf 'Dev **%s**. The stable cut of this line will be **%s**.\n\n' "$version" "$base"
-            fi
-            cat notes.md
-          } > notes.with-header.md
-          mv notes.with-header.md notes.md
+          # Body order matches the README system:
+          #   1) shared README WARNING disclaimer
+          #   2) Stable / Dev channel line
+          #   3) curated install WARNING + genre sections (docs/release-notes/)
+          #   4) GitHub auto-generated Full Changelog
           header=""
           if [ -f "docs/release-notes/${version}.md" ]; then
             header="docs/release-notes/${version}.md"
           elif [ -f "docs/release-notes/v${version}.md" ]; then
             header="docs/release-notes/v${version}.md"
           fi
-          if [ -n "$header" ]; then
-            tmp="$(mktemp)"
-            cat "$header" > "$tmp"
+          tmp="$(mktemp)"
+          if [ -f docs/release-notes/_readme-warning.md ]; then
+            cat docs/release-notes/_readme-warning.md >> "$tmp"
             printf '\n' >> "$tmp"
-            cat notes.md >> "$tmp"
-            mv "$tmp" notes.md
           fi
+          if [ "${{ steps.ver.outputs.stable }}" = "true" ]; then
+            printf 'Stable **%s**.\n\n' "$version" >> "$tmp"
+          else
+            base="${version%b*}"
+            printf 'Dev **%s**. The stable cut of this line will be **%s**.\n\n' "$version" "$base" >> "$tmp"
+          fi
+          if [ -n "$header" ]; then
+            cat "$header" >> "$tmp"
+            printf '\n' >> "$tmp"
+          fi
+          cat notes.md >> "$tmp"
+          mv "$tmp" notes.md
 
       - name: Publish prerelease
         if: steps.commit.outputs.pushed == 'true'
