@@ -211,7 +211,7 @@ internal fun HomeFeatured(
     val stageShape = RoundedCornerShape(if (inset) 28.dp else 0.dp)
     StageSlider(
         pageCount = pages.size,
-        autoAdvanceMillis = if (heroAutoplay) 5_200L else 0L,
+        autoAdvanceMillis = if (heroAutoplay) 4_000L else 0L,
         showIndex = pages.size > 1,
         indexInset = 118.dp,
         modifier = Modifier

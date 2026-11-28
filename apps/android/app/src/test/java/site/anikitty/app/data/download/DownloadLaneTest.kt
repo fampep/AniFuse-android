@@ -130,6 +130,8 @@ class DownloadLaneTest {
         assertEquals(403, httpCodeIn(IllegalStateException("Response code: 403")))
         assertTrue(downloadIoShouldResume(1))
         assertTrue(downloadIoShouldResume(2))
-        assertFalse(downloadIoShouldResume(3))
+        assertTrue(downloadIoShouldResume(3))
+        assertTrue(downloadIoShouldResume(4))
+        assertFalse(downloadIoShouldResume(5))
     }
 }

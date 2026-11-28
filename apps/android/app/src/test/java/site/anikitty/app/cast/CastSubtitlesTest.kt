@@ -69,6 +69,15 @@ class CastSubtitlesTest {
     }
 
     @Test
+    fun librarySubripWithoutExtensionStillRelays() {
+        val library = "http://143.246.203.212/api/file?id=" + "b".repeat(64)
+        assertTrue(castRelaySubtitleEligible(library, "application/x-subrip"))
+        assertTrue(castRelaySubtitleEligible("file:///data/captions/en.srt", "text/vtt"))
+        assertFalse(castRelaySubtitleEligible("ftp://cdn/en.vtt", "text/vtt"))
+        assertFalse(castRelaySubtitleEligible(library, "application/json"))
+    }
+
+    @Test
     fun corsStillAllowsSubtitleFetches() {
         // /sub responses reuse the same CORS lines as the playlist.
         val lines = castRelayCorsLines()

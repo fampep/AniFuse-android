@@ -11,10 +11,10 @@ import site.anikitty.app.data.servers.rankShadowCandidates
 internal const val DOWNLOAD_LANE = "episode-download-lane"
 
 /** How often the lane looks again while playback owns the CDN. */
-internal const val LANE_YIELD_SLICE_MS = 1_500L
+internal const val LANE_YIELD_SLICE_MS = 800L
 
 /** A dropped connection resumes this many times. Yielding to playback does not spend them. */
-internal const val DOWNLOAD_IO_ATTEMPTS = 3
+internal const val DOWNLOAD_IO_ATTEMPTS = 5
 
 internal fun downloadIoShouldResume(attempt: Int): Boolean = attempt in 1 until DOWNLOAD_IO_ATTEMPTS
 
