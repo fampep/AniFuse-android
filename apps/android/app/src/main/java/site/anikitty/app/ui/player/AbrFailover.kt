@@ -20,6 +20,17 @@ import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
  * DefaultBandwidthMeter reading.
  */
 
+/** Soft-cap ladder phases after a CDN host swap — surfaces on the chrome pill. */
+internal enum class AbrFailoverPhase { Idle, Cap, Soft, Climb }
+
+/** Glass chrome label while ABR is proving the new pipe. Null when uncapped. */
+internal fun abrFailoverStatusPill(phase: AbrFailoverPhase): String? = when (phase) {
+    AbrFailoverPhase.Cap -> "ABR · HOLD"
+    AbrFailoverPhase.Soft -> "ABR · SOFT"
+    AbrFailoverPhase.Climb -> "ABR · CLIMB"
+    AbrFailoverPhase.Idle -> null
+}
+
 /** Soft ceiling while the new host proves itself. Seeded from the last good rung. */
 internal fun abrFailoverCapBitrate(seedBitrate: Int): Int =
     seedBitrate.coerceIn(500_000, 2_400_000).coerceAtMost(1_200_000)

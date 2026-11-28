@@ -48,6 +48,7 @@ class SubtitleAttachTest {
     @Test
     fun pollBudgetStaysUnderTwoSeconds() {
         assertTrue(SUBTITLE_ATTACH_MAX_POLLS * SUBTITLE_ATTACH_POLL_MS <= 2_000L)
+        assertTrue(SUBTITLE_ATTACH_MAX_POLLS * SUBTITLE_ATTACH_POLL_MS <= 1_250L)
     }
 
     @Test

@@ -50,9 +50,9 @@ internal fun subtitleConfigsUnchanged(
     nextUris: List<String>,
 ): Boolean = existingUris == nextUris
 
-/** 50ms × 40 = 2s ceiling — was 125ms × 48 ≈ 6s. */
-internal const val SUBTITLE_ATTACH_POLL_MS = 50L
-internal const val SUBTITLE_ATTACH_MAX_POLLS = 40
+/** 33ms × 36 ≈ 1.2s ceiling — attach as soon as Media3 leaves IDLE. */
+internal const val SUBTITLE_ATTACH_POLL_MS = 33L
+internal const val SUBTITLE_ATTACH_MAX_POLLS = 36
 
 internal const val PLAYBACK_STATE_IDLE = 1
 internal const val PLAYBACK_STATE_ENDED = 4

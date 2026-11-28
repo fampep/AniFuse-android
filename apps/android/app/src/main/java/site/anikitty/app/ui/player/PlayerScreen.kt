@@ -840,6 +840,7 @@ fun PlayerScreen(
     // same-host quality/playlist URL swaps must not cancel a mid-flight soft
     // release and leave maxVideoBitrate stuck for the rest of the episode.
     var bitrateCappedForHost by remember(anilistId, episode) { mutableStateOf<String?>(null) }
+    var abrPhase by remember(anilistId, episode) { mutableStateOf(AbrFailoverPhase.Idle) }
     val playbackHost = playableHost(playbackSource?.url.orEmpty())
     LaunchedEffect(playbackHost, trackSelector, bandwidthMeter) {
         val selector = trackSelector ?: return@LaunchedEffect
@@ -849,43 +850,51 @@ fun PlayerScreen(
         val first = previousHost == null
         bitrateCappedForHost = playbackHost
         if (first) return@LaunchedEffect
-        if (!abrFailoverShouldReseed(previousHost, playbackHost)) {
-            // Selector/meter rebuild on the same host cancelled any in-flight
-            // soft-cap delay — clear stuck forced estimate + ceiling.
-            meter?.clearReseed()
+        try {
+            if (!abrFailoverShouldReseed(previousHost, playbackHost)) {
+                // Selector/meter rebuild on the same host cancelled any in-flight
+                // soft-cap delay — clear stuck forced estimate + ceiling.
+                meter?.clearReseed()
+                selector.parameters = selector.parameters.buildUpon()
+                    .setMaxVideoBitrate(Int.MAX_VALUE)
+                    .build()
+                return@LaunchedEffect
+            }
+            val seed = playerPrefs.getInt("last_video_bitrate", 1_500_000)
+            val cap = abrFailoverCapBitrate(seed)
+            val holdMs = abrFailoverHoldMs(seed)
+            abrPhase = AbrFailoverPhase.Cap
+            meter?.reseed(abrFailoverReseedBitrate(seed))
+            val previous = selector.parameters
+            selector.parameters = previous.buildUpon().setMaxVideoBitrate(cap).build()
+            delay(holdMs)
+            if (trackSelector !== selector) return@LaunchedEffect
+            // Soft release, then a second climb — uncapping immediately thrash-climbs
+            // on a cold meter after a CDN swap.
+            abrPhase = AbrFailoverPhase.Soft
+            val soft = abrFailoverReleaseBitrate(seed)
+            meter?.reseed(soft.toLong())
             selector.parameters = selector.parameters.buildUpon()
-                .setMaxVideoBitrate(Int.MAX_VALUE)
+                .setMaxVideoBitrate(soft)
                 .build()
-            return@LaunchedEffect
-        }
-        val seed = playerPrefs.getInt("last_video_bitrate", 1_500_000)
-        val cap = abrFailoverCapBitrate(seed)
-        val holdMs = abrFailoverHoldMs(seed)
-        meter?.reseed(abrFailoverReseedBitrate(seed))
-        val previous = selector.parameters
-        selector.parameters = previous.buildUpon().setMaxVideoBitrate(cap).build()
-        delay(holdMs)
-        if (trackSelector !== selector) return@LaunchedEffect
-        // Soft release, then a second climb — uncapping immediately thrash-climbs
-        // on a cold meter after a CDN swap.
-        val soft = abrFailoverReleaseBitrate(seed)
-        meter?.reseed(soft.toLong())
-        selector.parameters = selector.parameters.buildUpon()
-            .setMaxVideoBitrate(soft)
-            .build()
-        delay(abrFailoverReleaseHoldMs())
-        if (trackSelector !== selector) return@LaunchedEffect
-        val climb = abrFailoverClimbBitrate(seed)
-        meter?.reseed(climb.toLong())
-        selector.parameters = selector.parameters.buildUpon()
-            .setMaxVideoBitrate(climb)
-            .build()
-        delay(abrFailoverClimbHoldMs())
-        if (trackSelector === selector) {
-            meter?.clearReseed()
+            delay(abrFailoverReleaseHoldMs())
+            if (trackSelector !== selector) return@LaunchedEffect
+            abrPhase = AbrFailoverPhase.Climb
+            val climb = abrFailoverClimbBitrate(seed)
+            meter?.reseed(climb.toLong())
             selector.parameters = selector.parameters.buildUpon()
-                .setMaxVideoBitrate(Int.MAX_VALUE)
+                .setMaxVideoBitrate(climb)
                 .build()
+            delay(abrFailoverClimbHoldMs())
+            if (trackSelector === selector) {
+                meter?.clearReseed()
+                selector.parameters = selector.parameters.buildUpon()
+                    .setMaxVideoBitrate(Int.MAX_VALUE)
+                    .build()
+            }
+        } finally {
+            // Cancel mid-ladder or natural end — never leave a stale ABR pill.
+            abrPhase = AbrFailoverPhase.Idle
         }
     }
     LaunchedEffect(player, librarySubtitles, source?.url) {
@@ -4183,6 +4192,7 @@ fun PlayerScreen(
                         statusPill = listOfNotNull(
                             source?.serverName?.takeIf { it.isNotBlank() },
                             "$res · $mode",
+                            abrFailoverStatusPill(abrPhase),
                         ).joinToString(" · "),
                         playing = playing,
                         speedLabel = speedLabel(playbackSpeed),

@@ -38,6 +38,10 @@ class AbrFailoverTest {
         assertEquals(4_200_000, climb)
         assertEquals(1_400L, abrFailoverReleaseHoldMs())
         assertEquals(1_100L, abrFailoverClimbHoldMs())
+        assertEquals("ABR · HOLD", abrFailoverStatusPill(AbrFailoverPhase.Cap))
+        assertEquals("ABR · SOFT", abrFailoverStatusPill(AbrFailoverPhase.Soft))
+        assertEquals("ABR · CLIMB", abrFailoverStatusPill(AbrFailoverPhase.Climb))
+        assertEquals(null, abrFailoverStatusPill(AbrFailoverPhase.Idle))
     }
 
     @Test
