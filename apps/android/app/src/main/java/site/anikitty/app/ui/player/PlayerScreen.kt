@@ -126,6 +126,7 @@ import site.anikitty.app.cast.castShouldPushCaptions
 import site.anikitty.app.cast.castVolumeFromGesture
 import site.anikitty.app.cast.castJoin
 import site.anikitty.app.cast.castSameItem
+import site.anikitty.app.cast.castVideoIdForHeight
 import site.anikitty.app.cast.castAttachPositionMs
 import site.anikitty.app.cast.castLiveCommitPositionMs
 import site.anikitty.app.cast.castDisconnectResumeMs
@@ -1913,8 +1914,9 @@ fun PlayerScreen(
 
     /** Join the receiver when it is already playing this episode. Do not reload it. */
     fun joinLiveCast(helper: CastSessionHelper, src: PlayableSource, key: String): Boolean {
+        val liveItem = helper.loadedItem
         val same = castSameItem(
-            helper.loadedItem,
+            liveItem,
             CastItemKey(
                 anilistId = anilistId,
                 episode = latestEpisode,
@@ -1922,8 +1924,16 @@ fun PlayerScreen(
                 audio = castAudioKey(src.audioLanguage),
                 height = castHeightKey(castMaxHeight()),
             ),
+            // Phone Auto adopts the TV's existing Quality lock across reopen.
+            adoptAutoHeight = true,
         )
         if (castJoin(helper.casting, helper.isLoadInFlight(), same) != CastJoin.Adopt) return false
+        // Seed the glass Quality chip from the settled ceiling so Auto reopen
+        // does not look unlocked while the relay is still capped.
+        val liveHeight = castHeightKey(liveItem?.height)
+        if (selectedVideoId == "auto" && liveHeight > 0) {
+            selectedVideoId = castVideoIdForHeight(liveHeight)
+        }
         castLoadedKey = key
         castAttachStarted = true
         castPending = false
@@ -2283,6 +2293,21 @@ fun PlayerScreen(
                 positionMs = pos,
                 anilistId = anilistId,
                 maxVideoHeight = ceiling,
+                // Quality / audio / ceiling reloads take seconds of prepare —
+                // stamp a live playhead at commit so Auto↔720p does not rewind.
+                livePositionMs = if (sameEpisode) {
+                    {
+                        val phone = runCatching {
+                            helper.castPlayer.currentPosition.takeIf { it > 0L } ?: 0L
+                        }.getOrDefault(0L)
+                        val known = runCatching { playhead.ms }.getOrDefault(0L)
+                        val next = maxOf(pos, phone, known, resumeAtMs)
+                        if (next > castSentPositionMs) castSentPositionMs = next
+                        next
+                    }
+                } else {
+                    null
+                },
                 onReady = {
                     if (!castAlive.get()) return@load
                     runCatching {
