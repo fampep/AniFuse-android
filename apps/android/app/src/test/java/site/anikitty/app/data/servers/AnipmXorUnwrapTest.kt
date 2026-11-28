@@ -66,7 +66,9 @@ class AnipmXorUnwrapTest {
         chunk[0] = 0xB8.toByte()
         chunk[188] = 0xB8.toByte()
         assertEquals(0xFF, anipmXorStreamKey(chunk, 0, chunk.size))
-        // Short first read still picks the first-byte candidate.
+        // Short first read still picks the known XorLoader candidates.
         assertEquals(0xFF, anipmXorStreamKey(byteArrayOf(0xB8.toByte()), 0, 1))
+        // Unknown short keys wait for a longer chunk — do not XOR with junk.
+        assertEquals(0, anipmXorStreamKey(byteArrayOf(0x01), 0, 1))
     }
 }

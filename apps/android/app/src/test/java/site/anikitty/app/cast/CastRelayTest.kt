@@ -262,6 +262,38 @@ class CastRelayTest {
     }
 
     @Test
+    fun aniPmPngByterangeAfterUnwrapDoesNotReskipHeader() {
+        val clear = ByteArray(188 * 20) { 0 }
+        for (index in clear.indices step 188) clear[index] = 0x47
+        // First packets carry PAT/PMT + AAC — mark them so a bad Range is obvious.
+        clear[1] = 0x11
+        clear[189] = 0x22
+        val pngOffset = 2_963L
+        // Identity unwrap keeps CDN Range (real .ts BYTERANGE).
+        assertEquals(pngOffset, castRelayServePositionAfterUnwrap(clear, clear, pngOffset))
+        // Peeled PNG/XOR buffer must serve clear[0], not clear[2963].
+        val peeled = clear.copyOf()
+        assertEquals(0L, castRelayServePositionAfterUnwrap(ByteArray(8), peeled, pngOffset))
+        assertEquals(0x47, peeled[0].toInt() and 0xFF)
+        assertEquals(0x11, peeled[1].toInt() and 0xFF)
+        // Proxy playlist drops BYTERANGE on .png segments; keeps it on .ts.
+        val media = """
+            #EXTM3U
+            #EXTINF:4,
+            #EXT-X-BYTERANGE:94000@2963
+            https://cdn.example/seg.png
+            #EXTINF:4,
+            #EXT-X-BYTERANGE:1000@0
+            https://cdn.example/seg.ts
+        """.trimIndent()
+        val dropped = castRelayDropByterangeForWrappedSegments(media)
+        assertTrue(!dropped.contains("2963"))
+        assertTrue(dropped.contains("seg.png"))
+        assertTrue(dropped.contains("#EXT-X-BYTERANGE:1000@0"))
+        assertTrue(dropped.contains("seg.ts"))
+    }
+
+    @Test
     fun gzipPlaylistStillReadsAsHls() {
         val raw = "#EXTM3U\n#EXTINF:1,\nseg.ts\n".toByteArray()
         val gzip = ByteArrayOutputStream().use { out ->

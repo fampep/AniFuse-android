@@ -425,7 +425,12 @@ class CastRelay(context: Context) {
                 return
             }
             val media = castRelayUnwrapSegment(body)
-            writeSlice(client, media, castRelayUnwrappedType(media, finalUrl, segmentPack), position, headOnly)
+            // PNG/XOR unwrap yields clear MPEG-TS at offset 0. The playlist's
+            // #EXT-X-BYTERANGE @2963 still addresses the wrapped PNG — reapply
+            // that Range into clear TS and every segment loses PAT/PMT/AAC init
+            // (video can resync; audio stays silent on Chromecast / DMR).
+            val serveAt = castRelayServePositionAfterUnwrap(body, media, position)
+            writeSlice(client, media, castRelayUnwrappedType(media, finalUrl, segmentPack), serveAt, headOnly)
         } catch (_: Exception) {
             runCatching { writeStatus(client, 502, "text/plain", "No".toByteArray()) }
         } finally {
@@ -490,7 +495,10 @@ class CastRelay(context: Context) {
 
     private fun presentPlaylist(text: String, baseUrl: String): String =
         castRelayCapHeight(
-            castRelayPreferAudio(rewritePlaylist(text, baseUrl), source?.audioLanguage),
+            castRelayPreferAudio(
+                castRelayDropByterangeForWrappedSegments(rewritePlaylist(text, baseUrl)),
+                source?.audioLanguage,
+            ),
             maxVideoHeight,
         )
 
@@ -1237,6 +1245,52 @@ internal fun castRelayRewritePlaylist(
         }
     }
     return if (rewritten.endsWith("\n")) rewritten else "$rewritten\n"
+}
+
+/**
+ * After PNG/XOR (or decoy) unwrap, clear media starts at byte 0. A CDN
+ * #EXT-X-BYTERANGE offset into the wrapped object must not be reapplied —
+ * that skips the opening TS packets (PAT/PMT + AAC AudioSpecificConfig) and
+ * leaves video-only playback on Chromecast.
+ */
+internal fun castRelayServePositionAfterUnwrap(
+    raw: ByteArray,
+    unwrapped: ByteArray,
+    requestedPosition: Long,
+): Long {
+    if (requestedPosition <= 0L) return 0L
+    if (unwrapped === raw) return requestedPosition
+    return 0L
+}
+
+/**
+ * Proxy playlists for disguised segments (ani.pm `.png`, JPEG decoys, etc.)
+ * must not keep #EXT-X-BYTERANGE — the relay already serves whole clear
+ * segments, and a Range into clear TS is video-without-audio.
+ * Real `.ts` / `.m4s` suffixes keep BYTERANGE for genuine byte-range CDNs.
+ */
+internal fun castRelayDropByterangeForWrappedSegments(playlist: String): String {
+    val lines = playlist.lines()
+    if (lines.isEmpty()) return playlist
+    val out = ArrayList<String>(lines.size)
+    var i = 0
+    while (i < lines.size) {
+        val line = lines[i]
+        val trimmed = line.trim()
+        if (trimmed.startsWith("#EXT-X-BYTERANGE", ignoreCase = true)) {
+            var j = i + 1
+            while (j < lines.size && lines[j].trim().isEmpty()) j++
+            val uri = lines.getOrNull(j)?.trim().orEmpty()
+            if (uri.isNotEmpty() && !uri.startsWith("#") && !castRelayRealMediaSuffix(uri)) {
+                i++
+                continue
+            }
+        }
+        out += line.removeSuffix("\r")
+        i++
+    }
+    val joined = out.joinToString("\n")
+    return if (joined.endsWith("\n")) joined else "$joined\n"
 }
 
 private val CAST_URI_QUOTED = Regex("""URI="([^"]*)"""")
