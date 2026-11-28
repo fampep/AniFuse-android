@@ -4,6 +4,7 @@
 package site.anikitty.app.ui.player
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayerGlassSubsTest {
@@ -32,5 +33,14 @@ class PlayerGlassSubsTest {
         assertEquals(true to "ja", glassCaptionSelectionAfterTap("ja"))
         assertEquals("Off", glassCaptionChipLabel("off"))
         assertEquals("English, selected", glassSubsChipDescription("English", selected = true))
+    }
+
+    @Test
+    fun captionsLoadingUsesGlassWarmChips() {
+        assertEquals("Warming captions", glassCaptionsLoadingLabel())
+        val chips = glassCaptionsLoadingChipOptions()
+        assertEquals("cc-warm", chips.first().first)
+        assertEquals("CC · WARM", chips.first().second)
+        assertTrue(chips.size >= 3)
     }
 }

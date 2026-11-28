@@ -835,6 +835,9 @@ fun PlayerScreen(
     val bandwidthMeter = playerBundle?.bandwidth
     // The video is already playing. Captions arrive on their own and are added
     // without building a new player.
+    var ccPhase by remember(anilistId, episode) {
+        mutableStateOf(SubtitleAttachPhase.Idle)
+    }
     LaunchedEffect(anilistId, episode, source?.url) {
         val provider = source?.subtitles.orEmpty()
         // Preserve peek null (unknown) vs empty (known miss) — do not .orEmpty() first.
@@ -842,11 +845,17 @@ fun PlayerScreen(
         librarySubtitles = captionsAfterPeek(provider, peeked)
         if (shouldFetchLibraryCaptions(peeked, anilistId, episode)) {
             captionsLoading = true
+            ccPhase = SubtitleAttachPhase.Fetch
+            val beforeUrls = librarySubtitles.map { it.url }
             val fetched = libraryCaptionsOrEmpty(anilistId, episode)
-            librarySubtitles = mergeSubtitleTracks(provider, fetched)
+            val merged = mergeSubtitleTracks(provider, fetched)
+            librarySubtitles = merged
             captionsLoading = false
+            // Ready when the listing did not grow — attach will not restart.
+            ccPhase = subtitleAttachPhaseAfterFetch(beforeUrls, merged)
         } else {
             captionsLoading = false
+            if (librarySubtitles.isEmpty()) ccPhase = SubtitleAttachPhase.Idle
         }
     }
     // After a CDN failover, cap ABR briefly so the new host is not judged by
@@ -919,12 +928,23 @@ fun PlayerScreen(
     LaunchedEffect(player, librarySubtitles, playbackSource?.url) {
         val exo = player ?: return@LaunchedEffect
         val tracks = librarySubtitles
-        if (tracks.isEmpty()) return@LaunchedEffect
-        val expectedUri = playbackSource?.url ?: return@LaunchedEffect
+        if (tracks.isEmpty()) {
+            // Library fetch still in flight — keep CC · WARM; do not wipe Fetch.
+            if (ccPhase != SubtitleAttachPhase.Fetch) {
+                ccPhase = SubtitleAttachPhase.Idle
+            }
+            return@LaunchedEffect
+        }
+        var expectedUri = playbackSource?.url ?: return@LaunchedEffect
         val configs = tracks.mapIndexedNotNull { index, track ->
             subtitleConfig(track, default = index == 0)
         }
-        if (configs.isEmpty()) return@LaunchedEffect
+        if (configs.isEmpty()) {
+            if (ccPhase != SubtitleAttachPhase.Fetch) {
+                ccPhase = SubtitleAttachPhase.Idle
+            }
+            return@LaunchedEffect
+        }
         val nextUris = configs.map { it.uri.toString() }
         // Attach as soon as buffering/ready — 2s ceiling, not a 6s READY wait.
         // Stay in the loop while IDLE; prepare() often starts IDLE for a beat.
@@ -933,40 +953,73 @@ fun PlayerScreen(
             delay(SUBTITLE_ATTACH_POLL_MS)
             guard++
         }
-        // Re-read after the poll — a pre-poll snapshot can soft-replace a dead
-        // CDN URI back into the player after a successful failover.
-        val live = exo.currentMediaItem ?: return@LaunchedEffect
-        val liveUri = live.localConfiguration?.uri?.toString()
-        val already = live.localConfiguration?.subtitleConfigurations.orEmpty()
-            .map { it.uri.toString() }
-        val action = subtitleAttachAction(
-            expectedUri = expectedUri,
-            liveUri = liveUri,
-            liveItemPresent = true,
-            existingUris = already,
-            nextUris = nextUris,
-            playbackState = exo.playbackState,
-            itemIndex = exo.currentMediaItemIndex,
-            mediaItemCount = exo.mediaItemCount,
-        )
-        if (action == SubtitleAttachAction.None) return@LaunchedEffect
-        val resume = exo.playWhenReady
-        playbackSource?.let { playerBundle?.pipeline?.apply(it) }
-        val updated = live.buildUpon().setSubtitleConfigurations(configs).build()
-        when (action) {
-            SubtitleAttachAction.SoftReplace ->
-                exo.replaceMediaItem(exo.currentMediaItemIndex, updated)
-            SubtitleAttachAction.HardReload -> {
-                exo.setMediaItem(updated, false)
-                exo.prepare()
-                exo.playWhenReady = resume
+        var rearms = 0
+        while (true) {
+            // Re-read after the poll — a pre-poll snapshot can soft-replace a dead
+            // CDN URI back into the player after a successful failover.
+            val live = exo.currentMediaItem ?: run {
+                ccPhase = SubtitleAttachPhase.Idle
+                return@LaunchedEffect
             }
-            SubtitleAttachAction.None -> Unit
-        }
-        // Track groups can be empty for one tick after replace — re-assert the
-        // user's caption pick the same way Cast does after late sidecars.
-        trackSelector?.let { selector ->
-            applyTextSelection(selector, selectedTextId, textOptions, subsEnabled)
+            val liveUri = live.localConfiguration?.uri?.toString()
+            val already = live.localConfiguration?.subtitleConfigurations.orEmpty()
+                .map { it.uri.toString() }
+            val action = subtitleAttachAction(
+                expectedUri = expectedUri,
+                liveUri = liveUri,
+                liveItemPresent = true,
+                existingUris = already,
+                nextUris = nextUris,
+                playbackState = exo.playbackState,
+                itemIndex = exo.currentMediaItemIndex,
+                mediaItemCount = exo.mediaItemCount,
+            )
+            when (action) {
+                SubtitleAttachAction.None -> {
+                    // Bake-in already carried captions — clear CC · WARM.
+                    subtitleAttachPhaseAfterAction(action)?.let { ccPhase = it }
+                    return@LaunchedEffect
+                }
+                SubtitleAttachAction.ReArm -> {
+                    if (rearms >= SUBTITLE_ATTACH_MAX_REARMS) {
+                        ccPhase = SubtitleAttachPhase.Idle
+                        return@LaunchedEffect
+                    }
+                    val nextExpected = subtitleAttachUriKey(liveUri)
+                    if (nextExpected.isEmpty()) {
+                        ccPhase = SubtitleAttachPhase.Idle
+                        return@LaunchedEffect
+                    }
+                    expectedUri = nextExpected
+                    rearms++
+                    continue
+                }
+                SubtitleAttachAction.SoftReplace,
+                SubtitleAttachAction.HardReload,
+                -> {
+                    subtitleAttachPhaseAfterAction(action)?.let { ccPhase = it }
+                    val resume = exo.playWhenReady
+                    playbackSource?.let { playerBundle?.pipeline?.apply(it) }
+                    val updated = live.buildUpon().setSubtitleConfigurations(configs).build()
+                    when (action) {
+                        SubtitleAttachAction.SoftReplace ->
+                            exo.replaceMediaItem(exo.currentMediaItemIndex, updated)
+                        SubtitleAttachAction.HardReload -> {
+                            exo.setMediaItem(updated, false)
+                            exo.prepare()
+                            exo.playWhenReady = resume
+                        }
+                        else -> Unit
+                    }
+                    // Track groups can be empty for one tick after replace — re-assert
+                    // the user's caption pick the same way Cast does after late sidecars.
+                    trackSelector?.let { selector ->
+                        applyTextSelection(selector, selectedTextId, textOptions, subsEnabled)
+                    }
+                    ccPhase = SubtitleAttachPhase.Ready
+                    return@LaunchedEffect
+                }
+            }
         }
     }
     // Kaa uses one master for Sub and Dub, so the player is not rebuilt.
@@ -3172,32 +3225,34 @@ fun PlayerScreen(
                 }
                 PlayerMenuSectionLabel("Subtitles")
                 if (captionsLoading) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "Loading subtitles…",
-                            color = Color(0xFFB5B5B5),
-                            fontSize = 13.sp,
-                        )
-                    }
+                    Text(
+                        glassCaptionsLoadingLabel(),
+                        color = Color.White.copy(alpha = 0.55f),
+                        fontSize = 11.sp,
+                        letterSpacing = 0.8.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                    GlassResolutionChipRow(
+                        options = glassCaptionsLoadingChipOptions(),
+                        selectedId = "cc-warm",
+                        onSelect = { },
+                    )
+                } else {
+                    GlassResolutionChipRow(
+                        options = glassCaptionChipOptions(
+                            textOptions
+                                .filter { it.id != "off" && it.id != "auto" }
+                                .map { it.id to it.label },
+                        ),
+                        selectedId = glassSubsSelectedCaptionId(subsEnabled, selectedTextId),
+                        onSelect = { id ->
+                            val (on, sel) = glassCaptionSelectionAfterTap(id)
+                            subsEnabled = on
+                            selectedTextId = sel
+                        },
+                    )
                 }
-                GlassResolutionChipRow(
-                    options = glassCaptionChipOptions(
-                        textOptions
-                            .filter { it.id != "off" && it.id != "auto" }
-                            .map { it.id to it.label },
-                    ),
-                    selectedId = glassSubsSelectedCaptionId(subsEnabled, selectedTextId),
-                    onSelect = { id ->
-                        val (on, sel) = glassCaptionSelectionAfterTap(id)
-                        subsEnabled = on
-                        selectedTextId = sel
-                    },
-                )
                 PlayerMenuSectionLabel("Style")
                 CaptionPreview(subStyle)
                 Spacer(modifier = Modifier.height(10.dp))
@@ -4293,6 +4348,7 @@ fun PlayerScreen(
                                     source?.serverName?.takeIf { it.isNotBlank() },
                                     "$res · $mode",
                                     abrFailoverStatusPill(abrPhase),
+                                    subtitleAttachStatusPill(ccPhase),
                                 ),
                                 shadowReady = shadowReadyNow(),
                                 standbyLatencyMs = PlaybackHostHealth.latencyMs(shadowHost.orEmpty()),

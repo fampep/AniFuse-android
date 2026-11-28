@@ -64,10 +64,11 @@ class SubtitleAttachTest {
     }
 
     @Test
-    fun attachActionSkipsDriftAndChoosesSoftOrHard() {
+    fun attachActionRearmsOnDriftAndChoosesSoftOrHard() {
         val next = listOf("https://lib.example/a.vtt")
+        // CDN failover under us — re-arm against the live URI once.
         assertEquals(
-            SubtitleAttachAction.None,
+            SubtitleAttachAction.ReArm,
             subtitleAttachAction(
                 expectedUri = "https://cdn-a.example/ep.m3u8",
                 liveUri = "https://cdn-b.example/ep.m3u8",
@@ -142,6 +143,50 @@ class SubtitleAttachTest {
         assertEquals(provider, captionsAfterPeek(provider, peeked = null))
         val filled = captionsAfterPeek(provider, listOf(track("https://lib.example/b.vtt", "es")))
         assertEquals(2, filled.size)
+    }
+
+    @Test
+    fun statusPillTracksColdAttachPhases() {
+        assertEquals("CC · WARM", subtitleAttachStatusPill(SubtitleAttachPhase.Fetch))
+        assertEquals("CC · LIVE", subtitleAttachStatusPill(SubtitleAttachPhase.Soft))
+        assertEquals("CC · LIVE", subtitleAttachStatusPill(SubtitleAttachPhase.Bake))
+        assertEquals(null, subtitleAttachStatusPill(SubtitleAttachPhase.Idle))
+        assertEquals(null, subtitleAttachStatusPill(SubtitleAttachPhase.Ready))
+        assertEquals(
+            SubtitleAttachPhase.Soft,
+            subtitleAttachPhaseAfterAction(SubtitleAttachAction.SoftReplace),
+        )
+        assertEquals(
+            SubtitleAttachPhase.Bake,
+            subtitleAttachPhaseAfterAction(SubtitleAttachAction.HardReload),
+        )
+        // Unchanged / already baked must clear CC · WARM.
+        assertEquals(
+            SubtitleAttachPhase.Ready,
+            subtitleAttachPhaseAfterAction(SubtitleAttachAction.None),
+        )
+        assertEquals(null, subtitleAttachPhaseAfterAction(SubtitleAttachAction.ReArm))
+        assertEquals(
+            SubtitleAttachPhase.Idle,
+            subtitleAttachPhaseAfterFetch(previousUrls = emptyList(), nextTracks = emptyList()),
+        )
+        // Unchanged listing after a library miss must clear WARM, not stick Fetch.
+        val provider = listOf(track("https://cdn.example/a.vtt", "en"))
+        assertEquals(
+            SubtitleAttachPhase.Ready,
+            subtitleAttachPhaseAfterFetch(
+                previousUrls = provider.map { it.url },
+                nextTracks = provider,
+            ),
+        )
+        assertEquals(
+            SubtitleAttachPhase.Fetch,
+            subtitleAttachPhaseAfterFetch(
+                previousUrls = provider.map { it.url },
+                nextTracks = provider + track("https://lib.example/b.vtt", "es"),
+            ),
+        )
+        assertTrue(SUBTITLE_ATTACH_MAX_REARMS >= 1)
     }
 
     private fun track(url: String, lang: String) = SubtitleTrack(
