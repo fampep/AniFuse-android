@@ -217,7 +217,8 @@ internal fun NextEpisodePrompt(
             fontSize = 18.sp,
         )
         Spacer(modifier = Modifier.height(4.dp))
-        // Animate kind changes only — ticking seconds must not crossfade every beat.
+        // Animate kind only — ticking seconds live outside AnimatedContent so
+        // the cached slot cannot freeze the first countdown snapshot.
         val statusKind = when {
             busy -> "busy"
             ended -> "ended"
@@ -225,24 +226,32 @@ internal fun NextEpisodePrompt(
             else -> "ready"
         }
         val fadeMs = if (prefersReducedMotion()) 0 else 160
-        AnimatedContent(
-            targetState = statusKind,
-            transitionSpec = {
-                fadeIn(tween(fadeMs)) togetherWith fadeOut(tween(fadeMs))
-            },
-            label = "nextEpisodeStatus",
-        ) { kind ->
-            val line = when (kind) {
-                "busy" -> "Loading next episode…"
-                "ended" -> "Starting automatically in ${secondsLeft}s"
-                "ending" -> "Episode ends in ${countdown}s"
-                else -> "Episode $nextEpisode is ready"
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AnimatedContent(
+                targetState = statusKind,
+                transitionSpec = {
+                    fadeIn(tween(fadeMs)) togetherWith fadeOut(tween(fadeMs))
+                },
+                label = "nextEpisodeStatus",
+            ) { kind ->
+                Text(
+                    when (kind) {
+                        "busy" -> "Loading next episode…"
+                        "ended" -> "Starting automatically in "
+                        "ending" -> "Episode ends in "
+                        else -> "Episode $nextEpisode is ready"
+                    },
+                    color = PlayerChrome.Graphite,
+                    fontSize = 13.sp,
+                )
             }
-            Text(
-                line,
-                color = PlayerChrome.Graphite,
-                fontSize = 13.sp,
-            )
+            if (statusKind == "ended" || statusKind == "ending") {
+                Text(
+                    "${if (ended) secondsLeft else countdown}s",
+                    color = PlayerChrome.Graphite,
+                    fontSize = 13.sp,
+                )
+            }
         }
         if (countdown > 0) {
             val span = if (ended) AUTOPLAY_COUNTDOWN_SEC else (NEAR_END_THRESHOLD_MS / 1000L).toInt()
