@@ -771,9 +771,10 @@ fun PlayerScreen(
         val seedBitrate = context.getSharedPreferences("anikitty_player", 0)
             .getInt("last_video_bitrate", 1_500_000)
             .coerceIn(400_000, 8_000_000)
-        val bandwidth = DefaultBandwidthMeter.Builder(context)
+        val innerBandwidth = DefaultBandwidthMeter.Builder(context)
             .setInitialBitrateEstimate(seedBitrate.toLong())
             .build()
+        val bandwidth = ReseedableBandwidthMeter(innerBandwidth)
         // Flagship ABR: climb early on a healthy pipe, dump rungs the second stalls hit.
         val adaptive = AdaptiveTrackSelection.Factory(
             /* minDurationForQualityIncreaseMs = */ 3_200,
@@ -808,10 +809,11 @@ fun PlayerScreen(
                 videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
                 playbackParameters = PlaybackParameters(playbackSpeed)
             }
-        PlayerBundle(exo, selector, pipeline)
+        PlayerBundle(exo, selector, pipeline, bandwidth)
     }
     val player = playerBundle?.player
     val trackSelector = playerBundle?.trackSelector
+    val bandwidthMeter = playerBundle?.bandwidth
     // The video is already playing. Captions arrive on their own and are added
     // without building a new player.
     LaunchedEffect(anilistId, episode, source?.url) {
@@ -831,10 +833,12 @@ fun PlayerScreen(
     }
     // After a CDN failover, cap ABR briefly so the new host is not judged by
     // the previous pipe's bitrate estimate. A shadow swap lands at index 0,
-    // so the cap follows the URL, not the index.
+    // so the cap follows the URL, not the index. Also reseed the live meter —
+    // a max-bitrate alone still fights a polluted DefaultBandwidthMeter reading.
     var bitrateCappedFor by remember(anilistId, episode) { mutableStateOf<String?>(null) }
-    LaunchedEffect(playbackSource?.url, trackSelector) {
+    LaunchedEffect(playbackSource?.url, trackSelector, bandwidthMeter) {
         val selector = trackSelector ?: return@LaunchedEffect
+        val meter = bandwidthMeter
         val url = playbackSource?.url ?: return@LaunchedEffect
         val first = bitrateCappedFor == null
         bitrateCappedFor = url
@@ -842,16 +846,20 @@ fun PlayerScreen(
         val seed = playerPrefs.getInt("last_video_bitrate", 1_500_000)
         val cap = abrFailoverCapBitrate(seed)
         val holdMs = abrFailoverHoldMs(seed)
+        meter?.reseed(abrFailoverReseedBitrate(seed))
         val previous = selector.parameters
         selector.parameters = previous.buildUpon().setMaxVideoBitrate(cap).build()
         delay(holdMs)
         if (trackSelector !== selector) return@LaunchedEffect
         // Soft release first — uncapping immediately thrash-climbs on a cold meter.
+        val soft = abrFailoverReleaseBitrate(seed)
+        meter?.reseed(soft.toLong())
         selector.parameters = selector.parameters.buildUpon()
-            .setMaxVideoBitrate(abrFailoverReleaseBitrate(seed))
+            .setMaxVideoBitrate(soft)
             .build()
         delay(1_400L)
         if (trackSelector === selector) {
+            meter?.clearReseed()
             selector.parameters = selector.parameters.buildUpon()
                 .setMaxVideoBitrate(Int.MAX_VALUE)
                 .build()
@@ -4860,6 +4868,7 @@ private data class PlayerBundle(
     val player: ExoPlayer,
     val trackSelector: DefaultTrackSelector,
     val pipeline: PlaybackPipeline,
+    val bandwidth: ReseedableBandwidthMeter,
 )
 
 private data class PlayerClock(

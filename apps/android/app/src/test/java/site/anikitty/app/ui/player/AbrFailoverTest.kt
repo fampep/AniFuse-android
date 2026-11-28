@@ -32,4 +32,11 @@ class AbrFailoverTest {
         assertEquals(1_200_000, abrFailoverReleaseBitrate(400_000))
         assertEquals(4_000_000, abrFailoverReleaseBitrate(5_000_000))
     }
+
+    @Test
+    fun reseedMatchesTheSoftCap() {
+        assertEquals(1_200_000L, abrFailoverReseedBitrate(4_000_000))
+        assertEquals(500_000L, abrFailoverReseedBitrate(100_000))
+        assertEquals(1_000_000L, abrFailoverReseedBitrate(1_000_000))
+    }
 }

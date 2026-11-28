@@ -33,8 +33,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Thumbnail above the scrubber, timestamp under it. The card is clamped
- * to the bar so a phone edge never clips it.
+ * Thumbnail above the scrubber, optional chapter chip + timestamp under it.
+ * The card is clamped to the bar so a phone edge never clips it.
  */
 @Composable
 internal fun SeekPreview(
@@ -42,6 +42,7 @@ internal fun SeekPreview(
     timeLabel: String,
     frame: Bitmap?,
     modifier: Modifier = Modifier,
+    chapterLabel: String? = null,
 ) {
     BoxWithConstraints(
         modifier
@@ -111,9 +112,33 @@ internal fun SeekPreview(
                 }
             }
             val chipShape = RoundedCornerShape(999.dp)
+            if (!chapterLabel.isNullOrBlank()) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .clip(chipShape)
+                        .background(Color(0xE6101012))
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
+                            ),
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.34f), chipShape)
+                        .padding(horizontal = 10.dp, vertical = 3.dp),
+                ) {
+                    Text(
+                        chapterLabel,
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.SansSerif,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.6.sp,
+                    )
+                }
+            }
             Box(
                 modifier = Modifier
-                    .padding(top = 6.dp)
+                    .padding(top = if (chapterLabel.isNullOrBlank()) 6.dp else 4.dp)
                     .clip(chipShape)
                     .background(Color(0xCC101012))
                     .background(

@@ -136,6 +136,7 @@ internal fun LiveTimeline(
                 fraction = scrubValue,
                 timeLabel = formatClockPadded(shown),
                 frame = frame,
+                chapterLabel = scrubChapterLabel(skipTimes, shown),
             )
         }
     }

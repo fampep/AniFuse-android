@@ -55,4 +55,37 @@ class SubtitleLibraryCacheTest {
             dir.deleteRecursively()
         }
     }
+
+    @Test
+    fun peekPromotesAFreshDiskListingIntoMemory() {
+        val dir = Files.createTempDirectory("captions-peek").toFile()
+        try {
+            val store = CaptionFileStore(dir)
+            val key = "a".repeat(64)
+            val body = """{"tracks":[{"language":"English","flag":"🇬🇧","site":"AniGato","download":"/api/file?id=$key"}]}"""
+            store.write("21/7", body)
+            val memory = CaptionMemoryCache(ttlMs = CAPTION_TTL_MS, missTtlMs = CAPTION_MISS_TTL_MS)
+            val promoted = promoteCaptionPeek(
+                key = "21/7",
+                memory = memory,
+                store = store,
+                nowMs = System.currentTimeMillis(),
+                ttlMs = CAPTION_TTL_MS,
+            )
+            assertNotNull(promoted)
+            assertEquals(1, promoted!!.size)
+            assertEquals(promoted, memory.get("21/7"))
+            // Empty disk listings must not pretend captions are gone.
+            store.write("21/8", """{"tracks":[]}""")
+            assertNull(
+                promoteCaptionPeek(
+                    key = "21/8",
+                    memory = CaptionMemoryCache(),
+                    store = store,
+                ),
+            )
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
 }
