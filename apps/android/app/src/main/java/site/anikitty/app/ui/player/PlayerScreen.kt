@@ -156,6 +156,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -526,15 +527,19 @@ fun PlayerScreen(
     var sleepNote by remember { mutableStateOf<String?>(null) }
 
     val source = playlist.getOrNull(sourceIndex)
+    /** Bumps so Sources LEAD/HOT/DOWN recompose when probe samples land. */
+    var hostHealthTick by remember { mutableIntStateOf(0) }
     LaunchedEffect(panel, source?.url, shadowHost) {
         if (panel != PlayerMenuPage.Quality) return@LaunchedEffect
         // Keep Sources RTT live while the glass sheet is open — LEAD / STANDBY
         // badges must not freeze on the open-frame snapshot.
+        hostHealthTick++
         while (true) {
             HostHealthProbe.kickRemembered(
                 preferredHost = playableHost(source?.url.orEmpty()).ifBlank { shadowHost },
             )
             delay(2_400L)
+            hostHealthTick++
         }
     }
     // Provider sidecars first; SubtitleLibrary.peek fills gaps so warm
@@ -3189,30 +3194,44 @@ fun PlayerScreen(
                 val sourcesBlock = @Composable {
                     if (playlist.isNotEmpty()) {
                         PlayerMenuSectionLabel("Sources")
-                        playlist.forEachIndexed { index, src ->
-                            val host = playableHost(src.url)
-                            val rtt = PlaybackHostHealth.latencyMs(host)
-                            val score = PlaybackHostHealth.score(host)
-                            GlassSourceCard(
-                                title = src.label.ifBlank {
-                                    src.serverName?.takeIf { it.isNotBlank() } ?: "Source ${index + 1}"
-                                },
-                                meta = glassSourceMetaLine(
-                                    serverName = src.serverName,
-                                    quality = src.quality,
-                                    audio = src.audio,
-                                    subtitleFallback = src.subtitles.joinToString(", ") { it.label }
-                                        .takeIf { src.subtitles.isNotEmpty() },
-                                ),
-                                rttLabel = glassSourcePulseLabel(
+                        // Playing row stays LEAD on top; mirrors race-dock by live score.
+                        val sourceRows = remember(playlist, sourceIndex, hostHealthTick) {
+                            glassSourceRowsOrdered(
+                                count = playlist.size,
+                                playingIndex = sourceIndex,
+                            ) { index ->
+                                PlaybackHostHealth.score(playableHost(playlist[index].url))
+                            }
+                        }
+                        sourceRows.forEach { index ->
+                            // Key by playlist index — not visual slot — so live
+                            // race-dock reorders keep TV focus on the same mirror.
+                            key(glassSourceRowKey(index)) {
+                                val src = playlist[index]
+                                val host = playableHost(src.url)
+                                val rtt = PlaybackHostHealth.latencyMs(host)
+                                val score = PlaybackHostHealth.score(host)
+                                GlassSourceCard(
+                                    title = src.label.ifBlank {
+                                        src.serverName?.takeIf { it.isNotBlank() } ?: "Source ${index + 1}"
+                                    },
+                                    meta = glassSourceMetaLine(
+                                        serverName = src.serverName,
+                                        quality = src.quality,
+                                        audio = src.audio,
+                                        subtitleFallback = src.subtitles.joinToString(", ") { it.label }
+                                            .takeIf { src.subtitles.isNotEmpty() },
+                                    ),
+                                    rttLabel = glassSourcePulseLabel(
+                                        selected = index == sourceIndex,
+                                        latencyMs = rtt,
+                                        score = score,
+                                        cold = score < 0,
+                                    ) ?: glassSourceRttLabel(rtt),
                                     selected = index == sourceIndex,
-                                    latencyMs = rtt,
-                                    score = score,
-                                    cold = score < 0,
-                                ) ?: glassSourceRttLabel(rtt),
-                                selected = index == sourceIndex,
-                                onClick = { pickQuality(index) },
-                            )
+                                    onClick = { pickQuality(index) },
+                                )
+                            }
                         }
                         // Armed shadow — visible failover, not a silent swap.
                         if (shadowReadyNow() && shadowList.isNotEmpty()) {

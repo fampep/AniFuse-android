@@ -105,6 +105,29 @@ internal fun glassSourcePulseLabel(
     latencyMs = latencyMs,
 )
 
+/**
+ * Glass Sources row order — playing index stays LEAD on top; every other
+ * mirror sorts like the Store Race dock (higher [PlaybackHostHealth] score
+ * rises). Returns playlist indices, never copies the sources.
+ */
+internal fun glassSourceRowsOrdered(
+    count: Int,
+    playingIndex: Int,
+    scoreOf: (Int) -> Int,
+): List<Int> {
+    if (count <= 0) return emptyList()
+    val pin = playingIndex.takeIf { it in 0 until count }
+    val rest = (0 until count).filter { it != pin }
+    val ordered = site.anikitty.app.ui.app.raceDockOrdered(rest, scoreOf)
+    return if (pin != null) listOf(pin) + ordered else ordered
+}
+
+/**
+ * Compose identity for a Sources row — playlist index, not visual position,
+ * so live reorders keep TV focus / remembered focus on the same mirror.
+ */
+internal fun glassSourceRowKey(playlistIndex: Int): Int = playlistIndex
+
 /** Armed shadow failover chip — never LEAD; always STANDBY · ms when probed. */
 internal fun glassShadowStandbyLabel(latencyMs: Long?): String =
     site.anikitty.app.ui.app.raceDockStandbyLabel(latencyMs)
