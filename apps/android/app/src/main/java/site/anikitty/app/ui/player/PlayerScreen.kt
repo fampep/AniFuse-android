@@ -1454,6 +1454,15 @@ fun PlayerScreen(
                 }
             }
             SourceRecovery.NextSource -> {
+                // Offline / HLS-cache: stay on the download — do not walk to a live sibling.
+                if (!fromCast && offlinePlaybackHoldsSource(playingOffline)) {
+                    runCatching {
+                        target?.seekTo(decision.resumeMs.coerceAtLeast(0L))
+                        target?.prepare()
+                        target?.playWhenReady = true
+                    }
+                    return
+                }
                 val failedHost = playbackHost(
                     (if (fromCast) latestSources.getOrNull(latestSourceIndex) else source)?.url.orEmpty(),
                 )
@@ -2192,7 +2201,8 @@ fun PlayerScreen(
                     if (stalled && buffered == stallBuffered) {
                         if (stallSince == 0L) stallSince = System.currentTimeMillis()
                         val budget = shadowStallBudgetMs(shadowReadyNow())
-                        val canWalk = latestSources.size > latestSourceIndex + 1
+                        val canWalk = !offlinePlaybackHoldsSource(playingOffline) &&
+                            latestSources.size > latestSourceIndex + 1
                         if (System.currentTimeMillis() - stallSince >= budget && (shadowReadyNow() || canWalk)) {
                             stallSince = 0L
                             val decision = sourceFailover(

@@ -30,6 +30,9 @@ internal fun liveShadowArmAllowed(playbackLocal: Boolean): Boolean = !playbackLo
 internal fun liveShadowSwapAllowed(playbackLocal: Boolean, playingOffline: Boolean): Boolean =
     !playbackLocal && !playingOffline
 
+/** Stall walk / NextSource must not abandon an offline or HLS-cache copy. */
+internal fun offlinePlaybackHoldsSource(playingOffline: Boolean): Boolean = playingOffline
+
 /** @deprecated Prefer [liveShadowArmAllowed] / [liveShadowSwapAllowed]. */
 internal fun liveShadowAllowed(playbackLocal: Boolean): Boolean = liveShadowArmAllowed(playbackLocal)
 
