@@ -102,4 +102,83 @@ class ShadowStandbyTest {
             failureRoute(SourceRecovery.RetrySame, playlistHasHealthyNext = true, shadowReady = true),
         )
     }
+
+    @Test
+    fun trickleStallTripsWhenBufferedCreepsUnderEpsilon() {
+        // First sample arms the clock.
+        val arm = trickleStallTick(
+            prevBuffered = -1L,
+            stallSince = 0L,
+            nowBuffered = 1_000L,
+            nowMs = 10_000L,
+            stalled = true,
+            budgetMs = SHADOW_STALL_MS,
+        )
+        assertEquals(1_000L, arm.stallBuffered)
+        assertEquals(10_000L, arm.stallSince)
+        assertFalse(arm.trip)
+
+        // Zombie CDN: +40ms per tick — under epsilon, clock keeps running
+        // even as the absolute buffered value creeps upward.
+        val mid = trickleStallTick(
+            prevBuffered = arm.stallBuffered,
+            stallSince = arm.stallSince,
+            nowBuffered = 1_040L,
+            nowMs = 10_000L + SHADOW_STALL_MS - 1,
+            stalled = true,
+            budgetMs = SHADOW_STALL_MS,
+        )
+        assertEquals(1_040L, mid.stallBuffered)
+        assertEquals(10_000L, mid.stallSince)
+        assertFalse(mid.trip)
+
+        val creep = trickleStallTick(
+            prevBuffered = mid.stallBuffered,
+            stallSince = mid.stallSince,
+            nowBuffered = 1_080L,
+            nowMs = 10_000L + SHADOW_STALL_MS - 1,
+            stalled = true,
+            budgetMs = SHADOW_STALL_MS,
+        )
+        assertEquals(1_080L, creep.stallBuffered)
+        assertEquals(10_000L, creep.stallSince)
+        assertFalse(creep.trip)
+
+        val trip = trickleStallTick(
+            prevBuffered = creep.stallBuffered,
+            stallSince = creep.stallSince,
+            nowBuffered = 1_120L,
+            nowMs = 10_000L + SHADOW_STALL_MS,
+            stalled = true,
+            budgetMs = SHADOW_STALL_MS,
+        )
+        assertTrue(trip.trip)
+        assertEquals(10_000L, trip.stallSince)
+    }
+
+    @Test
+    fun realBufferJumpResetsTrickleClockAndPlayingClearsIt() {
+        val jump = trickleStallTick(
+            prevBuffered = 1_000L,
+            stallSince = 5_000L,
+            nowBuffered = 1_000L + TRICKLE_STALL_EPSILON_MS + 1,
+            nowMs = 8_000L,
+            stalled = true,
+            budgetMs = SHADOW_STALL_MS,
+        )
+        assertEquals(1_000L + TRICKLE_STALL_EPSILON_MS + 1, jump.stallBuffered)
+        assertEquals(8_000L, jump.stallSince)
+        assertFalse(jump.trip)
+
+        val clear = trickleStallTick(
+            prevBuffered = jump.stallBuffered,
+            stallSince = jump.stallSince,
+            nowBuffered = 2_000L,
+            nowMs = 9_000L,
+            stalled = false,
+            budgetMs = SHADOW_STALL_MS,
+        )
+        assertEquals(0L, clear.stallSince)
+        assertFalse(clear.trip)
+    }
 }

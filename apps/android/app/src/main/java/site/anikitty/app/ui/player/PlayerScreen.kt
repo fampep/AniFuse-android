@@ -2437,36 +2437,41 @@ fun PlayerScreen(
                     val stalled = clock.playWhenReady &&
                         !clock.playing &&
                         clock.state == Player.STATE_BUFFERING
-                    if (stalled && buffered == stallBuffered) {
-                        if (stallSince == 0L) stallSince = System.currentTimeMillis()
-                        val budget = shadowStallBudgetMs(shadowReadyNow())
-                        val canWalk = !offlinePlaybackHoldsSource(playingOffline) &&
-                            latestSources.size > latestSourceIndex + 1
-                        if (System.currentTimeMillis() - stallSince >= budget && (shadowReadyNow() || canWalk)) {
-                            stallSince = 0L
-                            val decision = sourceFailover(
-                                index = latestSourceIndex,
-                                count = latestSources.size,
-                                livePositionMs = maxOf(pos, resumeAtMs),
-                                heldResumeMs = resumeAtMs,
-                                historyMs = startPositionMs,
-                                allowHistory = allowHistoryFallback,
-                            )
-                            val failedHost = playbackHost(latestSources.getOrNull(latestSourceIndex)?.url.orEmpty())
-                            if (failedHost.isNotEmpty()) PlaybackHostHealth.note(failedHost, ok = false)
-                            if (!swapToShadow(decision.resumeMs) && decision.nextIndex != null) {
-                                val next = nextIndexSkippingDead(fromCast = false) ?: decision.nextIndex
-                                resumeAtMs = decision.resumeMs
-                                positionMs = decision.resumeMs
-                                playhead.ms = decision.resumeMs
-                                didSeekStart = false
-                                allowHistoryFallback = false
-                                sourceIndex = next
-                            }
+                    val budget = shadowStallBudgetMs(shadowReadyNow())
+                    val tick = trickleStallTick(
+                        prevBuffered = stallBuffered,
+                        stallSince = stallSince,
+                        nowBuffered = buffered,
+                        nowMs = System.currentTimeMillis(),
+                        stalled = stalled,
+                        budgetMs = budget,
+                    )
+                    stallBuffered = tick.stallBuffered
+                    stallSince = tick.stallSince
+                    val canWalk = !offlinePlaybackHoldsSource(playingOffline) &&
+                        latestSources.size > latestSourceIndex + 1
+                    // Trickle or frozen buffer past budget → swap before cold resolve.
+                    if (tick.trip && (shadowReadyNow() || canWalk)) {
+                        stallSince = 0L
+                        val decision = sourceFailover(
+                            index = latestSourceIndex,
+                            count = latestSources.size,
+                            livePositionMs = maxOf(pos, resumeAtMs),
+                            heldResumeMs = resumeAtMs,
+                            historyMs = startPositionMs,
+                            allowHistory = allowHistoryFallback,
+                        )
+                        val failedHost = playbackHost(latestSources.getOrNull(latestSourceIndex)?.url.orEmpty())
+                        if (failedHost.isNotEmpty()) PlaybackHostHealth.note(failedHost, ok = false)
+                        if (!swapToShadow(decision.resumeMs) && decision.nextIndex != null) {
+                            val next = nextIndexSkippingDead(fromCast = false) ?: decision.nextIndex
+                            resumeAtMs = decision.resumeMs
+                            positionMs = decision.resumeMs
+                            playhead.ms = decision.resumeMs
+                            didSeekStart = false
+                            allowHistoryFallback = false
+                            sourceIndex = next
                         }
-                    } else {
-                        stallBuffered = buffered
-                        stallSince = if (stalled) System.currentTimeMillis() else 0L
                     }
                 }
                 val d = if (trustCastClock) rawDur else 0L

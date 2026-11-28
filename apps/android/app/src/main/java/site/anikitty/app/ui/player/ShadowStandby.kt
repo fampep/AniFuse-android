@@ -108,6 +108,65 @@ internal fun shadowStandbyReady(
 internal fun shadowStallBudgetMs(standbyFresh: Boolean): Long =
     if (standbyFresh) SHADOW_STALL_MS else COLD_STALL_MS
 
+/**
+ * Per-tick buffered advance still counted as a zombie CDN trickle.
+ * Real ABR refill jumps hundreds of ms; a dying edge creeps ≤ this.
+ */
+internal const val TRICKLE_STALL_EPSILON_MS = 64L
+
+internal data class TrickleStallState(
+    val stallBuffered: Long,
+    val stallSince: Long,
+    val trip: Boolean,
+)
+
+/**
+ * Stall detector that survives zombie CDNs slowly advancing [bufferedPosition].
+ * Exact equality never held across ticks for those edges — this treats
+ * per-tick advances ≤ [epsilonMs] as frozen and keeps [stallSince] running.
+ * [stallBuffered] always tracks the latest sample so the next tick compares
+ * against it (cumulative creep must not reset the wall clock).
+ */
+internal fun trickleStallTick(
+    prevBuffered: Long,
+    stallSince: Long,
+    nowBuffered: Long,
+    nowMs: Long,
+    stalled: Boolean,
+    budgetMs: Long,
+    epsilonMs: Long = TRICKLE_STALL_EPSILON_MS,
+): TrickleStallState {
+    if (!stalled) {
+        return TrickleStallState(
+            stallBuffered = nowBuffered,
+            stallSince = 0L,
+            trip = false,
+        )
+    }
+    // First sample or a real ABR refill jump — restart the wall clock.
+    if (prevBuffered < 0L) {
+        return TrickleStallState(
+            stallBuffered = nowBuffered,
+            stallSince = nowMs,
+            trip = false,
+        )
+    }
+    val tickDelta = kotlin.math.abs(nowBuffered - prevBuffered)
+    if (tickDelta > epsilonMs) {
+        return TrickleStallState(
+            stallBuffered = nowBuffered,
+            stallSince = nowMs,
+            trip = false,
+        )
+    }
+    val since = if (stallSince <= 0L) nowMs else stallSince
+    return TrickleStallState(
+        stallBuffered = nowBuffered,
+        stallSince = since,
+        trip = nowMs - since >= budgetMs.coerceAtLeast(0L),
+    )
+}
+
 internal enum class FailureRoute { SameSource, NextInPlaylist, ShadowSwap, ColdResolve }
 
 /**
