@@ -101,6 +101,9 @@ class CastSessionHelper private constructor(
     /** Source last confirmed on the receiver — restore the relay after a keep. */
     @Volatile private var settledSource: PlayableSource? = null
 
+    /** Ticket whose MediaItem was handed to CastPlayer — errors before this are uncommitted. */
+    private val mediaCommittedTicket = AtomicInteger(0)
+
     private val ticketItem = AtomicReference<Pair<Int, CastItemKey>?>(null)
     private val ticketSource = AtomicReference<Pair<Int, PlayableSource>?>(null)
     private var screenProgress: CastProgressTarget? = null
@@ -387,13 +390,15 @@ class CastSessionHelper private constructor(
                         runCatching { start(playback, title, episode, positionMs, ticket) }
                             .onFailure {
                                 Log.w(TAG, "Cast prepare failed", it)
+                                val stillMine = ticket == generation.get()
                                 abortLoad(ticket, mediaCommitted = false)
-                                if (ticket == generation.get()) fireLoadError(it.message ?: "Cast failed")
+                                if (stillMine) fireLoadError(it.message ?: "Cast failed")
                             }
                     },
                     onFailure = {
+                        val stillMine = ticket == generation.get()
                         abortLoad(ticket, mediaCommitted = false)
-                        if (ticket == generation.get()) fireLoadError(it.message ?: "Cast failed")
+                        if (stillMine) fireLoadError(it.message ?: "Cast failed")
                     },
                 )
             }
@@ -414,9 +419,10 @@ class CastSessionHelper private constructor(
      * keep the settled episode (relay + yield + loadedItem). Otherwise tear down.
      */
     private fun abortLoad(ticket: Int, mediaCommitted: Boolean): Boolean {
-        val claimed = activeLoadTicket.compareAndSet(ticket, 0)
-        if (!claimed && !mediaCommitted) return false
-        if (!claimed) activeLoadTicket.set(0)
+        if (!activeLoadTicket.compareAndSet(ticket, 0)) return false
+        disarmWatchLoad()
+        // Invalidate the aborted ticket's receiver callbacks before any restore.
+        generation.incrementAndGet()
         val keep = castKeepPlayingAfterDrop(
             settledTicket = settledTicket.get(),
             abortedTicket = ticket,
@@ -426,7 +432,10 @@ class CastSessionHelper private constructor(
         if (keep) {
             casting = true
             loadedItem = castLoadedAfterKeep(keep = true, playingItem = playingItem)
-            restoreSettledRelay()
+            mediaCommittedTicket.set(0)
+            thread(name = "anikitty-cast-restore", isDaemon = true) {
+                restoreSettledRelay()
+            }
             val host = playableHost(playingItem!!.url).ifBlank { null }
             if (host != null) {
                 PlaybackHostHealth.notePlaying(host, CastDownloadYieldOwner)
@@ -439,6 +448,7 @@ class CastSessionHelper private constructor(
         loadedItem = null
         settledTicket.set(0)
         settledSource = null
+        mediaCommittedTicket.set(0)
         ticketItem.set(null)
         ticketSource.set(null)
         relay.stop()
@@ -447,12 +457,25 @@ class CastSessionHelper private constructor(
         return false
     }
 
+    /** Drop the in-flight RemoteMediaClient callback so a keep cannot settleReady later. */
+    private fun disarmWatchLoad() {
+        loadSettled.set(true)
+        val client = castContext.sessionManager.currentCastSession?.remoteMediaClient
+        statusCallback?.let { previous ->
+            runCatching { client?.unregisterCallback(previous) }
+        }
+        statusCallback = null
+    }
+
     /** Prepare already pointed the relay at the failed follow-up — put the live episode back. */
     private fun restoreSettledRelay() {
         val prev = settledSource ?: return
         runCatching {
             val playback = relay.prepare(prev)
-            relay.publish(playback)
+            main.post {
+                if (closed.get() || playingItem == null) return@post
+                relay.publish(playback)
+            }
         }.onFailure { Log.w(TAG, "Cast relay restore failed", it) }
     }
 
@@ -519,8 +542,9 @@ class CastSessionHelper private constructor(
                 runCatching {
                     start(playback, title, episode, positionMs, ticket, waitAttempt + 1)
                 }.onFailure {
+                    val stillMine = ticket == generation.get()
                     abortLoad(ticket, mediaCommitted = false)
-                    if (ticket == generation.get()) {
+                    if (stillMine) {
                         fireLoadError(it.message ?: "Cast failed")
                     }
                 }
@@ -528,7 +552,6 @@ class CastSessionHelper private constructor(
             return
         }
         relay.publish(playback)
-        watchLoad(client, ticket)
         val subs = subtitleConfigurations(playback.subtitles)
         val item = MediaItem.Builder()
             .setUri(playback.url)
@@ -547,10 +570,14 @@ class CastSessionHelper private constructor(
             )
             .setSubtitleConfigurations(subs)
             .build()
+        // Hand the item to CastPlayer before arming watchLoad so leftover
+        // IDLE/ERROR from the previous item cannot settle this ticket.
         castPlayer.setMediaItem(item, positionMs.coerceAtLeast(0L))
         castPlayer.prepare()
         castPlayer.volume = heldVolume
         castPlayer.playWhenReady = true
+        mediaCommittedTicket.set(ticket)
+        watchLoad(client, ticket)
         Log.i(
             TAG,
             "Cast load requested ${playback.url} subs=${subs.size} captions=${heldSubtitlesOn}",
@@ -683,15 +710,17 @@ class CastSessionHelper private constructor(
     private fun settleError(message: String, ticket: Int) {
         if (!loadSettled.compareAndSet(false, true)) return
         Log.w(TAG, "Cast load failed: $message")
-        // Receiver already took this item — previous episode is gone; full teardown.
-        abortLoad(ticket, mediaCommitted = true)
-        main.post { if (ticket == generation.get()) fireLoadError(message) }
+        val committed = mediaCommittedTicket.get() == ticket
+        val stillMine = ticket == generation.get()
+        abortLoad(ticket, mediaCommitted = committed)
+        main.post { if (stillMine) fireLoadError(message) }
     }
 
     fun stopCasting() {
         generation.incrementAndGet()
         activeLoadTicket.set(0)
         loadHooks.set(null)
+        disarmWatchLoad()
         runCatching { castPlayer.stop() }
         relay.stop()
         casting = false
@@ -699,6 +728,7 @@ class CastSessionHelper private constructor(
         loadedItem = null
         settledTicket.set(0)
         settledSource = null
+        mediaCommittedTicket.set(0)
         ticketItem.set(null)
         ticketSource.set(null)
         clearProgress()
@@ -718,6 +748,7 @@ class CastSessionHelper private constructor(
         activeLoadTicket.set(0)
         setAvailabilityListener(null)
         setPlaybackEndedListener(null)
+        disarmWatchLoad()
         runCatching { castPlayer.release() }
         relay.stop()
         runCatching { multicast?.release() }
@@ -726,6 +757,7 @@ class CastSessionHelper private constructor(
         loadedItem = null
         settledTicket.set(0)
         settledSource = null
+        mediaCommittedTicket.set(0)
         ticketItem.set(null)
         ticketSource.set(null)
         PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
