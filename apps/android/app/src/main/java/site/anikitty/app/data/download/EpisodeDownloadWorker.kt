@@ -147,7 +147,13 @@ class EpisodeDownloadWorker(
                 request.header("User-Agent", userAgent)
                 resume.rangeHeader?.let { request.header("Range", it) }
                 PlaybackHttp.client.newCall(request.build()).execute().use { response ->
-                    when (downloadTransfer(response.code, already)) {
+                    when (
+                        downloadTransferValidated(
+                            code = response.code,
+                            partBytes = already,
+                            contentRange = response.header("Content-Range"),
+                        )
+                    ) {
                         DownloadTransfer.Restart -> {
                             part.delete()
                             throw IOException("Couldn't resume this episode")

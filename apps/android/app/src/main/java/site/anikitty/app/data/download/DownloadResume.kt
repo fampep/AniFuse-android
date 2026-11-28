@@ -17,3 +17,38 @@ internal fun progressiveResume(partBytes: Long): ProgressiveResume {
     if (partBytes <= 0L) return ProgressiveResume(rangeHeader = null, appendOnPartial = false)
     return ProgressiveResume(rangeHeader = "bytes=$partBytes-", appendOnPartial = true)
 }
+
+/**
+ * Parse the start offset from a Content-Range header.
+ * Accepts `bytes 100-999/1234` and `bytes 100-/1234`.
+ */
+internal fun contentRangeStart(contentRange: String?): Long? {
+    val raw = contentRange?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val match = Regex("""(?i)bytes\s+(\d+)-""").find(raw) ?: return null
+    return match.groupValues[1].toLongOrNull()
+}
+
+/** True when a 206 body continues exactly where the partial left off. */
+internal fun contentRangeMatches(partBytes: Long, contentRange: String?): Boolean {
+    if (partBytes <= 0L) return false
+    val start = contentRangeStart(contentRange) ?: return false
+    return start == partBytes
+}
+
+/**
+ * A 206 without a matching Content-Range is corrupt — restart the partial.
+ * Other codes keep [downloadTransfer] behavior.
+ */
+internal fun downloadTransferValidated(
+    code: Int,
+    partBytes: Long,
+    contentRange: String?,
+): DownloadTransfer {
+    val base = downloadTransfer(code, partBytes)
+    if (base != DownloadTransfer.Resume) return base
+    return if (contentRangeMatches(partBytes, contentRange)) {
+        DownloadTransfer.Resume
+    } else {
+        DownloadTransfer.Restart
+    }
+}

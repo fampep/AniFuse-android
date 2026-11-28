@@ -134,4 +134,30 @@ class DownloadLaneTest {
         assertTrue(downloadIoShouldResume(4))
         assertFalse(downloadIoShouldResume(5))
     }
+
+    @Test
+    fun resumeRequiresAMatchingContentRange() {
+        assertEquals(100L, contentRangeStart("bytes 100-999/2000"))
+        assertEquals(40L, contentRangeStart("BYTES 40-/80"))
+        assertNull(contentRangeStart(null))
+        assertTrue(contentRangeMatches(40L, "bytes 40-99/200"))
+        assertFalse(contentRangeMatches(40L, "bytes 0-99/200"))
+        assertFalse(contentRangeMatches(40L, null))
+        assertEquals(
+            DownloadTransfer.Resume,
+            downloadTransferValidated(206, partBytes = 40L, contentRange = "bytes 40-99/200"),
+        )
+        assertEquals(
+            DownloadTransfer.Restart,
+            downloadTransferValidated(206, partBytes = 40L, contentRange = "bytes 0-99/200"),
+        )
+        assertEquals(
+            DownloadTransfer.Restart,
+            downloadTransferValidated(206, partBytes = 40L, contentRange = null),
+        )
+        assertEquals(
+            DownloadTransfer.Replace,
+            downloadTransferValidated(200, partBytes = 40L, contentRange = null),
+        )
+    }
 }
