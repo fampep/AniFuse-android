@@ -1754,7 +1754,9 @@ fun PlayerScreen(
                 if (!helper.isSessionConnecting() && !castPending) return@LaunchedEffect
             }
             if (!helper.isSessionAvailable()) {
-                if (helper.isSessionConnecting() || castPending) {
+                // castPending is already true here — only retry while Cast is
+                // still coming up. A dead/failed session hands back to the phone.
+                if (helper.isSessionConnecting()) {
                     scheduleCastClientRetry(latestPlayer)
                 } else {
                     abandonCastToPhone(latestPlayer)
