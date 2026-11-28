@@ -987,6 +987,7 @@ fun PlayerScreen(
             }
             // File→live (or HLS cache→edge) must re-arm a standby for the new host.
             shadowArmedHost = null
+            offlineRetried = false
         }
         wasOffline = playingOffline
     }
@@ -1998,7 +1999,8 @@ fun PlayerScreen(
                 if (playbackState == Player.STATE_READY) {
                     durationMs = activePlayer?.duration?.coerceAtLeast(0L) ?: 0L
                     error = null
-                    offlineRetried = false
+                    // Do not clear offlineRetried here — seek/prepare READY would
+                    // spend the one-shot hold before a holey download errors again.
                     // Local ExoPlayer stays ready while Chromecast plays. Do not
                     // cancel the cast end countdown from that player.
                     if (playbackEnded && !isCasting) {
