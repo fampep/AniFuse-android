@@ -15,6 +15,7 @@ embed docs):
 
 Live origins tried in order (warm last-good first when cached):
 
+- `https://animepapa.cyou` — Player API apex (OkHttp-reachable)
 - `https://anipm.pk`
 - `https://ani.pm`
 - `https://ani.nz`
