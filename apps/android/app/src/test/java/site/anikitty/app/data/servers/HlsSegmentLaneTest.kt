@@ -20,6 +20,7 @@ class HlsSegmentLaneTest {
     fun aFailedSegmentMovesHostAndAPlaylistDoesNot() {
         val segment = "https://user:token@cdn-a.example:443/show/seg-12.ts?sig=1"
         assertTrue(isHlsMediaSegment(segment))
+        assertTrue(isHlsMediaSegment("https://cf-stage.animepapa.cyou/png/v1-seg.png"))
         assertFalse(isHlsMediaSegment("https://cdn-a.example/master.m3u8"))
         assertEquals(
             "https://cdn-b.example/show/seg-12.ts?sig=1",

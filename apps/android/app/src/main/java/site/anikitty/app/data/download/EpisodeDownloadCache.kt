@@ -88,6 +88,14 @@ internal fun cacheDataSourceFactory(
         .setUpstreamDataSourceFactory(upstream)
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
+/** Papa / ani.pm HLS — playlist or PNG segment leaf. */
+internal fun downloadUsesPngXor(url: String): Boolean {
+    val lower = url.lowercase()
+    return lower.contains(".direct.pls") ||
+        lower.contains("/png/") ||
+        lower.endsWith(".png")
+}
+
 @UnstableApi
 internal fun hlsDownloader(
     context: Context,
@@ -99,7 +107,7 @@ internal fun hlsDownloader(
     stripBytes: Int,
     streamKeys: List<StreamKey> = emptyList(),
 ): HlsDownloader {
-    val pngXor = url.contains(".direct.pls", ignoreCase = true)
+    val pngXor = downloadUsesPngXor(url)
     val upstream = upstreamFactory(headers, userAgent, stripBytes, pngXor = pngXor)
     val item = MediaItem.Builder()
         .setUri(url)

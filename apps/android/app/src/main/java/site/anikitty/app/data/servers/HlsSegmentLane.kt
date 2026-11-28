@@ -153,7 +153,8 @@ internal class SegmentRetargetInterceptor : Interceptor {
 }
 
 private val SEGMENT_EXTENSIONS = setOf(
-    "ts", "m4s", "mp4", "m4v", "m4a", "aac", "cmfv", "cmfa", "mp3",
+    // Papa / ani.pm PNG trailer segments participate in shadow retarget.
+    "ts", "m4s", "mp4", "m4v", "m4a", "aac", "cmfv", "cmfa", "mp3", "png",
 )
 
 internal const val SEGMENT_RETRY = "X-AniFuse-Segment"

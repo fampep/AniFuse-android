@@ -17,6 +17,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  * payload bytes are XOR'd with a one-byte key. The site's XorLoader detects
  * the key from the MPEG-TS sync byte `0x47` and feeds clear TS to hls.js —
  * Media3 needs the same unwrap or demux fails with "Cannot find sync byte".
+ *
+ * BYTERANGE playlists already start past the PNG header — honor Media3's
+ * ranged [DataSpec] and stream-XOR on read so first frame does not wait on
+ * a full-object download. Full PNG responses (position 0) still buffer +
+ * IEND-cut + unwrap.
  */
 @OptIn(UnstableApi::class)
 class AnipmXorDataSource(
@@ -27,8 +32,10 @@ class AnipmXorDataSource(
     private var bodyPos = 0
     private var mode = Mode.PASSTHROUGH
     private var openedUri: Uri? = null
+    private var streamKey = 0
+    private var streamKeyReady = false
 
-    private enum class Mode { PASSTHROUGH, BUFFER }
+    private enum class Mode { PASSTHROUGH, BUFFER, STREAM_XOR }
 
     override fun addTransferListener(transferListener: TransferListener) {
         upstream.addTransferListener(transferListener)
@@ -39,12 +46,18 @@ class AnipmXorDataSource(
         bodyPos = 0
         mode = Mode.PASSTHROUGH
         openedUri = dataSpec.uri
+        streamKey = 0
+        streamKeyReady = false
         if (!enabled.get() || isPlaylistOrText(dataSpec.uri)) {
             return upstream.open(dataSpec)
         }
-        // Each Papa/ani.pm segment URL is one PNG container. Fetch the whole
-        // object, cut after IEND, XOR to clear MPEG-TS — Media3's BYTERANGE
-        // into the PNG is redundant once the trailer payload is unwrapped.
+        // Media3 HLS BYTERANGE — Range into the PNG trailer is already XOR'd
+        // TS. Pass the spec through so OkHttp sends Range; XOR on read.
+        if (anipmXorUsesStreamByterange(dataSpec.position)) {
+            mode = Mode.STREAM_XOR
+            return upstream.open(dataSpec)
+        }
+        // Cold open at offset 0 (no BYTERANGE / probe) — full PNG + IEND cut.
         val full = dataSpec.buildUpon()
             .setPosition(0L)
             .setLength(C.LENGTH_UNSET.toLong())
@@ -61,13 +74,32 @@ class AnipmXorDataSource(
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         if (length <= 0) return 0
-        if (mode == Mode.PASSTHROUGH) return upstream.read(buffer, offset, length)
-        val buf = body ?: return C.RESULT_END_OF_INPUT
-        if (bodyPos >= buf.size) return C.RESULT_END_OF_INPUT
-        val n = minOf(length, buf.size - bodyPos)
-        System.arraycopy(buf, bodyPos, buffer, offset, n)
-        bodyPos += n
-        return n
+        when (mode) {
+            Mode.PASSTHROUGH -> return upstream.read(buffer, offset, length)
+            Mode.BUFFER -> {
+                val buf = body ?: return C.RESULT_END_OF_INPUT
+                if (bodyPos >= buf.size) return C.RESULT_END_OF_INPUT
+                val n = minOf(length, buf.size - bodyPos)
+                System.arraycopy(buf, bodyPos, buffer, offset, n)
+                bodyPos += n
+                return n
+            }
+            Mode.STREAM_XOR -> {
+                val n = upstream.read(buffer, offset, length)
+                if (n <= 0) return n
+                if (!streamKeyReady) {
+                    streamKey = anipmXorStreamKey(buffer, offset, n)
+                    streamKeyReady = true
+                }
+                if (streamKey != 0) {
+                    for (i in 0 until n) {
+                        buffer[offset + i] =
+                            (buffer[offset + i].toInt() xor streamKey).toByte()
+                    }
+                }
+                return n
+            }
+        }
     }
 
     override fun getUri(): Uri? = upstream.uri ?: openedUri
@@ -80,6 +112,8 @@ class AnipmXorDataSource(
         bodyPos = 0
         mode = Mode.PASSTHROUGH
         openedUri = null
+        streamKey = 0
+        streamKeyReady = false
         runCatching { upstream.close() }
     }
 
@@ -121,6 +155,27 @@ class AnipmXorDataSource(
 
         override fun createDataSource(): DataSource =
             AnipmXorDataSource(upstreamFactory.createDataSource(), enabled)
+    }
+}
+
+/** True when Media3 already ranged past the PNG header into XOR'd TS. */
+internal fun anipmXorUsesStreamByterange(position: Long): Boolean = position > 0L
+
+/**
+ * Stream-path XOR key from the first ranged chunk. Prefer the 188-byte sync
+ * check when the first read is long enough; otherwise use the first-byte
+ * candidate (XorLoader's 0xFF / 0x5A / 0x00 fast path).
+ */
+internal fun anipmXorStreamKey(buffer: ByteArray, offset: Int, length: Int): Int {
+    if (length <= 0 || offset < 0 || offset + length > buffer.size) return 0
+    if (length > 188) {
+        val slice = buffer.copyOfRange(offset, offset + length)
+        return anipmXorKey(slice)
+    }
+    val candidate = (buffer[offset].toInt() and 0xFF) xor 0x47
+    return when (candidate) {
+        0xFF, 0x5A, 0x00 -> candidate
+        else -> candidate
     }
 }
 
