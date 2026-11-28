@@ -137,7 +137,9 @@ class CastPlaybackService : Service() {
 
     private fun flushProgress() {
         val helper = CastLifetime.current() ?: return
-        if (!helper.casting || helper.hasScreen() || helper.isLoadInFlight()) return
+        // Always write from the receiver while casting — screen-open dual
+        // writers used to stamp the wrong episode / phone playhead.
+        if (!castServiceOwnsProgress(helper.casting, helper.isLoadInFlight())) return
         val playing = helper.playingItem ?: return
         val target = helper.progressTarget ?: return
         if (!castProgressMatches(target, playing)) return

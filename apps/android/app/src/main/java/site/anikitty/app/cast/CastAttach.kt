@@ -112,6 +112,25 @@ internal fun castHandoffChromeVisible(
 ): Boolean = casting || handoff || pending
 
 /**
+ * Blank the phone [PlayerView] only after the TV owns a MediaItem (or settle).
+ * Hiding the surface on mere pending/handoff left a black stage over the
+ * episode and forced a second tap when the first load raced the receiver.
+ */
+internal fun castBlanksPhoneSurface(
+    casting: Boolean,
+    mediaCommitted: Boolean,
+): Boolean = casting || mediaCommitted
+
+/**
+ * Scrub / ±10 / LiveClock ride CastPlayer once media is committed — not only
+ * after settleReady flips [casting]. Mid-handoff seeks otherwise move the phone.
+ */
+internal fun castTransportOwnsPlayer(
+    casting: Boolean,
+    mediaCommitted: Boolean,
+): Boolean = casting || mediaCommitted
+
+/**
  * Mute the phone once the TV owns the episode. Pending / deferred
  * remoteMediaClient waits keep the phone playing so the handoff gap is not silent.
  */
@@ -126,17 +145,27 @@ internal fun castPhoneShouldStayQuiet(
     return receiverReady
 }
 
+/** Initial load may open at 0 — catch anything past this slack. */
+internal const val CAST_PLAYHEAD_LOAD_SLACK_MS = 3_000L
+
+/** Post-settle confirm loop — keep TV within half a second of the asked clock. */
+internal const val CAST_PLAYHEAD_CONFIRM_SLACK_MS = 500L
+
 /**
  * The receiver often opens at the start even when the load asked for a later
  * playhead, and a new episode can still be sitting on the previous ending.
  * One seek after it is playing puts the TV on the playhead we asked for.
  * A missing request is not a request to start at zero.
  */
-internal fun castReceiverNeedsSeek(requestedMs: Long, receiverMs: Long): Boolean {
+internal fun castReceiverNeedsSeek(
+    requestedMs: Long,
+    receiverMs: Long,
+    slackMs: Long = CAST_PLAYHEAD_LOAD_SLACK_MS,
+): Boolean {
     if (requestedMs < 0L) return false
     val requested = requestedMs.coerceAtLeast(0L)
     val receiver = receiverMs.coerceAtLeast(0L)
-    return kotlin.math.abs(requested - receiver) > 3_000L
+    return kotlin.math.abs(requested - receiver) > slackMs
 }
 
 /**
