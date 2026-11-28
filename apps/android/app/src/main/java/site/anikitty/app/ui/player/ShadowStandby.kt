@@ -118,12 +118,54 @@ internal const val CAST_COLD_STALL_MS = 6_000L
 internal fun castStallBudgetMs(standbyFresh: Boolean): Long =
     if (standbyFresh) CAST_STALL_MS else CAST_COLD_STALL_MS
 
+/**
+ * After a scrub / Skip Intro / double-tap seek, CastPlayer stays BUFFERING with
+ * a frozen "buffered" (== playhead) sample. Suppress trickle for slightly longer
+ * than [CAST_STALL_MS] so healthy seeks cannot burn the playlist.
+ */
+internal const val CAST_SEEK_STALL_GRACE_MS = 4_500L
+
 /** Cast soft-stall only after the receiver clock belongs to this episode. */
 internal fun castTrickleStallAllowed(
     isCasting: Boolean,
     castItemStarted: Boolean,
     castClockStale: Boolean,
-): Boolean = isCasting && castItemStarted && !castClockStale
+    seekingOrLoadInFlight: Boolean = false,
+): Boolean = isCasting && castItemStarted && !castClockStale && !seekingOrLoadInFlight
+
+/** True while a recent Cast seek's rebuffer window is still open. */
+internal fun castSeekSuppressesStall(
+    seekArmedAtMs: Long,
+    nowMs: Long,
+    graceMs: Long = CAST_SEEK_STALL_GRACE_MS,
+): Boolean = seekArmedAtMs > 0L && nowMs - seekArmedAtMs < graceMs.coerceAtLeast(0L)
+
+internal data class CastStallArm(
+    val castItemStarted: Boolean,
+    val stallBuffered: Long,
+    val stallSince: Long,
+)
+
+/**
+ * When Cast URL identity changes mid-episode, drop predecessor stall state so
+ * the old item's BUFFERING cannot burn the successor's budget.
+ */
+internal fun castStallArmAfterSourceChange(
+    prevUrl: String?,
+    nextUrl: String?,
+    castItemStarted: Boolean,
+    stallBuffered: Long,
+    stallSince: Long,
+): CastStallArm {
+    if (prevUrl.isNullOrBlank() || nextUrl.isNullOrBlank() || prevUrl == nextUrl) {
+        return CastStallArm(castItemStarted, stallBuffered, stallSince)
+    }
+    return CastStallArm(
+        castItemStarted = false,
+        stallBuffered = -1L,
+        stallSince = 0L,
+    )
+}
 
 /**
  * Per-tick buffered advance still counted as a zombie CDN trickle.

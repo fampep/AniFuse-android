@@ -116,6 +116,7 @@ class ShadowStandbyTest {
     fun castStallBudgetIsLooserAndGatesOnReceiverClock() {
         assertTrue(CAST_STALL_MS > SHADOW_STALL_MS)
         assertTrue(CAST_COLD_STALL_MS > COLD_STALL_MS)
+        assertTrue(CAST_SEEK_STALL_GRACE_MS > CAST_STALL_MS)
         assertEquals(CAST_STALL_MS, castStallBudgetMs(standbyFresh = true))
         assertEquals(CAST_COLD_STALL_MS, castStallBudgetMs(standbyFresh = false))
         assertTrue(
@@ -146,6 +147,14 @@ class ShadowStandbyTest {
                 castClockStale = false,
             ),
         )
+        assertFalse(
+            castTrickleStallAllowed(
+                isCasting = true,
+                castItemStarted = true,
+                castClockStale = false,
+                seekingOrLoadInFlight = true,
+            ),
+        )
         // Cast trickle still trips the shared detector on a wider budget.
         val arm = trickleStallTick(
             prevBuffered = -1L,
@@ -164,6 +173,67 @@ class ShadowStandbyTest {
             budgetMs = CAST_STALL_MS,
         )
         assertTrue(trip.trip)
+    }
+
+    @Test
+    fun castSeekGraceAndSourceChangeResetPreventFalseFailover() {
+        assertTrue(castSeekSuppressesStall(seekArmedAtMs = 1_000L, nowMs = 1_000L + CAST_STALL_MS))
+        assertFalse(
+            castSeekSuppressesStall(
+                seekArmedAtMs = 1_000L,
+                nowMs = 1_000L + CAST_SEEK_STALL_GRACE_MS,
+            ),
+        )
+        assertFalse(castSeekSuppressesStall(seekArmedAtMs = 0L, nowMs = 5_000L))
+
+        // Same URL — keep armed stall state.
+        val keep = castStallArmAfterSourceChange(
+            prevUrl = "https://cdn/a.m3u8",
+            nextUrl = "https://cdn/a.m3u8",
+            castItemStarted = true,
+            stallBuffered = 900L,
+            stallSince = 4_000L,
+        )
+        assertTrue(keep.castItemStarted)
+        assertEquals(900L, keep.stallBuffered)
+        assertEquals(4_000L, keep.stallSince)
+
+        // Successor URL — drop predecessor BUFFERING so it cannot burn the next source.
+        val reset = castStallArmAfterSourceChange(
+            prevUrl = "https://cdn/a.m3u8",
+            nextUrl = "https://cdn/b.m3u8",
+            castItemStarted = true,
+            stallBuffered = 900L,
+            stallSince = 4_000L,
+        )
+        assertFalse(reset.castItemStarted)
+        assertEquals(-1L, reset.stallBuffered)
+        assertEquals(0L, reset.stallSince)
+
+        // Frozen Cast "buffer" (== playhead) while seeking must not be allowed to trip.
+        assertFalse(
+            castTrickleStallAllowed(
+                isCasting = true,
+                castItemStarted = true,
+                castClockStale = false,
+                seekingOrLoadInFlight = castSeekSuppressesStall(
+                    seekArmedAtMs = 10_000L,
+                    nowMs = 10_000L + CAST_STALL_MS,
+                ),
+            ),
+        )
+        // Same freeze after grace — detector may run again.
+        assertTrue(
+            castTrickleStallAllowed(
+                isCasting = true,
+                castItemStarted = true,
+                castClockStale = false,
+                seekingOrLoadInFlight = castSeekSuppressesStall(
+                    seekArmedAtMs = 10_000L,
+                    nowMs = 10_000L + CAST_SEEK_STALL_GRACE_MS,
+                ),
+            ),
+        )
     }
 
     @Test
