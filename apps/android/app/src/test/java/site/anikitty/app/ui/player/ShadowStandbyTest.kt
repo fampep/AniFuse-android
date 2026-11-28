@@ -10,6 +10,12 @@ import org.junit.Test
 
 class ShadowStandbyTest {
     @Test
+    fun liveShadowAllowsHlsAndRemoteButNotProgressiveFile() {
+        assertTrue(liveShadowAllowed(playbackLocal = false))
+        assertFalse(liveShadowAllowed(playbackLocal = true))
+    }
+
+    @Test
     fun playbackReadyArmsOncePerHost() {
         assertEquals(ShadowArm.Hold, shadowArm(playbackReady = false, armedHost = null, playingHost = "cdn-a.example"))
         assertEquals(ShadowArm.Arm, shadowArm(playbackReady = true, armedHost = null, playingHost = "cdn-a.example"))

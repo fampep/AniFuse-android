@@ -18,6 +18,12 @@ internal const val COLD_STALL_MS = 4_500L
 internal enum class ShadowArm { Hold, Arm }
 
 /**
+ * Progressive file:// has no CDN peer. HLS offline cache and live remote still do —
+ * the offline session latch must not block shadow for those.
+ */
+internal fun liveShadowAllowed(playbackLocal: Boolean): Boolean = !playbackLocal
+
+/**
  * Arm the moment playback is ready, and again when failover lands on a new host.
  * The same host must not start a second race.
  */

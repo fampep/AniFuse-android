@@ -983,6 +983,8 @@ fun PlayerScreen(
                 resumeAtMs = live
                 didSeekStart = false
             }
+            // File→live (or HLS cache→edge) must re-arm a standby for the new host.
+            shadowArmedHost = null
         }
         wasOffline = playingOffline
     }
@@ -1105,8 +1107,8 @@ fun PlayerScreen(
         }
     }
     val latestArmShadow by rememberUpdatedState(onArmShadow)
-    LaunchedEffect(ready, source?.url, anilistId, episode, playbackLocal, sessionStartedOffline) {
-        if (!ready || playbackLocal || sessionStartedOffline == true) return@LaunchedEffect
+    LaunchedEffect(ready, source?.url, anilistId, episode, playbackLocal) {
+        if (!ready || !liveShadowAllowed(playbackLocal)) return@LaunchedEffect
         val host = playbackHost(source?.url.orEmpty())
         if (shadowArm(playbackReady = true, armedHost = shadowArmedHost, playingHost = host) != ShadowArm.Arm) {
             return@LaunchedEffect
@@ -1275,7 +1277,7 @@ fun PlayerScreen(
     var refreshingSources by remember(anilistId, episode) { mutableStateOf(false) }
 
     fun shadowReadyNow(): Boolean {
-        if (playbackLocal || sessionStartedOffline == true) return false
+        if (!liveShadowAllowed(playbackLocal)) return false
         val age = if (shadowAt <= 0L) Long.MAX_VALUE else System.currentTimeMillis() - shadowAt
         return shadowList.isNotEmpty() && shadowStandbyReady(
             playingHost = playbackHost(source?.url.orEmpty()),
