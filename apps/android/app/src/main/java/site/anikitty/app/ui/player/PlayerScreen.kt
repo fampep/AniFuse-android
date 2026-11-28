@@ -378,6 +378,11 @@ fun PlayerScreen(
      * The returned list is already alive and prefetched, runner-up first.
      */
     onArmShadow: (suspend (playingHost: String, known: List<PlayableSource>) -> List<PlayableSource>)? = null,
+    /**
+     * Seed a disk/memory shadow after process death so mid-play CDN death
+     * still hits [swapToShadow] before the READY arm race finishes.
+     */
+    onSeedShadow: (suspend () -> List<PlayableSource>)? = null,
     onProgress: ((positionMs: Long, durationMs: Long, skip: SkipTimes) -> Unit)? = null,
     totalEpisodes: Int = 1,
     watchedThrough: Int = 0,
@@ -1328,6 +1333,24 @@ fun PlayerScreen(
             SegmentShadow.clear(playbackOwner)
         }
     }
+    val latestSeedShadow by rememberUpdatedState(onSeedShadow)
+    LaunchedEffect(anilistId, episode, audio) {
+        val seed = latestSeedShadow ?: return@LaunchedEffect
+        if (anilistId <= 0 || episode <= 0) return@LaunchedEffect
+        val armed = try {
+            seed()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            emptyList()
+        }
+        if (armed.isEmpty()) return@LaunchedEffect
+        // Don't clobber a fresher in-session arm.
+        if (shadowList.isNotEmpty() && shadowHost != null) return@LaunchedEffect
+        shadowList = armed
+        shadowHost = playableHost(armed.first().url).ifBlank { null }
+        shadowAt = System.currentTimeMillis()
+    }
     val latestArmShadow by rememberUpdatedState(onArmShadow)
     LaunchedEffect(ready, source?.url, anilistId, episode, playbackLocal, playingOffline) {
         if (!ready || !liveShadowArmAllowed(playbackLocal, playingOffline)) return@LaunchedEffect
@@ -1733,6 +1756,7 @@ fun PlayerScreen(
                 }
             }
             SourceRecovery.GiveUp -> {
+                if (swapToShadow(decision.resumeMs)) return
                 error = message
                 if (fromCast) handEpisodeBackToPhone(message, receiverStillPlaying = false)
             }

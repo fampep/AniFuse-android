@@ -10,11 +10,13 @@ import site.anikitty.app.data.skip.SkipInterval
 import site.anikitty.app.data.skip.SkipTimes
 
 /**
- * Survives process death for the episode the user just left.
- * In-memory [PlayableWarmCache] is faster; this is the reopen path after
- * the OS kills the app mid-watch. Signed CDN links still get probed.
- * Playback unwrap fields (Gotaku / Flix / HLS / strip / skip / captions)
- * are persisted so a warm reopen still plays.
+ * Survives process death for the episode the user just left — live play
+ * lane plus probed shadow/standby so mid-play CDN death after an OS kill
+ * still hits [swapToShadow] instead of a cold resolve.
+ * In-memory [PlayableWarmCache] is faster; this is the reopen path.
+ * Signed CDN links still get probed. Playback unwrap fields
+ * (Gotaku / Flix / HLS / strip / skip / captions) are persisted so a
+ * warm reopen still plays.
  */
 class LiveSourceStore(context: Context) {
     private val prefs = context.applicationContext
@@ -25,6 +27,7 @@ class LiveSourceStore(context: Context) {
         episode: Int,
         audio: String,
         sources: List<PlayableSource>,
+        lane: String = PlayableWarmCache.LANE_LIVE,
         nowMs: Long = System.currentTimeMillis(),
     ) {
         if (anilistId <= 0 || episode <= 0 || sources.isEmpty()) return
@@ -32,7 +35,7 @@ class LiveSourceStore(context: Context) {
             .put("at", nowMs)
             .put("sources", encode(sources.take(4)))
             .toString()
-        prefs.edit().putString(key(anilistId, episode, audio), payload).apply()
+        prefs.edit().putString(key(anilistId, episode, audio, lane), payload).apply()
         trim()
     }
 
@@ -40,11 +43,12 @@ class LiveSourceStore(context: Context) {
         anilistId: Int,
         episode: Int,
         audio: String,
+        lane: String = PlayableWarmCache.LANE_LIVE,
         nowMs: Long = System.currentTimeMillis(),
         ttlMs: Long = PlayableWarmCache.TTL_MS,
     ): List<PlayableSource>? {
         if (anilistId <= 0 || episode <= 0) return null
-        val k = key(anilistId, episode, audio)
+        val k = key(anilistId, episode, audio, lane)
         val raw = prefs.getString(k, null) ?: return null
         val obj = runCatching { JSONObject(raw) }.getOrNull()
         if (obj == null) {
@@ -64,9 +68,14 @@ class LiveSourceStore(context: Context) {
         return sources
     }
 
-    fun forget(anilistId: Int, episode: Int, audio: String) {
+    fun forget(
+        anilistId: Int,
+        episode: Int,
+        audio: String,
+        lane: String = PlayableWarmCache.LANE_LIVE,
+    ) {
         if (anilistId <= 0 || episode <= 0) return
-        prefs.edit().remove(key(anilistId, episode, audio)).apply()
+        prefs.edit().remove(key(anilistId, episode, audio, lane)).apply()
     }
 
     /** Drop every audio/episode disk recall for a title after the frontier advances. */
@@ -96,11 +105,26 @@ class LiveSourceStore(context: Context) {
 
     companion object {
         private const val PREFS = "anifuse_live_sources"
-        private const val MAX = 48
+        /** Live + shadow + standby across a binge night. */
+        private const val MAX = 72
 
-        internal fun key(anilistId: Int, episode: Int, audio: String): String {
+        /**
+         * Live stays on the legacy 3-part key so existing disk recalls keep
+         * working. Shadow / standby append `:$lane`.
+         */
+        internal fun key(
+            anilistId: Int,
+            episode: Int,
+            audio: String,
+            lane: String = PlayableWarmCache.LANE_LIVE,
+        ): String {
             val lang = audio.trim().lowercase().ifBlank { "sub" }
-            return "$anilistId:$episode:$lang"
+            val slot = lane.trim().lowercase().ifBlank { PlayableWarmCache.LANE_LIVE }
+            return if (slot == PlayableWarmCache.LANE_LIVE) {
+                "$anilistId:$episode:$lang"
+            } else {
+                "$anilistId:$episode:$lang:$slot"
+            }
         }
 
         internal fun encode(sources: List<PlayableSource>): JSONArray {

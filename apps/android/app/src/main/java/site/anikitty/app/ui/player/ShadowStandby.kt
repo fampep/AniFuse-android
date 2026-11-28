@@ -187,15 +187,17 @@ internal fun trickleStallTick(
 internal enum class FailureRoute { SameSource, NextInPlaylist, ShadowSwap, ColdResolve }
 
 /**
- * A mid-roll 403, 5xx, or exhausted CDN swaps to the probed standby before any
- * cold resolve. Same-host mirrors are not a recovery; the standby is a different host.
+ * A mid-roll 403, 5xx, exhausted CDN, or GiveUp with an armed standby swaps
+ * to the probed runner-up before any cold resolve. Same-host mirrors are not
+ * a recovery; the standby is a different host.
  */
 internal fun failureRoute(
     recovery: SourceRecovery,
     playlistHasHealthyNext: Boolean,
     shadowReady: Boolean,
 ): FailureRoute = when (recovery) {
-    SourceRecovery.SeekLive, SourceRecovery.RetrySame, SourceRecovery.GiveUp -> FailureRoute.SameSource
+    SourceRecovery.SeekLive, SourceRecovery.RetrySame -> FailureRoute.SameSource
+    SourceRecovery.GiveUp -> if (shadowReady) FailureRoute.ShadowSwap else FailureRoute.SameSource
     SourceRecovery.NextSource -> when {
         shadowReady -> FailureRoute.ShadowSwap
         playlistHasHealthyNext -> FailureRoute.NextInPlaylist

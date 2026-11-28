@@ -122,9 +122,18 @@ object PlayableWarmCache {
 }
 
 /**
+ * One disk lane to probe after memory misses. Dead URLs call [onMiss] for
+ * that lane only — a dead shadow must not wipe a fresher standby.
+ */
+data class DiskLaneRecall(
+    val recall: () -> List<PlayableSource>?,
+    val onMiss: () -> Unit = {},
+)
+
+/**
  * Consume the freshest warm lane that still answers. Live reopen wins over a
  * next-episode prefetch so a mid-watch return never races cold CDNs again.
- * [diskRecall] covers process death after the in-memory map is gone.
+ * [diskLanes] / [diskRecall] cover process death after the in-memory map is gone.
  */
 suspend fun takeProbedWarm(
     anilistId: Int,
@@ -135,26 +144,69 @@ suspend fun takeProbedWarm(
     probe: suspend (List<PlayableSource>) -> List<PlayableSource> = { PlayableWarmProbe.filterAlive(it) },
     diskRecall: (() -> List<PlayableSource>?)? = null,
     onDiskMiss: (() -> Unit)? = null,
+    /** Prefer this when shadow/standby need independent disk probes. */
+    diskLanes: List<DiskLaneRecall> = emptyList(),
+    /** Memory/disk survivors land here so shadow reopen stays in [LANE_SHADOW]. */
+    promoteLane: String = PlayableWarmCache.LANE_LIVE,
 ): List<PlayableSource> {
     for (lane in lanes) {
         val raw = PlayableWarmCache.take(anilistId, episode, audio, lane, nowMs) ?: continue
         val alive = probe(raw)
         if (alive.isNotEmpty()) return alive
     }
-    val disk = diskRecall?.invoke().orEmpty()
-    if (disk.isEmpty()) return emptyList()
-    val alive = probe(disk)
-    if (alive.isEmpty()) {
-        onDiskMiss?.invoke()
-        return emptyList()
+    val disks = if (diskLanes.isNotEmpty()) {
+        diskLanes
+    } else {
+        listOfNotNull(
+            diskRecall?.let { recall ->
+                DiskLaneRecall(recall = recall, onMiss = { onDiskMiss?.invoke() })
+            },
+        )
     }
-    PlayableWarmCache.put(
-        anilistId = anilistId,
-        episode = episode,
-        audio = audio,
-        sources = alive,
-        lane = PlayableWarmCache.LANE_LIVE,
-        nowMs = nowMs,
-    )
-    return alive
+    for (diskLane in disks) {
+        val disk = diskLane.recall().orEmpty()
+        if (disk.isEmpty()) continue
+        val alive = probe(disk)
+        if (alive.isEmpty()) {
+            diskLane.onMiss()
+            continue
+        }
+        PlayableWarmCache.put(
+            anilistId = anilistId,
+            episode = episode,
+            audio = audio,
+            sources = alive,
+            lane = promoteLane,
+            nowMs = nowMs,
+        )
+        return alive
+    }
+    return emptyList()
 }
+
+/**
+ * Consume a probed shadow/standby — memory first, then disk lanes one at a
+ * time — so a mid-play CDN death after process death still swaps without a
+ * cold resolve. Dead shadow disk never deletes a fresher standby.
+ */
+suspend fun takeProbedShadow(
+    anilistId: Int,
+    episode: Int,
+    audio: String,
+    nowMs: Long = System.currentTimeMillis(),
+    probe: suspend (List<PlayableSource>) -> List<PlayableSource> = { PlayableWarmProbe.filterAlive(it) },
+    diskRecall: (() -> List<PlayableSource>?)? = null,
+    onDiskMiss: (() -> Unit)? = null,
+    diskLanes: List<DiskLaneRecall> = emptyList(),
+): List<PlayableSource> = takeProbedWarm(
+    anilistId = anilistId,
+    episode = episode,
+    audio = audio,
+    lanes = listOf(PlayableWarmCache.LANE_SHADOW, PlayableWarmCache.LANE_STANDBY),
+    nowMs = nowMs,
+    probe = probe,
+    diskRecall = diskRecall,
+    onDiskMiss = onDiskMiss,
+    diskLanes = diskLanes,
+    promoteLane = PlayableWarmCache.LANE_SHADOW,
+)
