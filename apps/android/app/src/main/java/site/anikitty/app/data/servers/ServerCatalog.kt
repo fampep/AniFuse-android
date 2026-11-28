@@ -314,6 +314,7 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
                 HostHealthProbe.kickRemembered(
                     preferredHost = leadHost,
                     seedHosts = affinitySeedHosts(),
+                    seedProviders = affinitySeedProviders(),
                 )
             }
             // Shadow / credits races pass avoidHost — never overwrite the playing live lane.
@@ -424,6 +425,13 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
      */
     fun affinitySeedHosts(limit: Int = 6): List<String> =
         episodeAffinity.recentHosts(limit = limit)
+
+    /**
+     * host → providerId for affinity seeds so a successful HEAD rebinds
+     * [PlaybackHostHealth.noteProviderCdn] and Race dock LEAD · ms updates.
+     */
+    fun affinitySeedProviders(limit: Int = 6): Map<String, String> =
+        affinitySeedProviderMap(episodeAffinity.recentSeeds(limit = limit))
 
     private fun downProviderNames(): Set<String> =
         providerHealth.downNames() + providerHealth.pulseDownKeys()

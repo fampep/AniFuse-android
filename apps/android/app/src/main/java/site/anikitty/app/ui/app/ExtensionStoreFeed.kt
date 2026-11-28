@@ -173,6 +173,7 @@ fun ExtensionStoreFeed(
         runCatching {
             site.anikitty.app.data.servers.HostHealthProbe.refreshRemembered(
                 seedHosts = catalog.affinitySeedHosts(),
+                seedProviders = catalog.affinitySeedProviders(),
             )
         }
         healthTick++
@@ -184,6 +185,7 @@ fun ExtensionStoreFeed(
                 runCatching {
                     site.anikitty.app.data.servers.HostHealthProbe.refreshRemembered(
                         seedHosts = catalog.affinitySeedHosts(),
+                        seedProviders = catalog.affinitySeedProviders(),
                     )
                 }
             }
@@ -421,6 +423,7 @@ fun ExtensionStoreFeed(
                                         HostHealthProbe.kickRemembered(
                                             preferredHost = PlaybackHostHealth.providerCdnHost(server.id),
                                             seedHosts = catalog.affinitySeedHosts(),
+                                            seedProviders = catalog.affinitySeedProviders(),
                                         )
                                         KittyHaptics.perform(view, KittyHaptics.Kind.Confirm)
                                     }

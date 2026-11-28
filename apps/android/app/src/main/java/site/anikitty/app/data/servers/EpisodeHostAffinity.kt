@@ -61,10 +61,10 @@ class EpisodeHostAffinity(context: Context) {
     }
 
     /**
-     * Newest CDN hosts still inside [TTL_MS] — seeds Race-dock probe waves
-     * before PlaybackHostHealth's shorter HOLD window forgets them.
+     * Newest affinity hits still inside [TTL_MS] — host + provider so a seed
+     * probe can rebind [PlaybackHostHealth.noteProviderCdn] after HOLD expires.
      */
-    fun recentHosts(limit: Int = 6, nowMs: Long = System.currentTimeMillis()): List<String> {
+    fun recentSeeds(limit: Int = 6, nowMs: Long = System.currentTimeMillis()): List<Hit> {
         val hits = ArrayList<Hit>()
         for ((_, hit) in memory) {
             if (nowMs - hit.atMs <= TTL_MS && hit.host.isNotBlank()) hits += hit
@@ -80,8 +80,12 @@ class EpisodeHostAffinity(context: Context) {
             val provider = prefs.getString("$base.provider", "") ?: ""
             hits += Hit(providerId = provider, host = host, atMs = at)
         }
-        return affinityRecentHosts(hits, limit)
+        return affinityRecentSeeds(hits, limit)
     }
+
+    /** Hostnames only — probe-wave budget. Prefer [recentSeeds] for rebinding. */
+    fun recentHosts(limit: Int = 6, nowMs: Long = System.currentTimeMillis()): List<String> =
+        recentSeeds(limit = limit, nowMs = nowMs).map { it.host }
 
     companion object {
         private const val PREFS = "anikitty_episode_affinity"
@@ -116,12 +120,42 @@ internal fun <T> boostAffinityProvider(
 internal fun affinityRecentHosts(
     hits: List<EpisodeHostAffinity.Hit>,
     limit: Int,
-): List<String> {
+): List<String> = affinityRecentSeeds(hits, limit).map { it.host }
+
+/**
+ * Newest-first unique host hits — keeps [providerId] so Race-dock seed probes
+ * can rebind provider → CDN after PlaybackHostHealth HOLD expires.
+ */
+internal fun affinityRecentSeeds(
+    hits: List<EpisodeHostAffinity.Hit>,
+    limit: Int,
+): List<EpisodeHostAffinity.Hit> {
     if (limit <= 0 || hits.isEmpty()) return emptyList()
     return hits
         .sortedByDescending { it.atMs }
-        .map { it.host.trim().lowercase() }
-        .filter { it.isNotEmpty() }
-        .distinct()
+        .map { hit ->
+            hit.copy(
+                providerId = hit.providerId.trim().lowercase(),
+                host = hit.host.trim().lowercase(),
+            )
+        }
+        .filter { it.host.isNotEmpty() }
+        .distinctBy { it.host }
         .take(limit)
+}
+
+/** host → providerId for successful seed probes to rebind Race dock LEAD. */
+internal fun affinitySeedProviderMap(
+    seeds: List<EpisodeHostAffinity.Hit>,
+): Map<String, String> {
+    if (seeds.isEmpty()) return emptyMap()
+    return buildMap {
+        for (seed in seeds) {
+            val host = seed.host.trim().lowercase()
+            val provider = seed.providerId.trim().lowercase()
+            if (host.isEmpty() || provider.isEmpty()) continue
+            // Newest-first seeds win — do not overwrite.
+            if (host !in this) put(host, provider)
+        }
+    }
 }

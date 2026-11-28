@@ -356,6 +356,7 @@ fun LocalFirstApp(
             runCatching {
                 site.anikitty.app.data.servers.HostHealthProbe.refreshRemembered(
                     seedHosts = streamServers.affinitySeedHosts(),
+                    seedProviders = streamServers.affinitySeedProviders(),
                 )
             }
             delay(45_000L)
