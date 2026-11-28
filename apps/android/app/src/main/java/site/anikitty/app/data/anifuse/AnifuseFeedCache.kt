@@ -155,7 +155,8 @@ internal class AnifuseFeedCache(
         const val DOWN_FILE = "provider-down.txt"
         const val PULSE_FILE = "provider-pulse.txt"
         const val DOWN_MAX_AGE_MS = 30L * 60_000L
-        const val LOCAL_HOLD_MS = 3L * 60_000L
+        /** Hard failures stay sunk this long — short enough that a revived host re-enters the race. */
+        const val LOCAL_HOLD_MS = 90_000L
         const val STALE_FEED_MS = 6L * 60 * 60_000L
     }
 }

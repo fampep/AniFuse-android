@@ -832,9 +832,12 @@ fun PlayerScreen(
         val first = bitrateCappedFor == null
         bitrateCappedFor = url
         if (first) return@LaunchedEffect
+        val seed = playerPrefs.getInt("last_video_bitrate", 1_500_000)
+        val cap = abrFailoverCapBitrate(seed)
+        val holdMs = abrFailoverHoldMs(seed)
         val previous = selector.parameters
-        selector.parameters = previous.buildUpon().setMaxVideoBitrate(1_600_000).build()
-        delay(3_500)
+        selector.parameters = previous.buildUpon().setMaxVideoBitrate(cap).build()
+        delay(holdMs)
         if (trackSelector === selector) {
             selector.parameters = selector.parameters.buildUpon()
                 .setMaxVideoBitrate(Int.MAX_VALUE)

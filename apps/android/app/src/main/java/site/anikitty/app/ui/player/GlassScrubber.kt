@@ -236,8 +236,14 @@ fun GlassScrubber(
 
             val bufferedW = size.width * buffered.coerceIn(0f, 1f)
             if (bufferedW > 0f) {
+                // Soft glass rail ahead of the playhead — buffer reads as depth, not chalk.
                 drawRoundRect(
-                    color = bufferedColor,
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            bufferedColor.copy(alpha = 0.55f),
+                            bufferedColor.copy(alpha = 0.88f),
+                        ),
+                    ),
                     topLeft = Offset(0f, cy - trackH / 2f),
                     size = Size(bufferedW, trackH),
                     cornerRadius = radius,
