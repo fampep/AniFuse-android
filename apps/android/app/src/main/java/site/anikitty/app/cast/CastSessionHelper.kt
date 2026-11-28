@@ -724,7 +724,12 @@ class CastSessionHelper private constructor(
         // IDLE/ERROR from the previous item cannot settle this ticket.
         // Prefer a live phone clock — the frozen load timestamp rewinds after
         // a deferred remoteMediaClient wait while the phone kept playing.
-        val seekMs = (loadLivePosition?.invoke() ?: positionMs).coerceAtLeast(0L)
+        // A throw from the live lambda must not abort this ticket (start's
+        // deferred path treats any failure as a cast load error).
+        val seekMs = runCatching { loadLivePosition?.invoke() }
+            .getOrNull()
+            ?.coerceAtLeast(0L)
+            ?: positionMs.coerceAtLeast(0L)
         castPlayer.setMediaItem(item, seekMs)
         castPlayer.prepare()
         castPlayer.volume = heldVolume

@@ -126,6 +126,7 @@ import site.anikitty.app.cast.castVolumeFromGesture
 import site.anikitty.app.cast.castJoin
 import site.anikitty.app.cast.castSameItem
 import site.anikitty.app.cast.castAttachPositionMs
+import site.anikitty.app.cast.castLiveCommitPositionMs
 import site.anikitty.app.cast.castDisconnectResumeMs
 import site.anikitty.app.cast.castMayCorrectReceiver
 import site.anikitty.app.cast.castPhoneKnownPosition
@@ -1707,10 +1708,17 @@ fun PlayerScreen(
                 episode = latestEpisode,
                 positionMs = pos,
                 anilistId = anilistId,
+                // Advance from the stamped attach clock only — never re-run
+                // castPlayhead() (that drops pendingResume once castSent is set)
+                // and never throw into start()'s deferred failure path.
                 livePositionMs = {
-                    val live = castPlayhead()
-                    castSentPositionMs = live
-                    live
+                    val phone = runCatching {
+                        latestPlayer?.currentPosition?.takeIf { it > 0L } ?: 0L
+                    }.getOrDefault(0L)
+                    val known = runCatching { latestPosition.ms }.getOrDefault(0L)
+                    val next = castLiveCommitPositionMs(pos, phone, known)
+                    if (next > castSentPositionMs) castSentPositionMs = next
+                    next
                 },
                 onReady = { castReady() },
                 onError = { message -> castFailed(message) },

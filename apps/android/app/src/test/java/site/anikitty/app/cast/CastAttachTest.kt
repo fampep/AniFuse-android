@@ -167,6 +167,25 @@ class CastAttachTest {
     }
 
     @Test
+    fun liveCommitKeepsStampedResumePastColdStartIntro() {
+        // Phone played 5s during deferred wait; stamped attach was mid-episode.
+        assertEquals(
+            90_000L,
+            castLiveCommitPositionMs(stampedMs = 90_000L, phoneMs = 5_000L),
+        )
+        // Live watch past the stamp advances the TV commit.
+        assertEquals(
+            95_000L,
+            castLiveCommitPositionMs(stampedMs = 90_000L, phoneMs = 95_000L),
+        )
+        // Released player / zero clock falls back to the stamp.
+        assertEquals(
+            90_000L,
+            castLiveCommitPositionMs(stampedMs = 90_000L, phoneMs = 0L, knownMs = 0L),
+        )
+    }
+
+    @Test
     fun thePhoneStaysQuietWhileTheTvHasTheEpisode() {
         assertTrue(castPhoneShouldStayQuiet(casting = true, handoff = false, pending = false))
         // Handoff / pending without a committed MediaItem keeps the phone playing.

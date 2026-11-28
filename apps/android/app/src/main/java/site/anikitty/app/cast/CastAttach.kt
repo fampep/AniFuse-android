@@ -246,3 +246,19 @@ internal fun castAttachPositionMs(
     if (local > 3_000L) return local
     return maxOf(local, saved)
 }
+
+/**
+ * Playhead at Cast media commit after a deferred remoteMediaClient wait.
+ * Never drops below the stamped attach clock — re-running [castAttachPositionMs]
+ * after `castSentPositionMs` is set would clear pendingResume and open the TV
+ * on the cold-start intro instead of the mid-episode resume.
+ */
+internal fun castLiveCommitPositionMs(
+    stampedMs: Long,
+    phoneMs: Long,
+    knownMs: Long = 0L,
+): Long = maxOf(
+    stampedMs.coerceAtLeast(0L),
+    phoneMs.coerceAtLeast(0L),
+    knownMs.coerceAtLeast(0L),
+)
