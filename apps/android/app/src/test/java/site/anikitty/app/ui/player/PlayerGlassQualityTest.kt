@@ -76,4 +76,33 @@ class PlayerGlassQualityTest {
             ),
         )
     }
+
+    @Test
+    fun sourceRowsPinPlayingThenRaceByScore() {
+        assertEquals(emptyList<Int>(), glassSourceRowsOrdered(0, playingIndex = 0) { 0 })
+        // Playing index 2 stays first even when its score is cold.
+        assertEquals(
+            listOf(2, 1, 0, 3),
+            glassSourceRowsOrdered(4, playingIndex = 2) { index ->
+                when (index) {
+                    0 -> 10
+                    1 -> 900
+                    2 -> -1
+                    3 -> 0
+                    else -> 0
+                }
+            },
+        )
+        // Out-of-range playing → pure score order (higher rises).
+        assertEquals(
+            listOf(1, 0, 2),
+            glassSourceRowsOrdered(3, playingIndex = -1) { index ->
+                when (index) {
+                    0 -> 50
+                    1 -> 200
+                    else -> 10
+                }
+            },
+        )
+    }
 }

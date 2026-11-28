@@ -525,15 +525,19 @@ fun PlayerScreen(
     var sleepNote by remember { mutableStateOf<String?>(null) }
 
     val source = playlist.getOrNull(sourceIndex)
+    /** Bumps so Sources LEAD/HOT/DOWN recompose when probe samples land. */
+    var hostHealthTick by remember { mutableIntStateOf(0) }
     LaunchedEffect(panel, source?.url, shadowHost) {
         if (panel != PlayerMenuPage.Quality) return@LaunchedEffect
         // Keep Sources RTT live while the glass sheet is open — LEAD / STANDBY
         // badges must not freeze on the open-frame snapshot.
+        hostHealthTick++
         while (true) {
             HostHealthProbe.kickRemembered(
                 preferredHost = playableHost(source?.url.orEmpty()).ifBlank { shadowHost },
             )
             delay(2_400L)
+            hostHealthTick++
         }
     }
     // Provider sidecars first; SubtitleLibrary.peek fills gaps so warm
@@ -3065,7 +3069,17 @@ fun PlayerScreen(
                 val sourcesBlock = @Composable {
                     if (playlist.isNotEmpty()) {
                         PlayerMenuSectionLabel("Sources")
-                        playlist.forEachIndexed { index, src ->
+                        // Playing row stays LEAD on top; mirrors race-dock by live score.
+                        val sourceRows = remember(playlist, sourceIndex, hostHealthTick) {
+                            glassSourceRowsOrdered(
+                                count = playlist.size,
+                                playingIndex = sourceIndex,
+                            ) { index ->
+                                PlaybackHostHealth.score(playableHost(playlist[index].url))
+                            }
+                        }
+                        sourceRows.forEach { index ->
+                            val src = playlist[index]
                             val host = playableHost(src.url)
                             val rtt = PlaybackHostHealth.latencyMs(host)
                             val score = PlaybackHostHealth.score(host)
