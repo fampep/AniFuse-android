@@ -62,6 +62,11 @@ data class PlayableSource(
     val label: String = "Stream",
     /** MegaPlay PNG-disguise unwrap size for HLS segments (0 = none). */
     val stripBytes: Int = SegmentStripDataSource.DEFAULT_STRIP_BYTES,
+    /**
+     * AnimePapa / ani.pm PNG HLS: segment bytes are XOR'd after the PNG
+     * trailer. [AnipmXorDataSource] clears them to MPEG-TS when true.
+     */
+    val pngXor: Boolean = false,
     val subtitles: List<SubtitleTrack> = emptyList(),
     /** Gotaku playlist/segment unwrap; when set, [GotakuObfDataSource] handles CDN crypto. */
     val gotakuObf: GotakuObf? = null,

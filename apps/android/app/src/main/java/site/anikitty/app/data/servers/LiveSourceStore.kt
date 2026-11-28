@@ -134,6 +134,7 @@ class LiveSourceStore(context: Context) {
                 .put("leadKey", source.leadKey)
                 .put("qualityRating", source.qualityRating)
                 .put("stripBytes", source.stripBytes)
+                .put("pngXor", source.pngXor)
                 .put("hls", source.hls)
                 .put("headers", headers)
             source.gotakuObf?.let { obf ->
@@ -188,6 +189,7 @@ class LiveSourceStore(context: Context) {
                 headers = decodeHeaders(obj.optJSONObject("headers")),
                 label = obj.optString("label").ifBlank { "Stream" },
                 stripBytes = obj.optInt("stripBytes", SegmentStripDataSource.DEFAULT_STRIP_BYTES),
+                pngXor = obj.optBoolean("pngXor", false),
                 subtitles = decodeSubtitles(obj.optJSONArray("subtitles")),
                 gotakuObf = decodeGotaku(obj.optJSONObject("gotakuObf")),
                 skip = decodeSkip(obj.optJSONObject("skip")),

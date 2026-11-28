@@ -95,6 +95,9 @@ class HinataTvServer(
             url = mediaUrl,
             headers = mediaHeaders(PAPA, embedRef),
             label = fields.quality ?: if (lang == "dub") "DUB" else "SUB",
+            // Papa PNG HLS: BYTERANGE + single-byte XOR — not MegaPlay strip.
+            stripBytes = 0,
+            pngXor = true,
             hls = true,
             quality = fields.quality,
             audio = fields.audio ?: if (lang == "dub") "DUB" else "SUB",
@@ -176,14 +179,20 @@ class HinataTvServer(
             }
             break
         }
-        val finalUrl = getFinalUrl(url, headers)
-        if (finalUrl == null) {
+        val finalHop = followFinal(url, headers)
+        if (!finalHop.networkOk) {
             return HinataMalLookup(
                 malId = null,
                 failure = hinataMalLookupFailure(reached = reached, challenged = false),
             )
         }
-        hinataMalFromPapaEmbedUrl(finalUrl)?.let {
+        if (hinataChallenged(finalHop.code, finalHop.body)) {
+            return HinataMalLookup(malId = null, failure = BLOCKED)
+        }
+        if (finalHop.code == 404) {
+            return HinataMalLookup(malId = null, failure = MISSING)
+        }
+        hinataMalFromPapaEmbedUrl(finalHop.url)?.let {
             return HinataMalLookup(malId = it, failure = MISSING)
         }
         return HinataMalLookup(malId = null, failure = MISSING)
@@ -238,13 +247,30 @@ class HinataTvServer(
         return anipmSubtitles(body.text, PAPA, token)
     }
 
-    private fun getFinalUrl(url: String, headers: Map<String, String>): String? {
+    /** Follow redirects; keep status/body so challenges classify as BLOCKED. */
+    private fun followFinal(url: String, headers: Map<String, String>): FinalHop {
         val builder = Request.Builder().url(url).get()
         headers.forEach { (n, v) -> builder.header(n, v) }
         val response = runCatching { http.newCall(builder.build()).execute() }
-            .getOrElse { return null }
-        return response.use { it.request.url.toString() }
+            .getOrElse {
+                return FinalHop(networkOk = false, code = 0, url = null, body = "")
+            }
+        return response.use {
+            FinalHop(
+                networkOk = true,
+                code = it.code,
+                url = it.request.url.toString(),
+                body = it.body?.string().orEmpty().take(800),
+            )
+        }
     }
+
+    private data class FinalHop(
+        val networkOk: Boolean,
+        val code: Int,
+        val url: String?,
+        val body: String,
+    )
 
     private fun get(url: String, headers: Map<String, String>): HttpText {
         val builder = Request.Builder().url(url).get()

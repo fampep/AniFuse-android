@@ -18,13 +18,15 @@ import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.hls.offline.HlsDownloader
+import site.anikitty.app.data.servers.AnipmXorDataSource
 import site.anikitty.app.data.servers.FlixUnwrapDataSource
 import site.anikitty.app.data.servers.GotakuObfDataSource
 import site.anikitty.app.data.servers.PlaybackHttp
+import site.anikitty.app.data.servers.SegmentStripDataSource
 import site.anikitty.app.data.servers.isHlsMediaSegment
 import site.anikitty.app.data.servers.segmentCacheIdentity
-import site.anikitty.app.data.servers.SegmentStripDataSource
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -59,13 +61,17 @@ internal fun upstreamFactory(
     headers: Map<String, String>,
     userAgent: String,
     stripBytes: Int,
+    pngXor: Boolean = false,
 ): DataSource.Factory {
     val http = PlaybackHttp.factory(headers, userAgent)
     val gotaku = GotakuObfDataSource.Factory(http)
     val flix = FlixUnwrapDataSource.Factory(gotaku)
+    val xor = AnipmXorDataSource.Factory(flix, AtomicBoolean(pngXor))
     return SegmentStripDataSource.Factory(
-        flix,
-        stripBytes = AtomicInteger(stripBytes.coerceAtLeast(0)),
+        xor,
+        stripBytes = AtomicInteger(
+            if (pngXor) 0 else stripBytes.coerceAtLeast(0),
+        ),
     )
 }
 
@@ -93,7 +99,8 @@ internal fun hlsDownloader(
     stripBytes: Int,
     streamKeys: List<StreamKey> = emptyList(),
 ): HlsDownloader {
-    val upstream = upstreamFactory(headers, userAgent, stripBytes)
+    val pngXor = url.contains(".direct.pls", ignoreCase = true)
+    val upstream = upstreamFactory(headers, userAgent, stripBytes, pngXor = pngXor)
     val item = MediaItem.Builder()
         .setUri(url)
         .setMimeType(MimeTypes.APPLICATION_M3U8)

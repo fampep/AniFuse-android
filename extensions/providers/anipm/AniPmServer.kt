@@ -148,6 +148,9 @@ class AniPmServer(
             url = mediaUrl,
             headers = mediaHeaders(origin, embedRef),
             label = fields.quality ?: if (lang == "dub") "DUB" else "SUB",
+            // PNG HLS trailer + single-byte XOR — same wire as AnimePapa / HinataTV.
+            stripBytes = 0,
+            pngXor = true,
             hls = true,
             quality = fields.quality,
             audio = fields.audio ?: if (lang == "dub") "DUB" else "SUB",
@@ -453,8 +456,19 @@ internal fun anipmParseSession(payload: String): AnipmSession? {
     if (token.isEmpty()) return null
     return AnipmSession(
         token = token,
-        expiresAt = root.optLong("expiresAt", 0L),
+        // Wire format is Unix seconds — store millis so the cache matches wall clock.
+        expiresAt = anipmExpiresAtMs(root.optLong("expiresAt", 0L)),
     )
+}
+
+/**
+ * Normalize `/api/session` expiry to epoch millis.
+ * Values below 1e12 are treated as Unix seconds (live ani.pm / Papa tokens).
+ */
+internal fun anipmExpiresAtMs(raw: Long): Long = when {
+    raw <= 0L -> 0L
+    raw < 1_000_000_000_000L -> raw * 1_000L
+    else -> raw
 }
 
 internal fun anipmMediaPlaylistUrl(
