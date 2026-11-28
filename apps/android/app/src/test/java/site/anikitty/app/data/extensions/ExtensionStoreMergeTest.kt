@@ -46,7 +46,7 @@ class ExtensionStoreMergeTest {
             ),
         )
         assertEquals(
-            listOf("anipm", "reanime", "anirex", "animeheaven", "oneko", "twodhive", "hinatatv"),
+            listOf("anipm", "reanime", "anirex", "animeheaven", "oneko", "twodhive", "hinatatv", "mmani"),
             merged.extensions.map { it.id },
         )
         assertEquals("1.0.0", merged.extensions.first { it.id == "reanime" }.version)
@@ -72,6 +72,7 @@ class ExtensionStoreMergeTest {
                 "oneko",
                 "twodhive",
                 "hinatatv",
+                "mmani",
             ),
             merged.extensions.map { it.id },
         )

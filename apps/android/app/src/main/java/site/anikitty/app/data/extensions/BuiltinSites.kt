@@ -74,6 +74,19 @@ internal fun builtinStoreListings(): List<StoreListing> = listOf(
         protocol = "1.1",
         playsOnDevice = true,
     ),
+    StoreListing(
+        id = MMANI_ID,
+        name = "MMani",
+        description = "On-device mmani.com resolve. AniBD HLS plays on this phone.",
+        github = MMANI_SITE,
+        author = "mmani.com",
+        featured = true,
+        iconUrl = "https://www.google.com/s2/favicons?domain=mmani.com&sz=128",
+        siteUrl = MMANI_SITE,
+        version = "site",
+        protocol = "1.1",
+        playsOnDevice = true,
+    ),
 )
 
 internal const val ANIREX_ID = "anirex"
@@ -86,6 +99,8 @@ internal const val TWODHIVE_ID = "twodhive"
 internal const val TWODHIVE_SITE = "https://2dhive.com/"
 internal const val HINATATV_ID = "hinatatv"
 internal const val HINATATV_SITE = "https://hinatatv.site/"
+internal const val MMANI_ID = "mmani"
+internal const val MMANI_SITE = "https://mmani.com/"
 
 internal fun isCatalogSite(listing: StoreListing): Boolean = !listing.playsOnDevice
 
