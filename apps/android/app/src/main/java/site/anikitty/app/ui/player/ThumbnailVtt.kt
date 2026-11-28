@@ -49,6 +49,13 @@ internal fun cueAt(cues: List<ThumbnailCue>, positionMs: Long): ThumbnailCue? {
         ?: cues.first()
 }
 
+/** Cue duration in ms, or null when the index has no cue at [positionMs]. */
+internal fun cueSpanMs(cues: List<ThumbnailCue>, positionMs: Long): Long? {
+    val cue = cueAt(cues, positionMs) ?: return null
+    val span = cue.endMs - cue.startMs
+    return span.takeIf { it > 0L }
+}
+
 /**
  * Neighbor sprite URLs to prefetch while the finger is still on this cue.
  * Scrubbing into the next sheet should already have the bitmap warm.

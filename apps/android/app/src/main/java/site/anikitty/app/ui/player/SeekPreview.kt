@@ -4,11 +4,7 @@
 package site.anikitty.app.ui.player
 
 import android.graphics.Bitmap
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -27,24 +23,42 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.prefersReducedMotion
 
 /** Phone scrubbers stay compact; tablets get a wider glass preview card. */
 internal fun seekPreviewCardWidthDp(maxWidthDp: Float): Float =
     if (maxWidthDp < 480f) 118f else 156f
 
+/** Footer under the still — `CHAPTER · mm:ss` or just the clock. */
+internal fun seekPreviewFooter(timeLabel: String, chapterLabel: String?): String {
+    val chapter = chapterLabel?.takeIf { it.isNotBlank() } ?: return timeLabel
+    return "$chapter · $timeLabel"
+}
+
+/** TalkBack string for the floating scrub card. */
+internal fun seekPreviewDescription(timeLabel: String, chapterLabel: String?): String {
+    val chapter = chapterLabel?.takeIf { it.isNotBlank() }
+    return if (chapter != null) {
+        "Seek preview, $chapter, $timeLabel"
+    } else {
+        "Seek preview, $timeLabel"
+    }
+}
+
 /**
- * Thumbnail above the scrubber, optional chapter chip + timestamp under it.
+ * Thumbnail above the scrubber with a single glass footer.
  * The card is clamped to the bar so a phone edge never clips it.
  */
 @Composable
@@ -55,6 +69,7 @@ internal fun SeekPreview(
     modifier: Modifier = Modifier,
     chapterLabel: String? = null,
     chapterKind: String? = null,
+    frameKey: Long = 0L,
 ) {
     BoxWithConstraints(
         modifier
@@ -72,124 +87,82 @@ internal fun SeekPreview(
         val cardHeight = cardWidth * 9f / 16f
         val clamped = fraction.coerceIn(0f, 1f)
         val x = (maxWidth * clamped - cardWidth / 2).coerceIn(0.dp, (maxWidth - cardWidth).coerceAtLeast(0.dp))
-        val frameShape = RoundedCornerShape(12.dp)
+        val cardShape = RoundedCornerShape(16.dp)
         val fadeMs = scrubPreviewCrossfadeMs(prefersReducedMotion())
+        val footer = seekPreviewFooter(timeLabel, chapterLabel)
+        val a11y = seekPreviewDescription(timeLabel, chapterLabel)
         Column(
             modifier = Modifier
                 .offset(x = x)
-                .width(cardWidth),
+                .width(cardWidth)
+                .clearAndSetSemantics { contentDescription = a11y },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Empty plate is noise — time chip alone until the first VTT frame lands.
-            // Crossfade bucket hops so retained plates do not hard-cut.
-            Crossfade(
-                targetState = frame,
-                animationSpec = tween(fadeMs),
-                label = "seekPreviewFrame",
-            ) { bmp ->
-                if (bmp != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(cardHeight)
-                            .shadow(
-                                elevation = 18.dp,
-                                shape = frameShape,
-                                ambientColor = Color.Black.copy(alpha = 0.55f),
-                                spotColor = Color.Black.copy(alpha = 0.4f),
-                            )
-                            .clip(frameShape)
-                            .background(Color(0xCC101012))
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
-                                ),
-                            )
-                            .border(1.dp, Color.White.copy(alpha = 0.28f), frameShape),
-                    ) {
-                        Image(
-                            bitmap = bmp.asImageBitmap(),
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxWidth().height(cardHeight),
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(cardHeight)
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(
-                                            Color.White.copy(alpha = 0.08f),
-                                            Color.Transparent,
-                                            Color.Black.copy(alpha = 0.22f),
-                                        ),
-                                    ),
-                                ),
-                        )
-                    }
-                }
-            }
-            val chipShape = RoundedCornerShape(999.dp)
-            AnimatedContent(
-                targetState = chapterLabel?.takeIf { it.isNotBlank() },
-                transitionSpec = {
-                    fadeIn(tween(fadeMs)) togetherWith fadeOut(tween(fadeMs))
-                },
-                label = "seekPreviewChapter",
-            ) { label ->
-                if (label != null) {
-                    val kind = chapterKind
-                    Box(
-                        modifier = Modifier
-                            .padding(top = 6.dp)
-                            .clip(chipShape)
-                            .background(Color(0xE6101012))
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(
-                                        Color.White.copy(alpha = seekChapterGlassSheen(kind)),
-                                        Color.Transparent,
-                                    ),
-                                ),
-                            )
-                            .border(1.dp, seekChapterGlassBorder(kind), chipShape)
-                            .padding(horizontal = 10.dp, vertical = 3.dp),
-                    ) {
-                        Text(
-                            label,
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.SansSerif,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.6.sp,
-                        )
-                    }
-                }
-            }
-            // Plain Text — AnimatedContent on every scrub tick thrashes the
-            // glass clock. Chapter chip above still crossfades on kind change.
             Box(
                 modifier = Modifier
-                    .padding(top = if (chapterLabel.isNullOrBlank()) 6.dp else 4.dp)
-                    .clip(chipShape)
-                    .background(Color(0xCC101012))
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
-                        ),
-                    )
-                    .border(1.dp, Color.White.copy(alpha = 0.22f), chipShape)
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                    .fillMaxWidth()
+                    .stageGlassPlate(shape = cardShape, elevated = true)
+                    .border(
+                        width = 1.dp,
+                        color = seekChapterGlassBorder(chapterKind),
+                        shape = cardShape,
+                    ),
             ) {
-                Text(
-                    timeLabel,
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.SansSerif,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 0.2.sp,
-                )
+                Column {
+                    // Crossfade on bucket key — retain keeps [frame] stable across
+                    // decode misses so the plate never blanks mid-drag.
+                    Crossfade(
+                        targetState = if (frame != null) frameKey else Long.MIN_VALUE,
+                        animationSpec = tween(fadeMs),
+                        label = "seekPreviewFrame",
+                    ) { key ->
+                        val bmp = frame
+                        if (key != Long.MIN_VALUE && bmp != null) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(cardHeight)
+                                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                                    .background(Color(0xCC101012)),
+                            ) {
+                                Image(
+                                    bitmap = bmp.asImageBitmap(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(cardHeight),
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(cardHeight)
+                                        .background(
+                                            Brush.verticalGradient(
+                                                listOf(
+                                                    Color.White.copy(alpha = seekChapterGlassSheen(chapterKind)),
+                                                    Color.Transparent,
+                                                    Color.Black.copy(alpha = 0.28f),
+                                                ),
+                                            ),
+                                        ),
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        footer,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.SansSerif,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.2.sp,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                    )
+                }
             }
             // Glass stem ties the floating card to the scrub rail.
             Box(

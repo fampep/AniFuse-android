@@ -39,4 +39,31 @@ class ScrubPreviewBucketTest {
         assertEquals(0, scrubPreviewCrossfadeMs(reducedMotion = true))
         assertEquals(SCRUB_PREVIEW_CROSSFADE_MS, scrubPreviewCrossfadeMs(reducedMotion = false))
     }
+
+    @Test
+    fun adaptiveBucketsPreferCueSpan() {
+        assertEquals(0L, scrubPreviewBucketForCues(400L, cueSpanMs = 500L))
+        assertEquals(500L, scrubPreviewBucketForCues(500L, cueSpanMs = 500L))
+        assertEquals(0L, scrubPreviewBucketForCues(900L, cueSpanMs = null))
+        assertEquals(1_000L, scrubPreviewBucketForCues(1_200L, cueSpanMs = null))
+        // Clamp absurd spans into 250ms…2s.
+        assertEquals(0L, scrubPreviewBucketForCues(100L, cueSpanMs = 50L))
+        assertEquals(0L, scrubPreviewBucketForCues(1_500L, cueSpanMs = 10_000L))
+        assertEquals(2_000L, scrubPreviewBucketForCues(2_000L, cueSpanMs = 10_000L))
+    }
+
+    @Test
+    fun seekPreviewFooterAndTalkBackStayReadable() {
+        assertEquals("01:12", seekPreviewFooter("01:12", null))
+        assertEquals("Intro · 01:12", seekPreviewFooter("01:12", "Intro"))
+        assertEquals("Seek preview, 01:12", seekPreviewDescription("01:12", null))
+        assertEquals(
+            "Seek preview, Intro, 01:12",
+            seekPreviewDescription("01:12", "Intro"),
+        )
+        assertEquals(
+            "https://cdn/s.jpg#10,20,160,90@2",
+            thumbnailCropCacheKey("https://cdn/s.jpg", 10, 20, 160, 90, 2),
+        )
+    }
 }

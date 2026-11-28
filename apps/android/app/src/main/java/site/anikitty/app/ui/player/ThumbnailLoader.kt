@@ -20,6 +20,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import site.anikitty.app.data.servers.ThumbnailTrack
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Loads a thumbnail VTT and its sprite sheets off the playback thread.
@@ -38,8 +39,11 @@ internal class ThumbnailLoader(
     private var cues: List<ThumbnailCue> = emptyList()
     private var indexed = false
     private var retryAtMs = 0L
+    private var retryDelayMs = 2_000L
     private val sprites = object : android.util.LruCache<String, Sprite>(8) {}
+    private val crops = object : android.util.LruCache<String, Bitmap>(24) {}
     private val localFrames = object : android.util.LruCache<Long, Bitmap>(6) {}
+    private val ledgerGen = AtomicLong(0L)
 
     suspend fun frame(positionMs: Long): Bitmap? = withContext(Dispatchers.IO) {
         ensureIndex()
@@ -53,10 +57,18 @@ internal class ThumbnailLoader(
         localFrame(positionMs)
     }
 
-    /** Prefetch the VTT index so the first scrub already has cues. */
+    /** Prefetch the VTT index and the first still so scrub starts warm. */
     suspend fun warm() = withContext(Dispatchers.IO) {
         ensureIndex()
+        val first = cues.firstOrNull() ?: return@withContext
+        crop(first)
+        warmNeighborsAsync(first.startMs)
     }
+
+    /** Live cue span for adaptive scrub buckets, or null when cold. */
+    fun activeCueSpanMs(positionMs: Long): Long? = cueSpanMs(cues, positionMs)
+
+    fun hasIndex(): Boolean = indexed && cues.isNotEmpty()
 
     fun release() {
         warmScope.cancel()
@@ -87,11 +99,15 @@ internal class ThumbnailLoader(
             }
             val text = fetchText(source.url, source.headers)
             if (text == null) {
-                retryAtMs = android.os.SystemClock.elapsedRealtime() + 2_000L
+                val delay = retryDelayMs
+                retryAtMs = android.os.SystemClock.elapsedRealtime() + delay
+                retryDelayMs = (delay * 2L).coerceAtMost(8_000L)
                 return
             }
             cues = parseThumbnailVtt(text, source.url)
             indexed = true
+            retryDelayMs = 2_000L
+            ledgerGen.incrementAndGet()
         }
     }
 
@@ -103,7 +119,12 @@ internal class ThumbnailLoader(
         val y = (cue.y / sample).coerceIn(0, (sprite.bitmap.height - 1).coerceAtLeast(0))
         val w = (cue.w / sample).coerceAtMost(sprite.bitmap.width - x).coerceAtLeast(1)
         val h = (cue.h / sample).coerceAtMost(sprite.bitmap.height - y).coerceAtLeast(1)
-        return runCatching { Bitmap.createBitmap(sprite.bitmap, x, y, w, h) }.getOrNull()
+        val key = thumbnailCropCacheKey(cue.spriteUrl, x, y, w, h, sample)
+        crops.get(key)?.let { return it }
+        val cropped = runCatching { Bitmap.createBitmap(sprite.bitmap, x, y, w, h) }.getOrNull()
+            ?: return null
+        crops.put(key, cropped)
+        return cropped
     }
 
     private fun loadSprite(url: String): Sprite? {
