@@ -33,6 +33,7 @@ import site.anikitty.app.data.download.CastDownloadYieldOwner
 import site.anikitty.app.data.servers.PlayableSource
 import site.anikitty.app.data.servers.PlaybackHostHealth
 import site.anikitty.app.data.servers.SubtitleTrack
+import site.anikitty.app.data.servers.playableHost
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -93,6 +94,9 @@ class CastSessionHelper private constructor(
     /** Item the receiver is actually playing. A newer load does not replace this until it starts. */
     @Volatile internal var playingItem: CastItemKey? = null
         private set
+
+    /** Ticket that last reached [settleReady]. Aborted follow-ups keep this. */
+    private val settledTicket = AtomicInteger(0)
 
     private val ticketItem = AtomicReference<Pair<Int, CastItemKey>?>(null)
     private var screenProgress: CastProgressTarget? = null
@@ -405,10 +409,25 @@ class CastSessionHelper private constructor(
     /** This load no longer owns the TV. A newer load keeps the service up. */
     private fun dropLoad(ticket: Int) {
         if (!activeLoadTicket.compareAndSet(ticket, 0)) return
-        casting = false
-        playingItem = null
-        // Aborted/failed loads must not leave CastDownloadYieldOwner stuck.
-        PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
+        val keep = castKeepPlayingAfterDrop(
+            settledTicket = settledTicket.get(),
+            abortedTicket = ticket,
+            playingItem = playingItem,
+        )
+        if (keep) {
+            // Follow-up aborted; previous episode may still be on the TV.
+            casting = true
+            val host = playableHost(playingItem!!.url).ifBlank { null }
+            if (host != null) {
+                PlaybackHostHealth.notePlaying(host, CastDownloadYieldOwner)
+            }
+        } else {
+            casting = false
+            playingItem = null
+            settledTicket.set(0)
+            // First/failed load must not leave CastDownloadYieldOwner stuck.
+            PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
+        }
         CastPlaybackService.demoteIfIdle()
     }
 
@@ -621,6 +640,7 @@ class CastSessionHelper private constructor(
         casting = true
         activeLoadTicket.compareAndSet(ticket, 0)
         ticketItem.get()?.takeIf { it.first == ticket }?.second?.let { playingItem = it }
+        settledTicket.set(ticket)
         commitProgress()
         Log.i(TAG, "Cast playback started")
         // Receiver may ignore queue-item activeTrackIds on the first load.
@@ -634,11 +654,9 @@ class CastSessionHelper private constructor(
 
     private fun settleError(message: String, ticket: Int) {
         if (!loadSettled.compareAndSet(false, true)) return
-        casting = false
-        playingItem = null
         Log.w(TAG, "Cast load failed: $message")
+        // Do not null playingItem here — dropLoad keeps a previously settled episode.
         relay.stop()
-        PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
         dropLoad(ticket)
         main.post { if (ticket == generation.get()) fireLoadError(message) }
     }
@@ -651,6 +669,7 @@ class CastSessionHelper private constructor(
         relay.stop()
         casting = false
         playingItem = null
+        settledTicket.set(0)
         ticketItem.set(null)
         clearProgress()
         PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
@@ -674,6 +693,7 @@ class CastSessionHelper private constructor(
         runCatching { multicast?.release() }
         casting = false
         playingItem = null
+        settledTicket.set(0)
         ticketItem.set(null)
         PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
         clearProgress()

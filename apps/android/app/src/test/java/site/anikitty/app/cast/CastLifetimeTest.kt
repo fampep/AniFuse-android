@@ -32,6 +32,15 @@ class CastLifetimeTest {
     }
 
     @Test
+    fun abortedFollowUpKeepsTheSettledCastYield() {
+        val playing = CastItemKey(1, 4, "https://cdn.example/ep4.m3u8", "ja")
+        assertTrue(castKeepPlayingAfterDrop(settledTicket = 3, abortedTicket = 4, playingItem = playing))
+        assertFalse(castKeepPlayingAfterDrop(settledTicket = 4, abortedTicket = 4, playingItem = playing))
+        assertFalse(castKeepPlayingAfterDrop(settledTicket = 0, abortedTicket = 1, playingItem = playing))
+        assertFalse(castKeepPlayingAfterDrop(settledTicket = 2, abortedTicket = 3, playingItem = null))
+    }
+
+    @Test
     fun castHistoryKeepsTheLivePlayhead() {
         val target = CastProgressTarget(
             anilistId = 7,

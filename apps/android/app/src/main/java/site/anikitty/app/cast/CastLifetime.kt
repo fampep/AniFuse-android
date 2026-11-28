@@ -86,6 +86,16 @@ internal enum class CastJoin { Load, Adopt }
 internal fun castJoin(casting: Boolean, loadInFlight: Boolean, sameItem: Boolean): CastJoin =
     if (sameItem && (casting || loadInFlight)) CastJoin.Adopt else CastJoin.Load
 
+/**
+ * An aborted follow-up load must not wipe the settled episode still on the TV.
+ * Only the ticket that actually started playback may release yield / playingItem.
+ */
+internal fun castKeepPlayingAfterDrop(
+    settledTicket: Int,
+    abortedTicket: Int,
+    playingItem: CastItemKey?,
+): Boolean = playingItem != null && settledTicket != 0 && settledTicket != abortedTicket
+
 /** The playback service, not the player, hears session end and item end. */
 internal interface CastServiceWatch {
     fun onSessionEnded()
