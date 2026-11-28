@@ -173,6 +173,34 @@ class DownloadLaneTest {
     }
 
     @Test
+    fun hlsDownloadArmsShadowOnlyWhenPlaybackIsIdle() {
+        assertTrue(downloadMayArmSegmentShadow(playbackStandbyArmed = false))
+        assertFalse(downloadMayArmSegmentShadow(playbackStandbyArmed = true))
+        val plan = downloadSegmentShadowPlan(
+            currentUrl = "https://cdn-a.example/ep.m3u8",
+            cachedShadow = listOf(
+                PlayableSource(
+                    url = "https://cdn-b.example/ep.m3u8",
+                    headers = mapOf("Referer" to "https://b"),
+                ),
+            ),
+        )
+        assertEquals("cdn-a.example", plan?.fromHost)
+        assertEquals("cdn-b.example", plan?.toHost)
+        assertNull(
+            downloadSegmentShadowPlan(
+                currentUrl = "https://cdn-a.example/ep.m3u8",
+                cachedShadow = emptyList(),
+            ),
+        )
+        assertEquals(
+            "https://cover.example/a.jpg",
+            downloadShelfCover(21, mapOf(21 to "https://cover.example/a.jpg")),
+        )
+        assertNull(downloadShelfCover(21, mapOf(21 to "  ")))
+    }
+
+    @Test
     fun shortEofDoesNotCountAsComplete() {
         assertEquals(1_040L, downloadExpectedTotal(40L, bodyContentLength = 1_000L, contentRange = null))
         assertEquals(

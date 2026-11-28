@@ -87,6 +87,7 @@ import site.anikitty.app.AnikittyApp
 import site.anikitty.app.data.download.EpisodeDownloadEntity
 import site.anikitty.app.data.download.LaneCandidate
 import site.anikitty.app.data.download.downloadAhead
+import site.anikitty.app.data.download.downloadShelfCover
 import site.anikitty.app.data.download.downloadShelfSubtitle
 import site.anikitty.app.data.servers.PlaybackHostHealth
 import kotlin.coroutines.cancellation.CancellationException
@@ -1008,12 +1009,19 @@ private fun SpacePoster(
             .border(1.5.dp, frame, RoundedCornerShape(10.dp))
             .padding(2.dp),
     ) {
+        val artShape = RoundedCornerShape(8.dp)
         Box(
             modifier = Modifier
                 .width(width)
                 .height(height)
-                .clip(RoundedCornerShape(8.dp))
-                .background(palette.text.copy(alpha = 0.05f)),
+                .clip(artShape)
+                .then(
+                    if (progress > 0f) {
+                        Modifier.stageGlassPlate(shape = artShape, elevated = true)
+                    } else {
+                        Modifier.background(palette.text.copy(alpha = 0.05f))
+                    },
+                ),
         ) {
             AsyncImage(
                 model = imageUrl,
@@ -1033,7 +1041,7 @@ private fun SpacePoster(
             if (progress > 0f) {
                 StageProgressBar(
                     fraction = progress.coerceIn(0.04f, 1f),
-                    barHeight = 2.5.dp,
+                    barHeight = 3.5.dp,
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomStart),
@@ -1282,14 +1290,16 @@ private fun postersForTab(
     }
     if (tab == "Downloads") {
         val playing = PlaybackHostHealth.playingHost()
+        val covers = history.associate { it.anilistId to it.coverImageUrl }
         val lane = downloads.filter { it.phase == "QUEUED" || it.phase == "RUNNING" }.map { row ->
             LaneCandidate(row.anilistId, row.episode, row.url, row.updatedAtEpochMs)
         }
         return downloads.map { row ->
+            val cover = downloadShelfCover(row.anilistId, covers)
             SpaceCard(
                 key = "dl-${row.anilistId}-${row.episode}",
                 title = row.title.ifBlank { "Episode ${row.episode}" },
-                imageUrl = null,
+                imageUrl = cover,
                 subtitle = downloadShelfSubtitle(
                     episode = row.episode,
                     phase = row.phase,
@@ -1303,7 +1313,7 @@ private fun postersForTab(
                 anime = AnimeSummary(
                     id = row.anilistId,
                     title = row.title.ifBlank { "Episode ${row.episode}" },
-                    coverImageUrl = null,
+                    coverImageUrl = cover,
                     episodes = null,
                     format = null,
                     averageScore = null,

@@ -78,6 +78,38 @@ internal fun keepPartialForNextUrl(currentUrl: String, nextUrl: String): Boolean
 }
 
 /**
+ * HLS download arms SegmentShadow only when playback has not already claimed
+ * the standby — stealing mid-watch would break live segment retarget.
+ */
+internal fun downloadMayArmSegmentShadow(playbackStandbyArmed: Boolean): Boolean =
+    !playbackStandbyArmed
+
+/** Warm shadow/standby host for mid-segment 403s during an HLS save. */
+internal data class DownloadSegmentShadowPlan(
+    val fromHost: String,
+    val toHost: String,
+    val headers: Map<String, String>,
+)
+
+internal fun downloadSegmentShadowPlan(
+    currentUrl: String,
+    cachedShadow: List<PlayableSource>,
+): DownloadSegmentShadowPlan? {
+    val from = playableHost(currentUrl)
+    if (from.isEmpty()) return null
+    val pick = inheritDownloadSource(currentUrl, cachedShadow, emptyList()) ?: return null
+    val to = playableHost(pick.url)
+    if (to.isEmpty() || to == from) return null
+    return DownloadSegmentShadowPlan(fromHost = from, toHost = to, headers = pick.headers)
+}
+
+/** Cover art for the Downloads shelf — history wins when the row has none. */
+internal fun downloadShelfCover(
+    anilistId: Int,
+    historyCoverById: Map<Int, String?>,
+): String? = historyCoverById[anilistId]?.takeIf { it.isNotBlank() }
+
+/**
  * The probed shadow wins. Otherwise the first healthy resolve on another host.
  * The URL already being saved is never a standby.
  */

@@ -28,6 +28,7 @@ import site.anikitty.app.data.servers.PlayableWarmCache
 import site.anikitty.app.data.servers.PlayableWarmProbe
 import site.anikitty.app.data.servers.PlaybackHostHealth
 import site.anikitty.app.data.servers.PlaybackHttp
+import site.anikitty.app.data.servers.SegmentShadow
 import site.anikitty.app.data.servers.playableHost
 import java.io.File
 import java.io.IOException
@@ -258,6 +259,24 @@ class EpisodeDownloadWorker(
         var lastPercent = -1
         var lastAt = 0L
         val dropped = java.util.concurrent.atomic.AtomicBoolean(false)
+        // Mid-segment 403s retarget in-place via SegmentRetargetInterceptor when
+        // a warm shadow exists and playback has not already armed the standby.
+        val downloadOwner = Any()
+        var shadowArmed = false
+        if (downloadMayArmSegmentShadow(playbackStandbyArmed = SegmentShadow.current() != null)) {
+            val audio = downloadAudioHint(row.sourceKey)
+            val cached = buildList {
+                PlayableWarmCache.peek(row.anilistId, row.episode, audio, PlayableWarmCache.LANE_SHADOW)
+                    ?.let { addAll(it) }
+                PlayableWarmCache.peek(row.anilistId, row.episode, audio, PlayableWarmCache.LANE_STANDBY)
+                    ?.let { addAll(it) }
+            }
+            val plan = downloadSegmentShadowPlan(row.url, cached)
+            if (plan != null) {
+                SegmentShadow.arm(plan.fromHost, plan.toHost, plan.headers, downloadOwner)
+                shadowArmed = true
+            }
+        }
         try {
             withContext(Dispatchers.IO) {
                 downloader.download { _, _, percentDownloaded ->
@@ -280,6 +299,8 @@ class EpisodeDownloadWorker(
         } catch (error: InterruptedException) {
             if (isStopped || dropped.get()) return stopOrRetry(dao, row)
             throw IOException("Couldn't save this episode", error)
+        } finally {
+            if (shadowArmed) SegmentShadow.clear(downloadOwner)
         }
         if (isStopped || dropped.get()) return stopOrRetry(dao, row)
         val wrote = publish(dao, row, DownloadPhase.READY.name, 100, null, null)
