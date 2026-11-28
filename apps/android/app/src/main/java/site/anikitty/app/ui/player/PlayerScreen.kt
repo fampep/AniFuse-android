@@ -1742,9 +1742,10 @@ fun PlayerScreen(
             val connecting = helper.isSessionConnecting()
             if (!castPending && !connecting) return@LaunchedEffect
             castPending = true
-            // ~1s of 100ms polls — remoteMediaClient usually appears in under 500ms.
-            repeat(10) {
-                delay(100)
+            // First slice ~1.8s. A session that is still connecting schedules
+            // another backoff via castClientRetry instead of giving up cold.
+            repeat(15) {
+                delay(120)
                 if (castClientGaveUp) return@LaunchedEffect
                 if (helper.isSessionAvailable()) {
                     applyCastAttach(sessionUp = true)
@@ -1752,7 +1753,13 @@ fun PlayerScreen(
                 }
                 if (!helper.isSessionConnecting() && !castPending) return@LaunchedEffect
             }
-            if (!helper.isSessionAvailable()) abandonCastToPhone(latestPlayer)
+            if (!helper.isSessionAvailable()) {
+                if (helper.isSessionConnecting() || castPending) {
+                    scheduleCastClientRetry(latestPlayer)
+                } else {
+                    abandonCastToPhone(latestPlayer)
+                }
+            }
             return@LaunchedEffect
         }
         applyCastAttach(sessionUp = true)
