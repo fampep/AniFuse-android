@@ -9,6 +9,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
 
 /** A finished-episode count that still needs to reach AniList. */
 @Entity(tableName = "pending_anilist_push")
@@ -23,6 +24,9 @@ data class PendingAniListPush(
 interface PendingAniListPushDao {
     @Query("SELECT * FROM pending_anilist_push ORDER BY updatedAtEpochMs DESC")
     suspend fun all(): List<PendingAniListPush>
+
+    @Query("SELECT COUNT(*) FROM pending_anilist_push")
+    fun observeCount(): Flow<Int>
 
     @Query("SELECT * FROM pending_anilist_push WHERE anilistId = :anilistId LIMIT 1")
     suspend fun get(anilistId: Int): PendingAniListPush?

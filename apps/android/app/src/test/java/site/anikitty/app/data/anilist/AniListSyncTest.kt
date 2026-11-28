@@ -42,6 +42,23 @@ class AniListSyncTest {
         assertFalse(shouldDeletePendingPush(queuedUpdatedAtEpochMs = 200L, pushStartedAtEpochMs = 100L))
         assertTrue(shouldDeletePendingPush(queuedUpdatedAtEpochMs = 100L, pushStartedAtEpochMs = 200L))
         assertTrue(shouldDeletePendingPush(queuedUpdatedAtEpochMs = 100L, pushStartedAtEpochMs = 100L))
+        // Mid-drain upsert of a newer episode must survive even if clocks race.
+        assertFalse(
+            shouldDeletePendingPush(
+                queuedUpdatedAtEpochMs = 100L,
+                pushStartedAtEpochMs = 200L,
+                queuedEpisode = 6,
+                sentEpisode = 5,
+            ),
+        )
+        assertTrue(
+            shouldDeletePendingPush(
+                queuedUpdatedAtEpochMs = 100L,
+                pushStartedAtEpochMs = 200L,
+                queuedEpisode = 5,
+                sentEpisode = 5,
+            ),
+        )
     }
 
     @Test

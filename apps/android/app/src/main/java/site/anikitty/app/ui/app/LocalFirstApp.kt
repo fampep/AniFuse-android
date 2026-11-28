@@ -272,6 +272,7 @@ fun LocalFirstApp(
     }
     val scope = rememberCoroutineScope()
     var syncLabel by remember { mutableStateOf<String?>(null) }
+    val pendingPushCount by aniListSync.observePendingCount().collectAsState(initial = 0)
     var aniLinkStatus by remember { mutableStateOf<String?>(null) }
     var aniLinkTick by remember { mutableIntStateOf(0) }
     var openAccountTick by remember { mutableIntStateOf(0) }
@@ -677,6 +678,7 @@ fun LocalFirstApp(
                     accessToken = if (demo) null else aniListAuth.accessToken,
                     accountLabel = accountLabel,
                     syncLabel = syncLabel,
+                    pendingPushCount = pendingPushCount,
                     libraryFilter = libraryFilter,
                     onSync = {
                         scope.launch {
@@ -726,6 +728,7 @@ fun LocalFirstApp(
                     anifuseStore = anifuseStore,
                     accountLabel = accountLabel,
                     syncLabel = syncLabel,
+                    pendingPushCount = pendingPushCount,
                     onSyncLabel = { syncLabel = it },
                     linkStatus = aniLinkStatus,
                     onLinkStatus = { aniLinkStatus = it },
@@ -1384,6 +1387,7 @@ fun LocalFirstApp(
                         anifuseStore = anifuseStore,
                         accountLabel = accountLabel,
                         syncLabel = syncLabel,
+                        pendingPushCount = pendingPushCount,
                         onSyncLabel = { syncLabel = it },
                         linkStatus = aniLinkStatus,
                         onLinkStatus = { aniLinkStatus = it },

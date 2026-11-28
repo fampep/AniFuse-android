@@ -124,12 +124,15 @@ class AniListSync(
     private suspend fun drainPendingPushesUnlocked(interactive: Boolean): Int {
         val token = auth.accessToken ?: return 0
         if (token.isBlank()) return 0
+        // Stamp before the snapshot — an upsert that lands while we wait on
+        // GraphQL keeps a newer updatedAt and must not be deleted after a
+        // stale episode is accepted.
+        val drainStartedAt = System.currentTimeMillis()
         val rows = pendingPushesForDrain(pendingPushes.all()) { it.updatedAtEpochMs }
         if (rows.isEmpty()) return 0
         var sent = 0
         for (range in pendingPushChunks(rows.size, chunkSize = aniListPushChunkSize(interactive))) {
             val chunk = rows.subList(range.first, range.last + 1)
-            val startedAt = System.currentTimeMillis()
             val items = chunk.map { row ->
                 val plan = aniListPushPlan(row.episode, row.totalEpisodes)
                 AniListBatchPushItem(
@@ -147,10 +150,7 @@ class AniListSync(
                 for (row in chunk) {
                     if (row.anilistId !in accepted) continue
                     sent++
-                    val queued = pendingPushes.get(row.anilistId)
-                    if (queued != null && shouldDeletePendingPush(queued.updatedAtEpochMs, startedAt)) {
-                        pendingPushes.delete(row.anilistId)
-                    }
+                    clearPendingIfUnchanged(row, drainStartedAt)
                     val plan = aniListPushPlan(row.episode, row.totalEpisodes)
                     historyPlans += AniListDrainHistoryPlan(row.anilistId, plan.progress, plan.status)
                 }
@@ -168,7 +168,6 @@ class AniListSync(
                     }
                     val plan = pendingPushRetryPlan(rejectedItems)
                     if (plan.rebatch.isNotEmpty()) {
-                        val retryStarted = System.currentTimeMillis()
                         val reAccepted = aniList.saveProgressBatch(
                             token,
                             plan.rebatch,
@@ -177,10 +176,7 @@ class AniListSync(
                         for (row in rejectedRows) {
                             if (row.anilistId !in reAccepted) continue
                             sent++
-                            val queued = pendingPushes.get(row.anilistId)
-                            if (queued != null && shouldDeletePendingPush(queued.updatedAtEpochMs, retryStarted)) {
-                                pendingPushes.delete(row.anilistId)
-                            }
+                            clearPendingIfUnchanged(row, drainStartedAt)
                             val pushPlan = aniListPushPlan(row.episode, row.totalEpisodes)
                             historyPlans += AniListDrainHistoryPlan(
                                 row.anilistId,
@@ -191,7 +187,6 @@ class AniListSync(
                     }
                     for (item in plan.singles) {
                         val row = rejectedRows.firstOrNull { it.anilistId == item.mediaId } ?: continue
-                        val retryStarted = System.currentTimeMillis()
                         val ok = aniList.saveProgress(
                             accessToken = token,
                             mediaId = item.mediaId,
@@ -201,10 +196,7 @@ class AniListSync(
                         )
                         if (!ok) continue
                         sent++
-                        val queued = pendingPushes.get(row.anilistId)
-                        if (queued != null && shouldDeletePendingPush(queued.updatedAtEpochMs, retryStarted)) {
-                            pendingPushes.delete(row.anilistId)
-                        }
+                        clearPendingIfUnchanged(row, drainStartedAt)
                         historyPlans += AniListDrainHistoryPlan(
                             row.anilistId,
                             item.progress,
@@ -222,6 +214,27 @@ class AniListSync(
         }
         return sent
     }
+
+    /**
+     * Drop the pending row only when it still matches the episode this drain
+     * sent. A newer mark upserted mid-flight keeps its updatedAt / episode.
+     */
+    private suspend fun clearPendingIfUnchanged(row: PendingAniListPush, drainStartedAt: Long) {
+        val queued = pendingPushes.get(row.anilistId) ?: return
+        if (
+            shouldDeletePendingPush(
+                queuedUpdatedAtEpochMs = queued.updatedAtEpochMs,
+                pushStartedAtEpochMs = drainStartedAt,
+                queuedEpisode = queued.episode,
+                sentEpisode = row.episode,
+            )
+        ) {
+            pendingPushes.delete(row.anilistId)
+        }
+    }
+
+    /** Live glass chip — how many offline marks still owe AniList. */
+    fun observePendingCount(): kotlinx.coroutines.flow.Flow<Int> = pendingPushes.observeCount()
 
     /**
      * Queue first, then drain in a multi-alias batch. Offline binge marks never
@@ -318,10 +331,19 @@ internal fun aniListPushPlan(episode: Int, totalEpisodes: Int?): AniListPushPlan
 
 /**
  * A push that started before the queued row was written may delete it.
- * A newer failure that lands while that attempt is in flight stays queued.
+ * A newer failure / episode that lands while that attempt is in flight stays
+ * queued — either by updatedAt or by a mismatched episode count.
  */
-internal fun shouldDeletePendingPush(queuedUpdatedAtEpochMs: Long, pushStartedAtEpochMs: Long): Boolean =
-    queuedUpdatedAtEpochMs <= pushStartedAtEpochMs
+internal fun shouldDeletePendingPush(
+    queuedUpdatedAtEpochMs: Long,
+    pushStartedAtEpochMs: Long,
+    queuedEpisode: Int? = null,
+    sentEpisode: Int? = null,
+): Boolean {
+    if (queuedUpdatedAtEpochMs > pushStartedAtEpochMs) return false
+    if (queuedEpisode != null && sentEpisode != null && queuedEpisode != sentEpisode) return false
+    return true
+}
 
 /**
  * A failed save used to still rewrite the phone. A later frontier (mark watched
