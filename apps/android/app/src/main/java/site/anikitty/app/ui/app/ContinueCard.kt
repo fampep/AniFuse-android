@@ -323,19 +323,25 @@ fun ContinueWatchCard(
                         ),
                     ),
             )
-            // Episode badge, like the reference card: dark pill, white caps.
+            // Episode badge — specular glass pill, white caps.
+            val epShape = RoundedCornerShape(KittyRadius.sm)
             Text(
                 "EP ${shown.episode}",
                 color = Color.White,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 0.4.sp,
+                letterSpacing = 0.5.sp,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(KittySpace.sm)
-                    .clip(RoundedCornerShape(KittyRadius.sm))
-                    .background(Color.Black.copy(alpha = 0.62f))
-                    .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(KittyRadius.sm))
+                    .clip(epShape)
+                    .background(Color(0xE6101012))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
+                        ),
+                    )
+                    .border(1.dp, Color.White.copy(alpha = 0.28f), epShape)
                     .padding(horizontal = 8.dp, vertical = 3.dp)
                     .clearAndSetSemantics { },
             )

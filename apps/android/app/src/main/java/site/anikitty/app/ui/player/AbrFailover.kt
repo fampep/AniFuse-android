@@ -46,6 +46,17 @@ internal fun abrFailoverReseedBitrate(seedBitrate: Int): Long =
     abrFailoverCapBitrate(seedBitrate).toLong()
 
 /**
+ * Only reseed ABR when the CDN host actually changes. Same-host quality or
+ * playlist swaps must not thrash the meter / soft-cap ladder.
+ */
+internal fun abrFailoverShouldReseed(previousHost: String?, nextHost: String?): Boolean {
+    val prev = previousHost?.trim()?.lowercase().orEmpty()
+    val next = nextHost?.trim()?.lowercase().orEmpty()
+    if (prev.isEmpty() || next.isEmpty()) return false
+    return prev != next
+}
+
+/**
  * Wraps [DefaultBandwidthMeter] so a CDN failover can stamp a sane estimate
  * until the soft-release window ends. Without this, [getBitrateEstimate] still
  * reports the dead host and ABR fights the max-bitrate cap.

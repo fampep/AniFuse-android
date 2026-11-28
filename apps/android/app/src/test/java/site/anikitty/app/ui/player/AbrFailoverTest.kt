@@ -4,6 +4,7 @@
 package site.anikitty.app.ui.player
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -38,5 +39,14 @@ class AbrFailoverTest {
         assertEquals(1_200_000L, abrFailoverReseedBitrate(4_000_000))
         assertEquals(500_000L, abrFailoverReseedBitrate(100_000))
         assertEquals(1_000_000L, abrFailoverReseedBitrate(1_000_000))
+    }
+
+    @Test
+    fun reseedOnlyWhenTheCdnHostChanges() {
+        assertTrue(abrFailoverShouldReseed("cdn-a.example", "cdn-b.example"))
+        assertFalse(abrFailoverShouldReseed("cdn-a.example", "cdn-a.example"))
+        assertFalse(abrFailoverShouldReseed(null, "cdn-a.example"))
+        assertFalse(abrFailoverShouldReseed("cdn-a.example", null))
+        assertFalse(abrFailoverShouldReseed(" CDN-A.example ", "cdn-a.example"))
     }
 }

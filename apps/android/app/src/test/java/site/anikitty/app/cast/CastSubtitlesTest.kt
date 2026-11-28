@@ -76,6 +76,23 @@ class CastSubtitlesTest {
     }
 
     @Test
+    fun pushWhenCastingAndCaptionKeyDiffers() {
+        val tracks = listOf(
+            SubtitleTrack(url = "http://143.246.203.212/api/file?id=${"a".repeat(64)}", label = "en"),
+        )
+        assertTrue(castShouldPushCaptions(casting = true, sentKey = "", tracks = tracks))
+        assertFalse(
+            castShouldPushCaptions(
+                casting = true,
+                sentKey = castCaptionKey(tracks),
+                tracks = tracks,
+            ),
+        )
+        assertFalse(castShouldPushCaptions(casting = false, sentKey = "", tracks = tracks))
+        assertFalse(castShouldPushCaptions(casting = true, sentKey = "", tracks = emptyList()))
+    }
+
+    @Test
     fun lateCaptionsPreferReplaceOverHardReload() {
         // Player.STATE_READY == 3, STATE_IDLE == 1.
         assertTrue(castCanReplaceMediaItem(playbackState = 3, itemIndex = 0, mediaItemCount = 1))

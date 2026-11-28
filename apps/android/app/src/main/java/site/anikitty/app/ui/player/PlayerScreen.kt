@@ -840,9 +840,14 @@ fun PlayerScreen(
         val selector = trackSelector ?: return@LaunchedEffect
         val meter = bandwidthMeter
         val url = playbackSource?.url ?: return@LaunchedEffect
-        val first = bitrateCappedFor == null
+        val previousUrl = bitrateCappedFor
+        val first = previousUrl == null
         bitrateCappedFor = url
         if (first) return@LaunchedEffect
+        // Same CDN host — quality/playlist swap must not reseed or soft-cap thrash.
+        if (!abrFailoverShouldReseed(playableHost(previousUrl.orEmpty()), playableHost(url))) {
+            return@LaunchedEffect
+        }
         val seed = playerPrefs.getInt("last_video_bitrate", 1_500_000)
         val cap = abrFailoverCapBitrate(seed)
         val holdMs = abrFailoverHoldMs(seed)
@@ -1208,11 +1213,14 @@ fun PlayerScreen(
         )
     }
 
+    var castSentSubtitleKey by remember(anilistId, episode, source?.url) { mutableStateOf("") }
+
     fun abandonCastToPhone(local: Player?) {
         castClientGaveUp = true
         castPending = false
         castAttachStarted = false
         castLoadedKey = null
+        castSentSubtitleKey = ""
         castHint = "Chromecast is not connected"
         isCasting = false
         pushMute()
@@ -1252,6 +1260,7 @@ fun PlayerScreen(
         castAttachStarted = false
         castPending = false
         castLoadedKey = null
+        castSentSubtitleKey = ""
         castPlayheadRequested = false
         castClockStale = false
         castJoinedLive = false
@@ -1546,7 +1555,6 @@ fun PlayerScreen(
         failCastSource(message, playhead.ms)
     }
 
-    var castSentSubtitleKey by remember(anilistId, episode, source?.url) { mutableStateOf("") }
     LaunchedEffect(anilistId, episode) { castLoadRetry = 0 }
 
     fun loadOntoCast(helper: CastSessionHelper, src: PlayableSource) {
@@ -1718,6 +1726,7 @@ fun PlayerScreen(
                     castPending = false
                     castAttachStarted = false
                     castLoadedKey = null
+                    castSentSubtitleKey = ""
                     castSentPositionMs = -1L
                     castPlayheadRequested = false
                     castClockStale = false
@@ -1955,7 +1964,11 @@ fun PlayerScreen(
 
     // Captions often arrive after the receiver is already playing. Push the
     // sidecar files onto that item instead of leaving the TV without them.
-    LaunchedEffect(librarySubtitles) {
+    // Key on isCasting too — a session that becomes ready after library fill
+    // must still sync the phone caption set. Do not clear castSentSubtitleKey
+    // on isCasting=false alone: loadOntoCast drops that flag while the key is
+    // already stamped for the in-flight MediaItem.
+    LaunchedEffect(isCasting, librarySubtitles) {
         if (!castShouldPushCaptions(isCasting, castSentSubtitleKey, librarySubtitles)) return@LaunchedEffect
         val helper = castHelper ?: return@LaunchedEffect
         repeat(CAST_CAPTION_PUSH_MAX_POLLS) {
