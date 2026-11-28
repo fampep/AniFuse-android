@@ -75,19 +75,32 @@ internal data class HostProbeHit(
 )
 
 /**
- * Probe budget: healthy hosts only, preferred CDN first, then freshest.
- * Sunk marks must not steal slots from the Race dock wave.
+ * Probe budget: preferred CDN first (even when not yet in the healthy ledger),
+ * then affinity/warm seeds, then freshest healthy marks. Sunk marks must not
+ * steal slots — callers pass healthyOnly hosts.
  */
 internal fun hostsForProbeWave(
     healthyHostsNewestFirst: List<String>,
     preferredHost: String?,
+    seedHosts: List<String> = emptyList(),
     limit: Int = HOST_PROBE_LIMIT,
 ): List<String> {
-    val preferred = preferredHost?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
-    val rest = healthyHostsNewestFirst.filter { it != preferred }
+    val preferred = preferredHost?.trim()?.lowercase()
+        ?.takeIf { hostProbeUrl(it) != null }
+    val seeds = seedHosts.mapNotNull { raw ->
+        raw.trim().lowercase().takeIf { hostProbeUrl(it) != null }
+    }
+    val healthy = healthyHostsNewestFirst.mapNotNull { raw ->
+        raw.trim().lowercase().takeIf { it.isNotEmpty() }
+    }
     return buildList {
-        if (preferred != null && preferred in healthyHostsNewestFirst) add(preferred)
-        addAll(rest)
+        if (preferred != null) add(preferred)
+        for (seed in seeds) {
+            if (seed !in this) add(seed)
+        }
+        for (host in healthy) {
+            if (host !in this) add(host)
+        }
     }.take(limit.coerceAtLeast(0))
 }
 
@@ -154,8 +167,10 @@ internal object HostHealthProbe {
         timeoutMs: Long = HOST_PROBE_TIMEOUT_MS,
         nowMs: Long = System.currentTimeMillis(),
         preferredHost: String? = null,
+        seedHosts: List<String> = emptyList(),
     ): List<HostProbeSample> {
         val preferred = preferredHost?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        val seeds = seedHosts.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
         val work = refreshGate.withLock {
             val active = refreshFlight?.takeIf { it.isActive }
             val ledgerGen = PlaybackHostHealth.ledgerGeneration()
@@ -178,6 +193,7 @@ internal object HostHealthProbe {
                         healthyOnly = true,
                     ),
                     preferredHost = preferred,
+                    seedHosts = seeds,
                     limit = limit,
                 )
                 if (hosts.isEmpty()) emptyList() else probeHosts(hosts, timeoutMs, nowMs)
@@ -201,9 +217,11 @@ internal object HostHealthProbe {
     }
 
     /** Fire-and-forget after a resolve stamp so Race dock gets real CDN RTT. */
-    fun kickRemembered(preferredHost: String? = null) {
+    fun kickRemembered(preferredHost: String? = null, seedHosts: List<String> = emptyList()) {
         refreshScope.launch {
-            runCatching { refreshRemembered(preferredHost = preferredHost) }
+            runCatching {
+                refreshRemembered(preferredHost = preferredHost, seedHosts = seedHosts)
+            }
         }
     }
 

@@ -349,12 +349,14 @@ fun LocalFirstApp(
         }
     }
 
-    // Warm Race dock / resolve ranking from remembered CDN hosts on cold open.
+    // Warm Race dock / resolve ranking from remembered + affinity CDN hosts.
     LaunchedEffect(Unit) {
         delay(400)
         while (true) {
             runCatching {
-                site.anikitty.app.data.servers.HostHealthProbe.refreshRemembered()
+                site.anikitty.app.data.servers.HostHealthProbe.refreshRemembered(
+                    seedHosts = streamServers.affinitySeedHosts(),
+                )
             }
             delay(45_000L)
         }

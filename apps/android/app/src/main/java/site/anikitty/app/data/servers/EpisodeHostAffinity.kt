@@ -60,6 +60,29 @@ class EpisodeHostAffinity(context: Context) {
             .apply()
     }
 
+    /**
+     * Newest CDN hosts still inside [TTL_MS] — seeds Race-dock probe waves
+     * before PlaybackHostHealth's shorter HOLD window forgets them.
+     */
+    fun recentHosts(limit: Int = 6, nowMs: Long = System.currentTimeMillis()): List<String> {
+        val hits = ArrayList<Hit>()
+        for ((_, hit) in memory) {
+            if (nowMs - hit.atMs <= TTL_MS && hit.host.isNotBlank()) hits += hit
+        }
+        for ((rawKey, value) in prefs.all) {
+            if (!rawKey.endsWith(".host") || value !is String) continue
+            val base = rawKey.removeSuffix(".host")
+            val at = prefs.getLong("$base.at", 0L)
+            if (at <= 0L || nowMs - at > TTL_MS) continue
+            val host = value.trim().lowercase()
+            if (host.isEmpty()) continue
+            if (hits.any { it.host == host }) continue
+            val provider = prefs.getString("$base.provider", "") ?: ""
+            hits += Hit(providerId = provider, host = host, atMs = at)
+        }
+        return affinityRecentHosts(hits, limit)
+    }
+
     companion object {
         private const val PREFS = "anikitty_episode_affinity"
         /** Affinity stays hot across a binge night, then expires. */
@@ -87,4 +110,18 @@ internal fun <T> boostAffinityProvider(
     if (id(head).trim().lowercase() == want) return ordered
     val match = ordered.firstOrNull { id(it).trim().lowercase() == want } ?: return ordered
     return listOf(head) + match + ordered.drop(1).filterNot { id(it).trim().lowercase() == want }
+}
+
+/** Newest-first unique CDN hosts from affinity hits (TTL already filtered). */
+internal fun affinityRecentHosts(
+    hits: List<EpisodeHostAffinity.Hit>,
+    limit: Int,
+): List<String> {
+    if (limit <= 0 || hits.isEmpty()) return emptyList()
+    return hits
+        .sortedByDescending { it.atMs }
+        .map { it.host.trim().lowercase() }
+        .filter { it.isNotEmpty() }
+        .distinct()
+        .take(limit)
 }

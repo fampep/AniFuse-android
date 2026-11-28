@@ -75,10 +75,48 @@ class HostHealthProbeTest {
             listOf("cdn.new", "cdn.old"),
             hostsForProbeWave(healthy, preferredHost = null, limit = 2),
         )
-        // Preferred not in the healthy list → just take the freshest.
+        // Preferred not yet healthy still leads — Race dock must re-probe it.
         assertEquals(
-            listOf("cdn.new"),
+            listOf("cdn.sunk"),
             hostsForProbeWave(healthy, preferredHost = "cdn.sunk", limit = 1),
+        )
+        assertEquals(
+            listOf("cdn.sunk", "cdn.new"),
+            hostsForProbeWave(healthy, preferredHost = "cdn.sunk", limit = 2),
+        )
+    }
+
+    @Test
+    fun probeWaveSeedsAffinityCdnsAheadOfHealthyTail() {
+        val healthy = listOf("cdn.hold", "cdn.tail")
+        assertEquals(
+            listOf("cdn.lead", "play.anien.top", "cdn.hold"),
+            hostsForProbeWave(
+                healthy,
+                preferredHost = "cdn.lead",
+                seedHosts = listOf("play.anien.top", "cdn.hold", "localhost"),
+                limit = 3,
+            ),
+        )
+        // Seeds alone warm the dock after HOLD expires.
+        assertEquals(
+            listOf("play.anien.top", "cdn.affinity"),
+            hostsForProbeWave(
+                healthyHostsNewestFirst = emptyList(),
+                preferredHost = null,
+                seedHosts = listOf("play.anien.top", "cdn.affinity", "play.anien.top"),
+                limit = 4,
+            ),
+        )
+        // Invalid hostnames never steal a slot.
+        assertEquals(
+            listOf("cdn.hold"),
+            hostsForProbeWave(
+                healthy,
+                preferredHost = "localhost",
+                seedHosts = listOf("", "cdn.example/path"),
+                limit = 1,
+            ),
         )
     }
 

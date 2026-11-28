@@ -311,7 +311,10 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
                 PlaybackHostHealth.note(leadHost, ok = true, latencyMs = resolveMs)
                 PlaybackHostHealth.noteProviderCdn(resolver.server.id, leadHost)
                 // Prefer the lead CDN so Race dock LEAD · ms is a live HEAD sample.
-                HostHealthProbe.kickRemembered(preferredHost = leadHost)
+                HostHealthProbe.kickRemembered(
+                    preferredHost = leadHost,
+                    seedHosts = affinitySeedHosts(),
+                )
             }
             // Shadow / credits races pass avoidHost — never overwrite the playing live lane.
             val primaryRace = avoidHost.isNullOrBlank()
@@ -414,6 +417,13 @@ class ServerCatalog(context: Context, private val apiStore: AnifuseApiStore = An
 
     /** Soft-blocked provider ids/names from the last hard failures. */
     fun coldProviderKeys(): Set<String> = downProviderNames()
+
+    /**
+     * Affinity CDN hosts still warm across a binge night — seed Race-dock
+     * probe waves after PlaybackHostHealth's shorter HOLD window expires.
+     */
+    fun affinitySeedHosts(limit: Int = 6): List<String> =
+        episodeAffinity.recentHosts(limit = limit)
 
     private fun downProviderNames(): Set<String> =
         providerHealth.downNames() + providerHealth.pulseDownKeys()
