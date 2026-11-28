@@ -70,5 +70,8 @@ class ScrubPreviewBucketTest {
             "https://cdn/s.jpg#10,20,160,90@2",
             thumbnailCropCacheKey("https://cdn/s.jpg", 10, 20, 160, 90, 2),
         )
+        assertTrue(scrubPreviewWarmOnScrubStartOnly(scrubbing = true, previousScrubbing = false))
+        assertFalse(scrubPreviewWarmOnScrubStartOnly(scrubbing = true, previousScrubbing = true))
+        assertFalse(scrubPreviewWarmOnScrubStartOnly(scrubbing = false, previousScrubbing = true))
     }
 }
