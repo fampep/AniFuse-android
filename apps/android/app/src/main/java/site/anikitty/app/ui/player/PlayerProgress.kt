@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -97,6 +98,9 @@ internal fun LiveTimeline(
     val context = androidx.compose.ui.platform.LocalContext.current
     val loader = remember(thumbnails?.url, mediaUrl) {
         ThumbnailLoader(context, thumbnails, mediaUrl)
+    }
+    DisposableEffect(loader) {
+        onDispose { loader.release() }
     }
     LaunchedEffect(loader) {
         loader.warm()

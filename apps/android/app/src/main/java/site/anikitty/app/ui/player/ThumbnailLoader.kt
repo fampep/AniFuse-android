@@ -8,7 +8,11 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -29,6 +33,8 @@ internal class ThumbnailLoader(
 ) {
     private val app = context.applicationContext
     private val gate = Mutex()
+    private val warmJob = SupervisorJob()
+    private val warmScope = CoroutineScope(warmJob + Dispatchers.IO)
     private var cues: List<ThumbnailCue> = emptyList()
     private var indexed = false
     private var retryAtMs = 0L
@@ -40,7 +46,8 @@ internal class ThumbnailLoader(
         val cue = cueAt(cues, positionMs)
         if (cue != null) {
             val bitmap = crop(cue)
-            warmNeighbors(positionMs)
+            // Neighbor HTTP must not stall the scrub preview for this cue.
+            warmNeighborsAsync(positionMs)
             return@withContext bitmap
         }
         localFrame(positionMs)
@@ -51,11 +58,19 @@ internal class ThumbnailLoader(
         ensureIndex()
     }
 
-    /** Soft-prefetch adjacent sprite sheets while the current cue is on screen. */
-    private fun warmNeighbors(positionMs: Long) {
-        for (url in thumbnailNeighborSpriteUrls(cues, positionMs)) {
-            if (sprites.get(url) != null) continue
-            loadSprite(url)
+    fun release() {
+        warmScope.cancel()
+    }
+
+    /** Soft-prefetch adjacent sprite sheets after the current frame is already returned. */
+    private fun warmNeighborsAsync(positionMs: Long) {
+        val urls = thumbnailNeighborSpriteUrls(cues, positionMs)
+        if (urls.isEmpty()) return
+        warmScope.launch {
+            for (url in urls) {
+                if (sprites.get(url) != null) continue
+                loadSprite(url)
+            }
         }
     }
 
