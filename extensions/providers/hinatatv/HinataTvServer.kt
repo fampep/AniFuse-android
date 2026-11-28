@@ -321,7 +321,8 @@ class HinataTvServer(
     companion object {
         const val ID = "hinatatv"
         const val SITE = "https://hinatatv.site"
-        const val PAPA = "https://animepapa.cyou"
+        /** Same AnimePapa Player API host ani.pm races — shared session cache. */
+        const val PAPA = AniPmServer.PAPA
         const val MISSING = "HinataTV does not have this episode."
         const val BLOCKED = "HinataTV could not be reached."
         const val USER_AGENT =

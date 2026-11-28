@@ -17,9 +17,17 @@ class AniPmPlaybackTest {
         assertEquals("ani.pm", AniPmServer(cache = null).server.name)
         assertEquals(AniPmServer.SITE, AniPmServer(cache = null).server.siteUrl)
         assertEquals(
-            listOf("https://anipm.pk", "https://ani.pm", "https://ani.nz"),
+            listOf(
+                "https://animepapa.cyou",
+                "https://anipm.pk",
+                "https://ani.pm",
+                "https://ani.nz",
+            ),
             AniPmServer.ORIGINS,
         )
+        // Papa first — brand CF edges often challenge OkHttp while Papa plays.
+        assertEquals(AniPmServer.PAPA, AniPmServer.ORIGINS.first())
+        assertEquals(AniPmServer.PAPA, HinataTvServer.PAPA)
         assertFalse(isRetiredExtension("anipm", "ani.pm", "https://ani.pm"))
         // Second / community ani.pm packs + former ani.nz card are retired.
         assertTrue(isRetiredExtension("site.anikitty.anipm", "Ani.pm", "https://anipm.pk"))
@@ -34,7 +42,12 @@ class AniPmPlaybackTest {
     @Test
     fun orderedOriginsPreferWarmMirror() {
         assertEquals(
-            listOf("https://ani.nz", "https://anipm.pk", "https://ani.pm"),
+            listOf(
+                "https://ani.nz",
+                "https://animepapa.cyou",
+                "https://anipm.pk",
+                "https://ani.pm",
+            ),
             anipmOrderedOrigins(
                 AniPmServer.ORIGINS,
                 "https://ani.nz/embed/mal/13601",
@@ -43,6 +56,10 @@ class AniPmPlaybackTest {
         assertEquals(
             AniPmServer.ORIGINS,
             anipmOrderedOrigins(AniPmServer.ORIGINS, null),
+        )
+        assertEquals(
+            AniPmServer.PAPA,
+            anipmOriginFromWatchUrl("${AniPmServer.PAPA}/embed/mal/21", AniPmServer.ORIGINS),
         )
         assertEquals(
             "https://anipm.pk",
