@@ -104,8 +104,11 @@ class AnipmXorDataSource(
 
     override fun getUri(): Uri? = upstream.uri ?: openedUri
 
-    override fun getResponseHeaders(): Map<String, List<String>> =
-        if (mode == Mode.BUFFER) emptyMap() else upstream.responseHeaders
+    override fun getResponseHeaders(): Map<String, List<String>> = when (mode) {
+        // Clear MPEG-TS — never advertise image/* from the PNG CDN response.
+        Mode.BUFFER, Mode.STREAM_XOR -> mapOf("Content-Type" to listOf("video/mp2t"))
+        Mode.PASSTHROUGH -> upstream.responseHeaders
+    }
 
     override fun close() {
         body = null
@@ -175,7 +178,8 @@ internal fun anipmXorStreamKey(buffer: ByteArray, offset: Int, length: Int): Int
     val candidate = (buffer[offset].toInt() and 0xFF) xor 0x47
     return when (candidate) {
         0xFF, 0x5A, 0x00 -> candidate
-        else -> candidate
+        // Unknown first-byte keys wait for a longer chunk / full anipmXorKey.
+        else -> 0
     }
 }
 

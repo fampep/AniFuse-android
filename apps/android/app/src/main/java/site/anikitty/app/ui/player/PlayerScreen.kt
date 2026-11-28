@@ -1050,15 +1050,22 @@ fun PlayerScreen(
     // Kaa uses one master for Sub and Dub, so the player is not rebuilt.
     // The preference still has to move onto the English or Japanese rendition.
     // A leftover in-file override outranks that preference, so Auto clears it.
-    LaunchedEffect(trackSelector, audio, selectedAudioId) {
+    // ani.pm / Papa language lanes are muxed AAC without LANGUAGE tags — forcing
+    // ja/en can leave the only audio track unselected (video-only) on some devices.
+    LaunchedEffect(trackSelector, audio, selectedAudioId, source?.pngXor) {
         val selector = trackSelector ?: return@LaunchedEffect
         val next = selector.buildUponParameters()
-            .setPreferredAudioLanguage(requestedAudioLanguage(audio))
-        selector.parameters = if (selectedAudioId == "auto") {
-            next.clearOverridesOfType(C.TRACK_TYPE_AUDIO).build()
+            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+        if (source?.pngXor == true) {
+            next.setPreferredAudioLanguage(null)
+                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
         } else {
-            next.build()
+            next.setPreferredAudioLanguage(requestedAudioLanguage(audio))
+            if (selectedAudioId == "auto") {
+                next.clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+            }
         }
+        selector.parameters = next.build()
     }
     val latestPlayer by rememberUpdatedState(player)
     var castMediaCommitted by remember { mutableStateOf(false) }
