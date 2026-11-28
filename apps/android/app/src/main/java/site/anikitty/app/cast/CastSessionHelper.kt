@@ -274,10 +274,11 @@ class CastSessionHelper private constructor(
 
     private fun setDeviceVolume(level: Float, unmuteIfRaising: Boolean): Float {
         val session = castContext.sessionManager.currentCastSession
-        val current = heldDeviceVolume
+        // Compare against the live session (or fresh hold), not a stale default hold.
+        val previous = readDeviceVolume()
         val next = level.coerceIn(0f, 1f)
         heldDeviceVolume = next
-        if (session != null && next != current) {
+        if (session != null && castVolumeNeedsWrite(previous, next)) {
             lastDeviceVolumeWriteMs = android.os.SystemClock.uptimeMillis()
             // setVolume throws IOException, so it is not a Kotlin property setter.
             runCatching { session.setVolume(next.toDouble()) }

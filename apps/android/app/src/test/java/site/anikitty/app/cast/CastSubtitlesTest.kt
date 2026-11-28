@@ -68,6 +68,14 @@ class CastSubtitlesTest {
     }
 
     @Test
+    fun staleHoldStillWritesWhenLiveLevelDiffers() {
+        // Default hold 1f vs live session 0.94 — nudge to 1f must still write.
+        assertTrue(castVolumeNeedsWrite(previous = 0.94f, next = 1f))
+        assertFalse(castVolumeNeedsWrite(previous = 1f, next = 1f))
+        assertFalse(castVolumeNeedsWrite(previous = 0.50f, next = 0.5002f))
+    }
+
+    @Test
     fun theLoadLeavesThePictureTrackOn() {
         assertTrue(castLoadActiveTrackIds(longArrayOf()) == null)
         assertTrue(castLoadActiveTrackIds(longArrayOf(1L)) == null)

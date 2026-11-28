@@ -120,6 +120,10 @@ internal fun castVolumeAfterNudge(current: Float, delta: Float): Float {
 internal fun castVolumeFromGesture(startLevel: Float, fingerDelta: Float): Float =
     (startLevel.coerceIn(0f, 1f) + fingerDelta).coerceIn(0f, 1f)
 
+/** True when the TV speaker still needs a setVolume for this target. */
+internal fun castVolumeNeedsWrite(previous: Float, next: Float): Boolean =
+    kotlin.math.abs(previous.coerceIn(0f, 1f) - next.coerceIn(0f, 1f)) > 0.0005f
+
 /** Stable identity for the sidecar list last given to the receiver. */
 internal fun castCaptionKey(tracks: List<SubtitleTrack>): String =
     tracks.joinToString("\n") { it.url }
