@@ -528,6 +528,8 @@ fun PlayerScreen(
     var castClientRetry by remember { mutableIntStateOf(0) }
     /** One automatic re-load per episode: the first cast attempt often races the receiver. */
     var castLoadRetry by remember { mutableIntStateOf(0) }
+    /** Wall clock of the last Cast seek — suppresses trickle during seek rebuffer. */
+    var castSeekArmedAt by remember { mutableLongStateOf(0L) }
     /** The receiver client never appeared. Further retries stay off and the phone plays. */
     var castClientGaveUp by remember { mutableStateOf(false) }
     /** This screen joined a receiver that was already playing this episode. */
@@ -2201,6 +2203,7 @@ fun PlayerScreen(
         val helper = castHelper ?: return@LaunchedEffect
         if (isCasting) {
             helper.castPlayer.seekTo(safeSeekTarget(target, helper.castPlayer.duration, durationMs))
+            castSeekArmedAt = System.currentTimeMillis()
             castSentPositionMs = target
             positionMs = target
             playhead.ms = target
@@ -2592,6 +2595,10 @@ fun PlayerScreen(
         var castLeftEnding = false
         var stallBuffered = -1L
         var stallSince = 0L
+        var watchedCastUrl: String? = null
+        // After failCastSource walks mirrors, only READY (not leftover BUFFERING)
+        // re-arms the stall clock for the successor.
+        var awaitSuccessorReady = false
         val p = activePlayer
         while (p != null) {
             if (!scrubbing) {
@@ -2600,12 +2607,39 @@ fun PlayerScreen(
                 val clock = runCatching { playerClock(p) }.getOrNull() ?: break
                 val rawPos = clock.positionMs
                 val rawDur = clock.durationMs
-                if (
-                    isCasting &&
-                    !castClockStale &&
-                    (clock.state == Player.STATE_READY || clock.state == Player.STATE_BUFFERING)
+                val castUrl = latestSources.getOrNull(latestSourceIndex)?.url
+                val arm = castStallArmAfterSourceChange(
+                    prevUrl = watchedCastUrl,
+                    nextUrl = castUrl,
+                    castItemStarted = castItemStarted,
+                    stallBuffered = stallBuffered,
+                    stallSince = stallSince,
+                )
+                if (arm.castItemStarted != castItemStarted ||
+                    arm.stallBuffered != stallBuffered ||
+                    arm.stallSince != stallSince
                 ) {
-                    castItemStarted = true
+                    castItemStarted = arm.castItemStarted
+                    stallBuffered = arm.stallBuffered
+                    stallSince = arm.stallSince
+                    if (castUrl != null && castUrl != watchedCastUrl) {
+                        awaitSuccessorReady = true
+                        castFailUrl[0] = null
+                    }
+                }
+                watchedCastUrl = castUrl
+                if (isCasting && !castClockStale) {
+                    if (awaitSuccessorReady) {
+                        if (clock.state == Player.STATE_READY) {
+                            castItemStarted = true
+                            awaitSuccessorReady = false
+                        }
+                    } else if (
+                        clock.state == Player.STATE_READY ||
+                        clock.state == Player.STATE_BUFFERING
+                    ) {
+                        castItemStarted = true
+                    }
                 }
                 val trustCastClock = (!isCasting || castItemStarted) && !castClockStale
                 val pos = if (trustCastClock) rawPos else playhead.ms
@@ -2668,9 +2702,16 @@ fun PlayerScreen(
                         isCasting = isCasting,
                         castItemStarted = castItemStarted,
                         castClockStale = castClockStale,
+                        seekingOrLoadInFlight = castPending ||
+                            castSeekSuppressesStall(
+                                seekArmedAtMs = castSeekArmedAt,
+                                nowMs = System.currentTimeMillis(),
+                            ),
                     )
                 ) {
                     // CastPlayer soft-stall — same trickle detector, wider budget.
+                    // Cast bufferedPosition tracks playhead, not a growing buffer,
+                    // so seek/load windows stay gated above.
                     val buffered = clock.bufferedMs
                     val stalled = clock.playWhenReady &&
                         !clock.playing &&
@@ -2719,6 +2760,7 @@ fun PlayerScreen(
                         lastAutoSkippedKey = skipKey
                         // CastPlayer and ExoPlayer share this seek path.
                         runCatching { p.seekTo(safeSeekTarget(iv.endMs, rawDur, durationMs)) }
+                        if (isCasting) castSeekArmedAt = System.currentTimeMillis()
                         playhead.ms = iv.endMs
                     }
                 }
@@ -2958,6 +3000,7 @@ fun PlayerScreen(
         val p = activePlayer ?: return
         val target = safeSeekTarget(p.currentPosition + deltaMs, p.duration, durationMs)
         p.seekTo(target)
+        if (isCasting) castSeekArmedAt = System.currentTimeMillis()
         positionMs = target
         playhead.ms = target
         KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
@@ -2975,6 +3018,7 @@ fun PlayerScreen(
         // Prefer the remote CastPlayer when casting — same skip markers as local.
         val target = safeSeekTarget(endMs, p.duration, durationMs)
         p.seekTo(target)
+        if (isCasting) castSeekArmedAt = System.currentTimeMillis()
         positionMs = target
         playhead.ms = target
         controlsVisible = true
@@ -3757,6 +3801,7 @@ fun PlayerScreen(
                         val raw = (fraction * span).toLong()
                         val landed = safeSeekTarget(raw, activePlayer?.duration ?: span, durationMs)
                         activePlayer?.seekTo(landed)
+                        if (isCasting) castSeekArmedAt = System.currentTimeMillis()
                         positionMs = landed
                         playhead.ms = landed
                         scrubbing = false
@@ -4605,6 +4650,7 @@ fun PlayerScreen(
                             val raw = (fraction * durationMs).toLong()
                             val target = if (p != null) safeSeekTarget(raw, p.duration, durationMs) else raw.coerceAtLeast(0L)
                             p?.seekTo(target)
+                            if (isCasting) castSeekArmedAt = System.currentTimeMillis()
                             playhead.ms = target
                             positionMs = target
                             scrubbing = false
@@ -4732,6 +4778,7 @@ fun PlayerScreen(
                                 raw.coerceAtLeast(0L)
                             }
                             p?.seekTo(target)
+                            if (isCasting) castSeekArmedAt = System.currentTimeMillis()
                             playhead.ms = target
                             positionMs = target
                             scrubbing = false
