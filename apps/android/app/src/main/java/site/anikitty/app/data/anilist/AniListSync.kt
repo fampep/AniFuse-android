@@ -3,6 +3,8 @@
 
 package site.anikitty.app.data.anilist
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import site.anikitty.app.data.local.PendingAniListPush
 import site.anikitty.app.data.local.PendingAniListPushDao
 import site.anikitty.app.data.local.WatchHistoryDao
@@ -20,6 +22,8 @@ class AniListSync(
     /** Disk live-source recall for a title whose Continue frontier jumped. */
     private val onTitleFrontierAdvance: (anilistId: Int) -> Unit = {},
 ) {
+    /** One drain at a time — live marks and NetworkCallback must not double-push. */
+    private val drainLock = Mutex()
     data class Result(
         val imported: Int,
         val username: String?,
@@ -113,7 +117,11 @@ class AniListSync(
      * up to [ANILIST_PUSH_CHUNK] rows. A newer failure that lands while one
      * attempt is in flight stays queued. Returns how many rows AniList accepted.
      */
-    suspend fun drainPendingPushes(interactive: Boolean = false): Int {
+    suspend fun drainPendingPushes(interactive: Boolean = false): Int = drainLock.withLock {
+        drainPendingPushesUnlocked(interactive)
+    }
+
+    private suspend fun drainPendingPushesUnlocked(interactive: Boolean): Int {
         val token = auth.accessToken ?: return 0
         if (token.isBlank()) return 0
         val rows = pendingPushesForDrain(pendingPushes.all()) { it.updatedAtEpochMs }
@@ -216,43 +224,37 @@ class AniListSync(
     }
 
     /**
-     * Push episodes finished to AniList. [episode] is the completed count, so 0
-     * clears progress after unwatching the first episode. Returns false when
-     * nothing was saved, including a failed request.
+     * Queue first, then drain in a multi-alias batch. Offline binge marks never
+     * wait on a lone saveProgress that can time out before Room records them,
+     * and a cluster of marks shares one paced HTTP call with any other pending
+     * rows. Returns true when this title left the pending queue.
      */
     suspend fun pushProgress(anilistId: Int, episode: Int, totalEpisodes: Int?): Boolean {
-        val token = auth.accessToken ?: return false
+        if (auth.accessToken.isNullOrBlank()) return false
         if (anilistId <= 0 || episode < 0) return false
-        val startedAt = System.currentTimeMillis()
-        val plan = aniListPushPlan(episode, totalEpisodes)
-        // Mark/auto-mark is user-facing — do not yield to Home shelf pacing.
-        val saved = aniList.saveProgress(
-            accessToken = token,
-            mediaId = anilistId,
-            progress = plan.progress,
-            status = plan.status,
-            interactive = true,
+        pendingPushes.upsert(
+            PendingAniListPush(
+                anilistId = anilistId,
+                episode = episode,
+                totalEpisodes = totalEpisodes?.takeIf { it > 0 },
+                updatedAtEpochMs = System.currentTimeMillis(),
+            ),
         )
-        if (!saved) {
-            pendingPushes.upsert(
-                PendingAniListPush(
-                    anilistId = anilistId,
-                    episode = episode,
-                    totalEpisodes = totalEpisodes?.takeIf { it > 0 },
-                    updatedAtEpochMs = System.currentTimeMillis(),
-                ),
-            )
-            return false
-        }
-        val queued = pendingPushes.get(anilistId)
-        if (queued != null && shouldDeletePendingPush(queued.updatedAtEpochMs, startedAt)) {
-            pendingPushes.delete(anilistId)
-        }
-        val existing = historyDao.get(anilistId) ?: return true
-        historyDao.upsert(historyAfterAniListPush(existing, plan.progress, plan.status))
-        return true
+        // Interactive drain — coalesce this mark with anything already queued.
+        drainPendingPushes(interactive = true)
+        return pushProgressLanded(stillPending = pendingPushes.get(anilistId) != null)
     }
 }
+
+/**
+ * Live mark outcome after an offline-first queue + drain. Still-pending means
+ * AniList rejected or the network dropped — Room still owns the episode.
+ */
+internal fun pushProgressLanded(stillPending: Boolean): Boolean = !stillPending
+
+/** Glass Sync / mark chip while offline marks wait for a drain. */
+internal fun aniListPendingPushPill(queuedCount: Int): String? =
+    if (queuedCount > 0) "SYNC · $queuedCount" else null
 
 /** Accepted drain mark waiting for a fresh Room merge at flush. */
 internal data class AniListDrainHistoryPlan(

@@ -45,6 +45,14 @@ class AniListSyncTest {
     }
 
     @Test
+    fun offlineFirstMarkLandsOnlyAfterTheQueueClears() {
+        assertTrue(pushProgressLanded(stillPending = false))
+        assertFalse(pushProgressLanded(stillPending = true))
+        assertEquals("SYNC · 3", aniListPendingPushPill(3))
+        assertEquals(null, aniListPendingPushPill(0))
+    }
+
+    @Test
     fun aFinishedSeriesIsCompletedAndAPartialCountStaysCurrent() {
         assertEquals(AniListPushPlan(12, "COMPLETED"), aniListPushPlan(episode = 12, totalEpisodes = 12))
         assertEquals(AniListPushPlan(12, "COMPLETED"), aniListPushPlan(episode = 13, totalEpisodes = 12))

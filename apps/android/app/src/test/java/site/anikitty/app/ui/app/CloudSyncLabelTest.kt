@@ -28,4 +28,16 @@ class CloudSyncLabelTest {
         assertFalse(cloudSyncIsBusy("Synced 12 from AniList"))
         assertFalse(cloudSyncIsBusy(null))
     }
+
+    @Test
+    fun pendingQueueShowsOnGlassWhenIdle() {
+        assertEquals("SYNC · 2", cloudSyncStatusLabel(syncLabel = null, pendingCount = 2))
+        assertEquals("Connected", cloudSyncStatusLabel(syncLabel = null, pendingCount = 0))
+        assertEquals(
+            "Pushing marks…",
+            cloudSyncStatusLabel(syncLabel = "Pushing marks…", pendingCount = 4),
+        )
+        assertTrue(cloudSyncIsBusy("SYNC · 2"))
+        assertEquals("SYNC · 2", cloudSyncStatusLabel("SYNC · 2"))
+    }
 }
