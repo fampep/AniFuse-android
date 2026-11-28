@@ -97,4 +97,38 @@ class HostHealthProbeTest {
         assertTrue(shouldStartProbeFlight(true, flightGeneration = 1L, ledgerGeneration = 3L))
         assertFalse(shouldStartProbeFlight(true, flightGeneration = 3L, ledgerGeneration = 3L))
     }
+
+    @Test
+    fun preferredKickDoesNotJoinABackgroundWave() {
+        // Background store refresh (no preferred) must restart for a Race-dock lead.
+        assertTrue(
+            shouldInvalidateProbeFlightForPreferred(
+                flightActive = true,
+                flightPreferred = null,
+                requestedPreferred = "cdn.lead",
+            ),
+        )
+        assertTrue(
+            shouldInvalidateProbeFlightForPreferred(
+                flightActive = true,
+                flightPreferred = "cdn.other",
+                requestedPreferred = "cdn.lead",
+            ),
+        )
+        // Same preferred can coalesce; null request joins any active flight.
+        assertFalse(
+            shouldInvalidateProbeFlightForPreferred(
+                flightActive = true,
+                flightPreferred = "cdn.lead",
+                requestedPreferred = "cdn.lead",
+            ),
+        )
+        assertFalse(
+            shouldInvalidateProbeFlightForPreferred(
+                flightActive = true,
+                flightPreferred = "cdn.lead",
+                requestedPreferred = null,
+            ),
+        )
+    }
 }

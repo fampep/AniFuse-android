@@ -109,6 +109,22 @@ internal fun shouldInvalidateProbeFlight(
     ledgerGeneration: Long,
 ): Boolean = flightActive && flightGeneration != ledgerGeneration
 
+/**
+ * A Race-dock / post-resolve kick with a preferred CDN must not join a
+ * background wave that never put that host first (or at all) in the six.
+ */
+internal fun shouldInvalidateProbeFlightForPreferred(
+    flightActive: Boolean,
+    flightPreferred: String?,
+    requestedPreferred: String?,
+): Boolean {
+    if (!flightActive) return false
+    val want = requestedPreferred?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        ?: return false
+    val have = flightPreferred?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+    return have != want
+}
+
 internal fun shouldStartProbeFlight(
     flightActive: Boolean,
     flightGeneration: Long,
@@ -123,12 +139,15 @@ internal object HostHealthProbe {
     private var refreshFlight: Deferred<List<HostProbeSample>>? = null
     @Volatile
     private var refreshFlightGeneration: Long = -1L
+    @Volatile
+    private var refreshFlightPreferred: String? = null
 
     /**
      * Home, Extension Store, and cold Play used to stamp three parallel probe
      * waves. Coalesce into one flight so Race dock RTT is not thrashed.
      * A resolve stamp that advances the ledger starts a fresh flight instead
-     * of joining an empty/stale wave.
+     * of joining an empty/stale wave. A preferred CDN kick also starts fresh
+     * when the active wave does not already lead with that host.
      */
     suspend fun refreshRemembered(
         limit: Int = HOST_PROBE_LIMIT,
@@ -136,15 +155,21 @@ internal object HostHealthProbe {
         nowMs: Long = System.currentTimeMillis(),
         preferredHost: String? = null,
     ): List<HostProbeSample> {
+        val preferred = preferredHost?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
         val work = refreshGate.withLock {
             val active = refreshFlight?.takeIf { it.isActive }
             val ledgerGen = PlaybackHostHealth.ledgerGeneration()
             if (active != null &&
-                !shouldInvalidateProbeFlight(true, refreshFlightGeneration, ledgerGen)
+                !shouldInvalidateProbeFlight(true, refreshFlightGeneration, ledgerGen) &&
+                !shouldInvalidateProbeFlightForPreferred(
+                    true,
+                    refreshFlightPreferred,
+                    preferred,
+                )
             ) {
                 return@withLock active
             }
-            // Drop the empty/stale wave so it cannot keep joining after a resolve stamp.
+            // Drop the empty/stale / wrong-preferred wave.
             active?.cancel()
             refreshScope.async {
                 val hosts = hostsForProbeWave(
@@ -152,13 +177,14 @@ internal object HostHealthProbe {
                         nowMs = nowMs,
                         healthyOnly = true,
                     ),
-                    preferredHost = preferredHost,
+                    preferredHost = preferred,
                     limit = limit,
                 )
                 if (hosts.isEmpty()) emptyList() else probeHosts(hosts, timeoutMs, nowMs)
             }.also {
                 refreshFlight = it
                 refreshFlightGeneration = ledgerGen
+                refreshFlightPreferred = preferred
             }
         }
         return try {
@@ -168,6 +194,7 @@ internal object HostHealthProbe {
                 if (refreshFlight === work) {
                     refreshFlight = null
                     refreshFlightGeneration = -1L
+                    refreshFlightPreferred = null
                 }
             }
         }
