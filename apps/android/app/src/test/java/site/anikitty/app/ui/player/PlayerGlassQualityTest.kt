@@ -104,5 +104,8 @@ class PlayerGlassQualityTest {
                 }
             },
         )
+        // Compose key tracks playlist identity, not visual position after reorder.
+        assertEquals(2, glassSourceRowKey(2))
+        assertEquals(0, glassSourceRowKey(0))
     }
 }

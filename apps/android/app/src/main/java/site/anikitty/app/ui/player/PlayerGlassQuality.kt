@@ -122,6 +122,12 @@ internal fun glassSourceRowsOrdered(
     return if (pin != null) listOf(pin) + ordered else ordered
 }
 
+/**
+ * Compose identity for a Sources row — playlist index, not visual position,
+ * so live reorders keep TV focus / remembered focus on the same mirror.
+ */
+internal fun glassSourceRowKey(playlistIndex: Int): Int = playlistIndex
+
 /** Armed shadow failover chip — never LEAD; always STANDBY · ms when probed. */
 internal fun glassShadowStandbyLabel(latencyMs: Long?): String =
     site.anikitty.app.ui.app.raceDockStandbyLabel(latencyMs)

@@ -155,6 +155,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -3079,30 +3080,34 @@ fun PlayerScreen(
                             }
                         }
                         sourceRows.forEach { index ->
-                            val src = playlist[index]
-                            val host = playableHost(src.url)
-                            val rtt = PlaybackHostHealth.latencyMs(host)
-                            val score = PlaybackHostHealth.score(host)
-                            GlassSourceCard(
-                                title = src.label.ifBlank {
-                                    src.serverName?.takeIf { it.isNotBlank() } ?: "Source ${index + 1}"
-                                },
-                                meta = glassSourceMetaLine(
-                                    serverName = src.serverName,
-                                    quality = src.quality,
-                                    audio = src.audio,
-                                    subtitleFallback = src.subtitles.joinToString(", ") { it.label }
-                                        .takeIf { src.subtitles.isNotEmpty() },
-                                ),
-                                rttLabel = glassSourcePulseLabel(
+                            // Key by playlist index — not visual slot — so live
+                            // race-dock reorders keep TV focus on the same mirror.
+                            key(glassSourceRowKey(index)) {
+                                val src = playlist[index]
+                                val host = playableHost(src.url)
+                                val rtt = PlaybackHostHealth.latencyMs(host)
+                                val score = PlaybackHostHealth.score(host)
+                                GlassSourceCard(
+                                    title = src.label.ifBlank {
+                                        src.serverName?.takeIf { it.isNotBlank() } ?: "Source ${index + 1}"
+                                    },
+                                    meta = glassSourceMetaLine(
+                                        serverName = src.serverName,
+                                        quality = src.quality,
+                                        audio = src.audio,
+                                        subtitleFallback = src.subtitles.joinToString(", ") { it.label }
+                                            .takeIf { src.subtitles.isNotEmpty() },
+                                    ),
+                                    rttLabel = glassSourcePulseLabel(
+                                        selected = index == sourceIndex,
+                                        latencyMs = rtt,
+                                        score = score,
+                                        cold = score < 0,
+                                    ) ?: glassSourceRttLabel(rtt),
                                     selected = index == sourceIndex,
-                                    latencyMs = rtt,
-                                    score = score,
-                                    cold = score < 0,
-                                ) ?: glassSourceRttLabel(rtt),
-                                selected = index == sourceIndex,
-                                onClick = { pickQuality(index) },
-                            )
+                                    onClick = { pickQuality(index) },
+                                )
+                            }
                         }
                         // Armed shadow — visible failover, not a silent swap.
                         if (shadowReadyNow() && shadowList.isNotEmpty()) {
