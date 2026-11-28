@@ -130,6 +130,53 @@ class AniListSyncTest {
         assertFalse(shouldDropWarmOnFrontierAdvance(previousEpisode = 0, nextEpisode = 2))
     }
 
+    @Test
+    fun frontierAdvanceIdsCoalesceWarmDrops() {
+        val previous = mapOf(
+            1 to history(episode = 4, positionMs = 0L, durationMs = 0L).copy(anilistId = 1),
+            2 to history(episode = 9, positionMs = 0L, durationMs = 0L).copy(anilistId = 2),
+            3 to history(episode = 1, positionMs = 0L, durationMs = 0L).copy(anilistId = 3),
+        )
+        val merged = listOf(
+            history(episode = 7, positionMs = 0L, durationMs = 0L).copy(anilistId = 1),
+            history(episode = 9, positionMs = 0L, durationMs = 0L).copy(anilistId = 2),
+            history(episode = 2, positionMs = 0L, durationMs = 0L).copy(anilistId = 3),
+        )
+        assertEquals(listOf(1, 3), frontierAdvanceIds(merged, previous))
+    }
+
+    @Test
+    fun syncResultLabelSurfacesDrainAndFrontier() {
+        assertEquals(
+            "Synced 12 from AniList",
+            aniListSyncResultLabel(AniListSync.Result(imported = 12, username = "x")),
+        )
+        assertEquals(
+            "Synced 12 · pushed 3 · 2 fresher from AniList",
+            aniListSyncResultLabel(
+                AniListSync.Result(imported = 12, username = "x", pushed = 3, frontierDrops = 2),
+            ),
+        )
+    }
+
+    @Test
+    fun drainFlushKeepsLivePlayheadFromFreshRoom() {
+        // Stale snapshot at accept time had no scrub; a playhead landed while
+        // GraphQL retries ran. Flush must re-merge against the fresh row.
+        val live = history(episode = 5, positionMs = 88_000L, durationMs = 1_400_000L)
+        val plans = listOf(
+            AniListDrainHistoryPlan(anilistId = 7, progress = 5, status = "CURRENT"),
+            AniListDrainHistoryPlan(anilistId = 7, progress = 5, status = "CURRENT"),
+        )
+        val collapsed = drainHistoryPlansById(plans).values.toList()
+        assertEquals(1, collapsed.size)
+        val writes = drainHistoryWritesFromFresh(collapsed, mapOf(7 to live))
+        assertEquals(1, writes.size)
+        assertEquals(5, writes[0].episode)
+        assertEquals(88_000L, writes[0].positionMs)
+        assertEquals("CURRENT", writes[0].listStatus)
+    }
+
     private fun merge(local: WatchHistoryEntity?, remoteProgress: Int, pending: Int?) = mergedPullEntry(
         existing = local,
         anilistId = 7,

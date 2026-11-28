@@ -150,7 +150,7 @@ fun MySpaceFeed(
     var selectedIds by remember { mutableStateOf(setOf<Int>()) }
     var bulkBusy by remember { mutableStateOf(false) }
     var bulkNote by remember { mutableStateOf<String?>(null) }
-    val syncing = syncLabel == "Syncing…"
+    val syncing = cloudSyncIsBusy(syncLabel)
     val selection = ShowSelection(
         active = selecting,
         ids = selectedIds,
@@ -479,6 +479,7 @@ fun MySpaceFeed(
                     viewer = viewer,
                     accountLabel = accountLabel,
                     syncing = syncing,
+                    syncLabel = syncLabel,
                     loading = loadingCloud,
                     tabs = LIBRARY_CATEGORIES,
                     selectedTab = selectedTab,
@@ -577,6 +578,7 @@ private fun CloudSyncBlock(
     viewer: AniListViewer?,
     accountLabel: String,
     syncing: Boolean,
+    syncLabel: String? = null,
     loading: Boolean,
     tabs: List<String>,
     selectedTab: String,
@@ -728,7 +730,7 @@ private fun CloudSyncBlock(
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     )
                     AnimatedContent(
-                        targetState = cloudSyncStatusLabel(syncing),
+                        targetState = cloudSyncStatusLabel(syncLabel),
                         transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
                         label = "cloudSyncStatus",
                     ) { label ->

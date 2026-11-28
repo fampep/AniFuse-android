@@ -108,6 +108,8 @@ import site.anikitty.app.data.anilist.AniListClient
 import site.anikitty.app.data.friendlyFailure
 import site.anikitty.app.data.anilist.AniListOAuth
 import site.anikitty.app.data.anilist.AniListSync
+import site.anikitty.app.data.anilist.AniListSyncPhase
+import site.anikitty.app.data.anilist.aniListSyncResultLabel
 import site.anikitty.app.data.servers.ServerCatalog
 import site.anikitty.app.data.servers.sourcesPageSubtitle
 import site.anikitty.app.data.extensions.HttpExtensionResolver
@@ -302,7 +304,7 @@ internal fun AniListProfileCard(
     val name = auth.username?.takeIf { it.isNotBlank() } ?: fallbackName
     val days = auth.minutesWatched / 1440
     val score = if (auth.meanScore <= 0f) "—" else auth.meanScore.toInt().toString()
-    val syncing = syncLabel == "Syncing…"
+    val syncing = cloudSyncIsBusy(syncLabel)
     val onBanner = !auth.bannerUrl.isNullOrBlank()
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(
@@ -398,7 +400,7 @@ internal fun AniListProfileCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = cloudSyncStatusLabel(syncing),
+                        text = cloudSyncStatusLabel(syncLabel),
                         color = if (onBanner) Color.White.copy(alpha = if (syncing) 1f else 0.72f) else palette.muted,
                         style = MaterialTheme.typography.labelSmall,
                     )
@@ -743,11 +745,14 @@ internal fun SettingsFeed(
                             Button(
                                 onClick = {
                                     scope.launch {
-                                        onSyncLabel("Syncing…")
+                                        onSyncLabel(cloudSyncPhaseLabel(AniListSyncPhase.Pushing))
                                         onSyncLabel(
                                             runCatching {
-                                                val result = aniListSync.pull(forceRefresh = true)
-                                                "Synced ${result.imported} titles"
+                                                val result = aniListSync.pull(
+                                                    forceRefresh = true,
+                                                    onPhase = { onSyncLabel(cloudSyncPhaseLabel(it)) },
+                                                )
+                                                aniListSyncResultLabel(result)
                                             }.getOrElse { e -> friendlyFailure(e.message) },
                                         )
                                     }
