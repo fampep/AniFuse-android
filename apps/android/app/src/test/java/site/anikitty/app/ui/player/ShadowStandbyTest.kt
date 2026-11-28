@@ -276,7 +276,7 @@ class ShadowStandbyTest {
                 stateBuffering = 2,
             ),
         )
-        // Predecessor BUFFERING before the new load starts — must not re-arm.
+        // Predecessor BUFFERING before Cast media matches the new URL.
         assertNull(
             castSuccessorRearm(
                 awaitSuccessor = true,
@@ -284,7 +284,7 @@ class ShadowStandbyTest {
                 stateReady = 3,
                 stateBuffering = 2,
                 loadInFlight = false,
-                loadStarted = false,
+                mediaMatchesSuccessor = false,
             ),
         )
         // Still preparing the successor — ignore leftover BUFFERING.
@@ -295,30 +295,30 @@ class ShadowStandbyTest {
                 stateReady = 3,
                 stateBuffering = 2,
                 loadInFlight = true,
-                loadStarted = true,
+                mediaMatchesSuccessor = true,
             ),
         )
-        // Load finished, BUFFERING successor — re-arm with a fresh stall clock.
+        // Media committed, BUFFERING successor — re-arm with a fresh stall clock.
         val buffering = castSuccessorRearm(
             awaitSuccessor = true,
             playbackState = 2,
             stateReady = 3,
             stateBuffering = 2,
             loadInFlight = false,
-            loadStarted = true,
+            mediaMatchesSuccessor = true,
         )
         assertNotNull(buffering)
         assertTrue(buffering!!.castItemStarted)
         assertEquals(-1L, buffering.stallBuffered)
         assertEquals(0L, buffering.stallSince)
-        // READY still re-arms after load.
+        // READY still re-arms after media matches (even if load pulse was missed).
         val ready = castSuccessorRearm(
             awaitSuccessor = true,
             playbackState = 3,
             stateReady = 3,
             stateBuffering = 2,
             loadInFlight = false,
-            loadStarted = true,
+            mediaMatchesSuccessor = true,
         )
         assertNotNull(ready)
         assertTrue(ready!!.castItemStarted)

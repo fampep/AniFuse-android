@@ -172,9 +172,10 @@ internal fun castStallArmAfterSourceChange(
  * that never reaches READY still enters the trickle detector. Always returns a
  * fresh stall arm — predecessor BUFFERING must not inherit its wall clock.
  *
- * [loadStarted] must be true (we saw the new URL's load begin) and
- * [loadInFlight] false (prepare finished) before BUFFERING counts — otherwise
- * leftover predecessor BUFFERING re-arms on the same tick the playlist flips.
+ * [mediaMatchesSuccessor] must be true (Cast playing/loaded item URL is already
+ * the new host) and [loadInFlight] false before BUFFERING counts — leftover
+ * predecessor BUFFERING on the URL-flip tick cannot re-arm, and a load that
+ * settles between progress ticks still matches once media commits.
  */
 internal fun castSuccessorRearm(
     awaitSuccessor: Boolean,
@@ -182,10 +183,10 @@ internal fun castSuccessorRearm(
     stateReady: Int,
     stateBuffering: Int,
     loadInFlight: Boolean = false,
-    loadStarted: Boolean = true,
+    mediaMatchesSuccessor: Boolean = true,
 ): CastStallArm? {
     if (!awaitSuccessor) return null
-    if (loadInFlight || !loadStarted) return null
+    if (loadInFlight || !mediaMatchesSuccessor) return null
     if (playbackState != stateReady && playbackState != stateBuffering) return null
     return CastStallArm(
         castItemStarted = true,

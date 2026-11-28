@@ -2645,11 +2645,10 @@ fun PlayerScreen(
         var stallBuffered = -1L
         var stallSince = 0L
         var watchedCastUrl: String? = null
-        // After failCastSource walks mirrors, wait for the new load to start
-        // and finish before BUFFERING can re-arm — leftover predecessor
-        // BUFFERING must not burn the successor budget.
+        // After failCastSource walks mirrors, wait until Cast media identity
+        // matches the new URL (and load is not in flight) before BUFFERING
+        // can re-arm — leftover predecessor BUFFERING must not burn the budget.
         var awaitSuccessorReady = false
-        var awaitSuccessorSawLoad = false
         val p = activePlayer
         while (p != null) {
             if (!scrubbing) {
@@ -2659,6 +2658,7 @@ fun PlayerScreen(
                 val rawPos = clock.positionMs
                 val rawDur = clock.durationMs
                 val castUrl = latestSources.getOrNull(latestSourceIndex)?.url
+                val urlChanged = !castUrl.isNullOrBlank() && castUrl != watchedCastUrl
                 val arm = castStallArmAfterSourceChange(
                     prevUrl = watchedCastUrl,
                     nextUrl = castUrl,
@@ -2666,22 +2666,23 @@ fun PlayerScreen(
                     stallBuffered = stallBuffered,
                     stallSince = stallSince,
                 )
-                if (arm.castItemStarted != castItemStarted ||
-                    arm.stallBuffered != stallBuffered ||
-                    arm.stallSince != stallSince
-                ) {
-                    castItemStarted = arm.castItemStarted
-                    stallBuffered = arm.stallBuffered
-                    stallSince = arm.stallSince
-                    if (castUrl != null && castUrl != watchedCastUrl) {
-                        awaitSuccessorReady = true
-                        awaitSuccessorSawLoad = false
-                        castFailUrl[0] = null
-                    }
+                castItemStarted = arm.castItemStarted
+                stallBuffered = arm.stallBuffered
+                stallSince = arm.stallSince
+                // Always reset await on URL change — even when already disarmed
+                // so a prior load pulse cannot satisfy the next walk.
+                if (urlChanged) {
+                    awaitSuccessorReady = true
+                    castFailUrl[0] = null
                 }
                 watchedCastUrl = castUrl
-                val loadInFlight = castHelper?.isLoadInFlight() == true
-                if (awaitSuccessorReady && loadInFlight) awaitSuccessorSawLoad = true
+                val helperNow = castHelper
+                val loadInFlight = helperNow?.isLoadInFlight() == true
+                val mediaMatches = !castUrl.isNullOrBlank() && helperNow != null && run {
+                    val live = helperNow.playingItem?.takeIf { !helperNow.isLoadInFlight() }
+                        ?: helperNow.loadedItem
+                    live?.url == castUrl
+                }
                 if (isCasting && !castClockStale) {
                     val successor = castSuccessorRearm(
                         awaitSuccessor = awaitSuccessorReady,
@@ -2689,14 +2690,13 @@ fun PlayerScreen(
                         stateReady = Player.STATE_READY,
                         stateBuffering = Player.STATE_BUFFERING,
                         loadInFlight = loadInFlight,
-                        loadStarted = awaitSuccessorSawLoad,
+                        mediaMatchesSuccessor = mediaMatches,
                     )
                     if (successor != null) {
                         castItemStarted = successor.castItemStarted
                         stallBuffered = successor.stallBuffered
                         stallSince = successor.stallSince
                         awaitSuccessorReady = false
-                        awaitSuccessorSawLoad = false
                     } else if (
                         !awaitSuccessorReady &&
                         (clock.state == Player.STATE_READY ||
