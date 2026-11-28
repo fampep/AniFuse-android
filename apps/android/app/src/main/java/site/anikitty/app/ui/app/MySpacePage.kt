@@ -294,7 +294,11 @@ fun MySpaceFeed(
             val profile = aniList.viewer(token) ?: return@LaunchedEffect
             viewer = profile
             favourites = aniList.favourites(token)
-            cloudLists = aniList.mediaListEntries(token, profile.id)
+            cloudLists = aniList.mediaListEntries(
+                accessToken = token,
+                userId = profile.id,
+                interactive = true,
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {

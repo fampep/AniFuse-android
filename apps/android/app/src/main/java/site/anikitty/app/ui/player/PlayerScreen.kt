@@ -2686,7 +2686,7 @@ fun PlayerScreen(
         }
     }
 
-    fun seekBy(deltaMs: Long) {
+    fun seekBy(deltaMs: Long, revealControls: Boolean = true) {
         // A seek while the TV is still connecting would move the phone.
         if (!isCasting && !castClientGaveUp && (castAttachStarted || castPending)) return
         val p = activePlayer ?: return
@@ -2699,7 +2699,8 @@ fun PlayerScreen(
             (seekFlashMs > 0L && deltaMs > 0L) ||
             (seekFlashMs < 0L && deltaMs < 0L)
         seekFlashMs = if (sameDir) seekFlashMs + deltaMs else deltaMs
-        if (!controlsLocked) controlsVisible = true
+        // Double-tap side seek keeps chrome down (Plex/YouTube) — only the flash HUD.
+        if (revealControls && !controlsLocked) controlsVisible = true
     }
 
     fun skipTo(endMs: Long) {
@@ -3384,8 +3385,12 @@ fun PlayerScreen(
                     },
                     onDoubleTap = { offset ->
                         if (controlsLocked) return@detectTapGestures
-                        // Double-tap either side skips 10 seconds.
-                        if (offset.x < size.width / 2f) seekBy(-10_000) else seekBy(10_000)
+                        // Double-tap either side skips 10s — flash only, chrome stays down.
+                        if (offset.x < size.width / 2f) {
+                            seekBy(-10_000, revealControls = false)
+                        } else {
+                            seekBy(10_000, revealControls = false)
+                        }
                     },
                 )
             }
