@@ -904,19 +904,16 @@ fun PlayerScreen(
             abrPhase = AbrFailoverPhase.Idle
         }
     }
-    LaunchedEffect(player, librarySubtitles, source?.url) {
+    LaunchedEffect(player, librarySubtitles, playbackSource?.url) {
         val exo = player ?: return@LaunchedEffect
         val tracks = librarySubtitles
         if (tracks.isEmpty()) return@LaunchedEffect
-        val current = exo.currentMediaItem ?: return@LaunchedEffect
+        val expectedUri = playbackSource?.url ?: return@LaunchedEffect
         val configs = tracks.mapIndexedNotNull { index, track ->
             subtitleConfig(track, default = index == 0)
         }
         if (configs.isEmpty()) return@LaunchedEffect
-        val already = current.localConfiguration?.subtitleConfigurations.orEmpty()
-        if (subtitleConfigsUnchanged(already.map { it.uri.toString() }, configs.map { it.uri.toString() })) {
-            return@LaunchedEffect
-        }
+        val nextUris = configs.map { it.uri.toString() }
         // Attach as soon as buffering/ready — 2s ceiling, not a 6s READY wait.
         // Stay in the loop while IDLE; prepare() often starts IDLE for a beat.
         var guard = 0
@@ -924,22 +921,40 @@ fun PlayerScreen(
             delay(SUBTITLE_ATTACH_POLL_MS)
             guard++
         }
+        // Re-read after the poll — a pre-poll snapshot can soft-replace a dead
+        // CDN URI back into the player after a successful failover.
+        val live = exo.currentMediaItem ?: return@LaunchedEffect
+        val liveUri = live.localConfiguration?.uri?.toString()
+        val already = live.localConfiguration?.subtitleConfigurations.orEmpty()
+            .map { it.uri.toString() }
+        val action = subtitleAttachAction(
+            expectedUri = expectedUri,
+            liveUri = liveUri,
+            liveItemPresent = true,
+            existingUris = already,
+            nextUris = nextUris,
+            playbackState = exo.playbackState,
+            itemIndex = exo.currentMediaItemIndex,
+            mediaItemCount = exo.mediaItemCount,
+        )
+        if (action == SubtitleAttachAction.None) return@LaunchedEffect
         val resume = exo.playWhenReady
-        val playing = source?.let { sourceForPlayback(it, playbackSaved) }
-        if (playing != null) playerBundle?.pipeline?.apply(playing)
-        val updated = current.buildUpon().setSubtitleConfigurations(configs).build()
-        val itemIndex = exo.currentMediaItemIndex
-        // Soft replace keeps the playhead when live. Still-idle after the budget
-        // hard-reloads so captions are not abandoned for the opening lines.
-        if (!subtitleAttachShouldHardReload(exo.playbackState) &&
-            itemIndex >= 0 &&
-            exo.mediaItemCount > itemIndex
-        ) {
-            exo.replaceMediaItem(itemIndex, updated)
-        } else {
-            exo.setMediaItem(updated, false)
-            exo.prepare()
-            exo.playWhenReady = resume
+        playbackSource?.let { playerBundle?.pipeline?.apply(it) }
+        val updated = live.buildUpon().setSubtitleConfigurations(configs).build()
+        when (action) {
+            SubtitleAttachAction.SoftReplace ->
+                exo.replaceMediaItem(exo.currentMediaItemIndex, updated)
+            SubtitleAttachAction.HardReload -> {
+                exo.setMediaItem(updated, false)
+                exo.prepare()
+                exo.playWhenReady = resume
+            }
+            SubtitleAttachAction.None -> Unit
+        }
+        // Track groups can be empty for one tick after replace — re-assert the
+        // user's caption pick the same way Cast does after late sidecars.
+        trackSelector?.let { selector ->
+            applyTextSelection(selector, selectedTextId, textOptions, subsEnabled)
         }
     }
     // Kaa uses one master for Sub and Dub, so the player is not rebuilt.
@@ -1716,7 +1731,11 @@ fun PlayerScreen(
                         latestPlayer?.currentPosition?.takeIf { it > 0L } ?: 0L
                     }.getOrDefault(0L)
                     val known = runCatching { latestPosition.ms }.getOrDefault(0L)
-                    val next = castLiveCommitPositionMs(pos, phone, known)
+                    val late = maxOf(
+                        resumeAtMs,
+                        if (latestAllowHistory) latestStartPositionMs else 0L,
+                    )
+                    val next = castLiveCommitPositionMs(pos, phone, known, late)
                     if (next > castSentPositionMs) castSentPositionMs = next
                     next
                 },

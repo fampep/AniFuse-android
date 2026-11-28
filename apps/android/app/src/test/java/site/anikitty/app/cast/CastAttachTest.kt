@@ -183,6 +183,24 @@ class CastAttachTest {
             90_000L,
             castLiveCommitPositionMs(stampedMs = 90_000L, phoneMs = 0L, knownMs = 0L),
         )
+        // History that lands during the wait while phone is still cold-start.
+        assertEquals(
+            90_000L,
+            castLiveCommitPositionMs(
+                stampedMs = 0L,
+                phoneMs = 2_000L,
+                lateResumeMs = 90_000L,
+            ),
+        )
+        // Past the cold-start window, late history must not yank a live watch.
+        assertEquals(
+            5_000L,
+            castLiveCommitPositionMs(
+                stampedMs = 0L,
+                phoneMs = 5_000L,
+                lateResumeMs = 90_000L,
+            ),
+        )
     }
 
     @Test

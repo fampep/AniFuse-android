@@ -50,6 +50,59 @@ internal fun subtitleConfigsUnchanged(
     nextUris: List<String>,
 ): Boolean = existingUris == nextUris
 
+/** Normalize MediaItem / source URLs so failover identity compares stably. */
+internal fun subtitleAttachUriKey(uri: String?): String =
+    uri?.trim().orEmpty()
+
+/**
+ * True when the player item we would replace is no longer the source this
+ * attach was armed for (CDN failover / quality swap won the race).
+ */
+internal fun subtitleAttachMediaIdentityDrifted(
+    expectedUri: String?,
+    liveUri: String?,
+): Boolean {
+    val want = subtitleAttachUriKey(expectedUri)
+    val live = subtitleAttachUriKey(liveUri)
+    if (want.isEmpty() || live.isEmpty()) return true
+    return want != live
+}
+
+/** Soft-replace when live, hard-reload when still idle, or no-op on drift. */
+internal enum class SubtitleAttachAction {
+    None,
+    SoftReplace,
+    HardReload,
+}
+
+/**
+ * Decide the attach mutation after the IDLE poll. Always re-read the live
+ * MediaItem identity — a pre-poll snapshot can soft-replace a dead CDN URI
+ * back into the player after a successful failover.
+ */
+internal fun subtitleAttachAction(
+    expectedUri: String?,
+    liveUri: String?,
+    liveItemPresent: Boolean,
+    existingUris: List<String>,
+    nextUris: List<String>,
+    playbackState: Int,
+    itemIndex: Int,
+    mediaItemCount: Int,
+): SubtitleAttachAction {
+    if (!liveItemPresent) return SubtitleAttachAction.None
+    if (subtitleAttachMediaIdentityDrifted(expectedUri, liveUri)) {
+        return SubtitleAttachAction.None
+    }
+    if (subtitleConfigsUnchanged(existingUris, nextUris)) {
+        return SubtitleAttachAction.None
+    }
+    val soft = !subtitleAttachShouldHardReload(playbackState) &&
+        itemIndex >= 0 &&
+        mediaItemCount > itemIndex
+    return if (soft) SubtitleAttachAction.SoftReplace else SubtitleAttachAction.HardReload
+}
+
 /** 33ms × 36 ≈ 1.2s ceiling — attach as soon as Media3 leaves IDLE. */
 internal const val SUBTITLE_ATTACH_POLL_MS = 33L
 internal const val SUBTITLE_ATTACH_MAX_POLLS = 36

@@ -46,6 +46,81 @@ class SubtitleAttachTest {
     }
 
     @Test
+    fun identityDriftAbortsAttachAfterFailover() {
+        assertTrue(
+            subtitleAttachMediaIdentityDrifted(
+                expectedUri = "https://cdn-a.example/ep.m3u8",
+                liveUri = "https://cdn-b.example/ep.m3u8",
+            ),
+        )
+        assertFalse(
+            subtitleAttachMediaIdentityDrifted(
+                expectedUri = "https://cdn-a.example/ep.m3u8",
+                liveUri = "https://cdn-a.example/ep.m3u8",
+            ),
+        )
+        assertTrue(subtitleAttachMediaIdentityDrifted(expectedUri = "", liveUri = "https://x"))
+        assertTrue(subtitleAttachMediaIdentityDrifted(expectedUri = "https://x", liveUri = null))
+    }
+
+    @Test
+    fun attachActionSkipsDriftAndChoosesSoftOrHard() {
+        val next = listOf("https://lib.example/a.vtt")
+        assertEquals(
+            SubtitleAttachAction.None,
+            subtitleAttachAction(
+                expectedUri = "https://cdn-a.example/ep.m3u8",
+                liveUri = "https://cdn-b.example/ep.m3u8",
+                liveItemPresent = true,
+                existingUris = emptyList(),
+                nextUris = next,
+                playbackState = PLAYBACK_STATE_READY,
+                itemIndex = 0,
+                mediaItemCount = 1,
+            ),
+        )
+        assertEquals(
+            SubtitleAttachAction.None,
+            subtitleAttachAction(
+                expectedUri = "https://cdn-a.example/ep.m3u8",
+                liveUri = "https://cdn-a.example/ep.m3u8",
+                liveItemPresent = true,
+                existingUris = next,
+                nextUris = next,
+                playbackState = PLAYBACK_STATE_READY,
+                itemIndex = 0,
+                mediaItemCount = 1,
+            ),
+        )
+        assertEquals(
+            SubtitleAttachAction.SoftReplace,
+            subtitleAttachAction(
+                expectedUri = "https://cdn-a.example/ep.m3u8",
+                liveUri = "https://cdn-a.example/ep.m3u8",
+                liveItemPresent = true,
+                existingUris = emptyList(),
+                nextUris = next,
+                playbackState = PLAYBACK_STATE_READY,
+                itemIndex = 0,
+                mediaItemCount = 1,
+            ),
+        )
+        assertEquals(
+            SubtitleAttachAction.HardReload,
+            subtitleAttachAction(
+                expectedUri = "https://cdn-a.example/ep.m3u8",
+                liveUri = "https://cdn-a.example/ep.m3u8",
+                liveItemPresent = true,
+                existingUris = emptyList(),
+                nextUris = next,
+                playbackState = PLAYBACK_STATE_IDLE,
+                itemIndex = 0,
+                mediaItemCount = 1,
+            ),
+        )
+    }
+
+    @Test
     fun pollBudgetStaysUnderTwoSeconds() {
         assertTrue(SUBTITLE_ATTACH_MAX_POLLS * SUBTITLE_ATTACH_POLL_MS <= 2_000L)
         assertTrue(SUBTITLE_ATTACH_MAX_POLLS * SUBTITLE_ATTACH_POLL_MS <= 1_250L)

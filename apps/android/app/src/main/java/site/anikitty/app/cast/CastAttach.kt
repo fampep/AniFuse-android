@@ -252,13 +252,21 @@ internal fun castAttachPositionMs(
  * Never drops below the stamped attach clock — re-running [castAttachPositionMs]
  * after `castSentPositionMs` is set would clear pendingResume and open the TV
  * on the cold-start intro instead of the mid-episode resume.
+ *
+ * [lateResumeMs] covers history that lands during the wait while the phone is
+ * still in the cold-start window (same ~3s rule as [castAttachPositionMs]).
  */
 internal fun castLiveCommitPositionMs(
     stampedMs: Long,
     phoneMs: Long,
     knownMs: Long = 0L,
-): Long = maxOf(
-    stampedMs.coerceAtLeast(0L),
-    phoneMs.coerceAtLeast(0L),
-    knownMs.coerceAtLeast(0L),
-)
+    lateResumeMs: Long = 0L,
+): Long {
+    val stamped = stampedMs.coerceAtLeast(0L)
+    val phone = phoneMs.coerceAtLeast(0L)
+    val known = knownMs.coerceAtLeast(0L)
+    val late = lateResumeMs.coerceAtLeast(0L)
+    val live = maxOf(stamped, phone, known)
+    if (phone <= 3_000L && late > live) return late
+    return live
+}
