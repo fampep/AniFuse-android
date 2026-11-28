@@ -23,9 +23,14 @@ import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
@@ -38,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import site.anikitty.app.ui.components.stageGlassPlate
 import site.anikitty.app.ui.theme.KittyHaptics
 import site.anikitty.app.ui.theme.PlayerChrome
+import site.anikitty.app.ui.tv.isTelevision
 
 /** Compact chip label for Auto / 1080p / 720p rows. */
 internal fun glassResolutionChipLabel(raw: String): String {
@@ -52,6 +58,10 @@ internal fun glassResolutionChipLabel(raw: String): String {
         else -> trimmed.take(18)
     }
 }
+
+/** TalkBack string for a resolution chip. */
+internal fun glassResolutionChipDescription(label: String, selected: Boolean): String =
+    if (selected) "$label, selected" else label
 
 /** Secondary line under a source card — server · quality · audio. */
 internal fun glassSourceMetaLine(
@@ -86,10 +96,12 @@ internal fun GlassResolutionChipRow(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val television = isTelevision()
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
+            // Horizontal scroll eats D-pad left/right on TV — phone only.
+            .horizontalScroll(rememberScrollState(), enabled = !television)
             .padding(horizontal = 12.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -112,23 +124,44 @@ internal fun GlassResolutionChip(
 ) {
     val view = LocalView.current
     val shape = RoundedCornerShape(999.dp)
+    var focused by remember { mutableStateOf(false) }
     Text(
         label,
-        color = if (selected) Color.Black else Color.White,
+        color = when {
+            selected -> Color.Black
+            focused -> Color.White
+            else -> Color.White
+        },
         fontSize = 13.sp,
         fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
         maxLines = 1,
         modifier = Modifier
+            .menuInitialFocus()
+            .onFocusChanged { focused = it.isFocused || it.hasFocus }
+            .playerFocusCue(shape)
             .clip(shape)
-            .background(if (selected) Color.White else Color.White.copy(alpha = 0.08f))
+            .background(
+                when {
+                    selected -> Color.White
+                    focused -> Color.White.copy(alpha = 0.18f)
+                    else -> Color.White.copy(alpha = 0.08f)
+                },
+            )
             .border(
                 width = 1.dp,
-                color = if (selected) Color.White else Color.White.copy(alpha = 0.16f),
+                color = when {
+                    selected -> Color.White
+                    focused -> Color.White.copy(alpha = 0.42f)
+                    else -> Color.White.copy(alpha = 0.16f)
+                },
                 shape = shape,
             )
             .clickable(role = Role.Button) {
                 KittyHaptics.perform(view, KittyHaptics.Kind.Tick)
                 onClick()
+            }
+            .clearAndSetSemantics {
+                contentDescription = glassResolutionChipDescription(label, selected)
             }
             .padding(horizontal = 14.dp, vertical = 10.dp),
     )
@@ -145,18 +178,25 @@ internal fun GlassSourceCard(
 ) {
     val view = LocalView.current
     val shape = RoundedCornerShape(16.dp)
+    var focused by remember { mutableStateOf(false) }
     Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 10.dp, vertical = 4.dp)
+            .menuInitialFocus()
+            .onFocusChanged { focused = it.isFocused || it.hasFocus }
+            .playerFocusCue(shape)
             .then(
-                if (selected) {
-                    Modifier
+                when {
+                    selected -> Modifier
                         .clip(shape)
                         .background(Color.White.copy(alpha = 0.14f))
                         .border(1.dp, Color.White.copy(alpha = 0.28f), shape)
-                } else {
-                    Modifier.stageGlassPlate(shape = shape)
+                    focused -> Modifier
+                        .clip(shape)
+                        .background(Color.White.copy(alpha = 0.12f))
+                        .border(1.dp, Color.White.copy(alpha = 0.36f), shape)
+                    else -> Modifier.stageGlassPlate(shape = shape)
                 },
             )
             .clickable(role = Role.Button) {
@@ -177,11 +217,11 @@ internal fun GlassSourceCard(
         Icon(
             Icons.Outlined.Dns,
             contentDescription = null,
-            tint = if (selected) Color.White else Color.White.copy(alpha = 0.72f),
+            tint = if (selected || focused) Color.White else Color.White.copy(alpha = 0.72f),
             modifier = Modifier.size(20.dp),
         )
         Spacer(Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        Column(Modifier = Modifier.weight(1f)) {
             Text(
                 title,
                 color = PlayerChrome.Paper,
@@ -204,7 +244,7 @@ internal fun GlassSourceCard(
         if (rttLabel != null) {
             Text(
                 rttLabel,
-                color = if (selected) Color.White else Color.White.copy(alpha = 0.72f),
+                color = if (selected || focused) Color.White else Color.White.copy(alpha = 0.72f),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier

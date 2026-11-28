@@ -14,6 +14,8 @@ class PlayerGlassQualityTest {
         assertEquals("Auto · 1080p", glassResolutionChipLabel("Auto · 1080p"))
         assertEquals("1080p", glassResolutionChipLabel("Full HD 1080p"))
         assertEquals("720p", glassResolutionChipLabel("720P"))
+        assertEquals("1080p, selected", glassResolutionChipDescription("1080p", selected = true))
+        assertEquals("720p", glassResolutionChipDescription("720p", selected = false))
     }
 
     @Test
