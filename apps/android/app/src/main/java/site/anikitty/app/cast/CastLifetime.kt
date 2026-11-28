@@ -140,6 +140,18 @@ internal fun castRelayRestoreMayPrepare(
         hasPlayingItem = true,
     )
 
+/** prepareClaim must still match after I/O — stopCasting bumps the epoch without waiting. */
+internal fun castRelayPrepareStillOwns(claim: Int, prepareEpoch: Int, closed: Boolean): Boolean =
+    !closed && claim == prepareEpoch
+
+/**
+ * A discarded prepare may have reopened the socket after [CastRelay.stop].
+ * Tear down again when our claim is stale or the helper is closed — not when a
+ * newer load still owns the relay (claim matches, publish merely lost the race).
+ */
+internal fun castRelayDiscardShouldStop(claim: Int, prepareEpoch: Int, closed: Boolean): Boolean =
+    closed || claim != prepareEpoch
+
 /** The playback service, not the player, hears session end and item end. */
 internal interface CastServiceWatch {
     fun onSessionEnded()

@@ -108,6 +108,12 @@ class CastLifetimeTest {
                 closed = true,
             ),
         )
+        assertTrue(castRelayPrepareStillOwns(claim = 4, prepareEpoch = 4, closed = false))
+        assertFalse(castRelayPrepareStillOwns(claim = 4, prepareEpoch = 5, closed = false))
+        assertFalse(castRelayPrepareStillOwns(claim = 4, prepareEpoch = 4, closed = true))
+        assertTrue(castRelayDiscardShouldStop(claim = 4, prepareEpoch = 5, closed = false))
+        assertTrue(castRelayDiscardShouldStop(claim = 4, prepareEpoch = 4, closed = true))
+        assertFalse(castRelayDiscardShouldStop(claim = 4, prepareEpoch = 4, closed = false))
     }
 
     @Test

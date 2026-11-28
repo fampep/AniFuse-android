@@ -108,6 +108,13 @@ class CastSessionHelper private constructor(
     private val restoreEpoch = AtomicInteger(0)
 
     /**
+     * Invalidates in-flight [CastRelay.prepare] without waiting on [prepareGate].
+     * Bumped by load / stop / release; a stale claim must [CastRelay.stop] again
+     * because prepare can reopen the socket after a concurrent stop.
+     */
+    private val prepareEpoch = AtomicInteger(0)
+
+    /**
      * Serializes [CastRelay.publish]/[CastRelay.stop] with restore publish checks.
      * Never hold across [CastRelay.prepare] — that does network I/O and would freeze
      * main-thread [stopCasting]/[release].
@@ -379,6 +386,7 @@ class CastSessionHelper private constructor(
     ): CastLoadHooks {
         // Cancel any keep-path restore before mutating the relay for this load.
         restoreEpoch.incrementAndGet()
+        val prepareClaim = prepareEpoch.incrementAndGet()
         val ticket = generation.incrementAndGet()
         activeLoadTicket.set(ticket)
         val item = CastItemKey(
@@ -394,11 +402,9 @@ class CastSessionHelper private constructor(
         // The relay has to outlive the screen that requested this episode.
         CastPlaybackService.promote(appContext, title, episode)
         thread(name = "anikitty-cast-load", isDaemon = true) {
-            // prepareGate only — never relayLock. stopCasting bumps generation and
-            // closes the socket without waiting; ticket checks drop the result.
-            val prepared = runCatching {
-                synchronized(prepareGate) { relay.prepare(source) }
-            }
+            // prepareGate only — never relayLock. stopCasting bumps prepareEpoch and
+            // closes the socket without waiting; stale claims stop again after I/O.
+            val prepared = runCatching { prepareClaimed(prepareClaim, source) }
             main.post {
                 if (closed.get() || ticket != generation.get()) {
                     abortLoad(ticket, mediaCommitted = false)
@@ -406,6 +412,10 @@ class CastSessionHelper private constructor(
                 }
                 prepared.fold(
                     onSuccess = { playback ->
+                        if (playback == null) {
+                            abortLoad(ticket, mediaCommitted = false)
+                            return@fold
+                        }
                         runCatching { start(playback, title, episode, positionMs, ticket) }
                             .onFailure {
                                 Log.w(TAG, "Cast prepare failed", it)
@@ -466,6 +476,7 @@ class CastSessionHelper private constructor(
             return true
         }
         restoreEpoch.incrementAndGet()
+        prepareEpoch.incrementAndGet()
         casting = false
         playingItem = null
         loadedItem = null
@@ -525,27 +536,57 @@ class CastSessionHelper private constructor(
         }
     }
 
+    /**
+     * Run [CastRelay.prepare] under [prepareGate] only. Returns null when the claim
+     * was cancelled; may call [CastRelay.stop] if prepare revived the socket after
+     * a concurrent stop. Never holds [relayLock] across network I/O.
+     */
+    private fun prepareClaimed(claim: Int, source: PlayableSource): RelayPlayback? {
+        synchronized(prepareGate) {
+            if (!castRelayPrepareStillOwns(claim, prepareEpoch.get(), closed.get())) {
+                return null
+            }
+            val playback = relay.prepare(source)
+            if (!castRelayPrepareStillOwns(claim, prepareEpoch.get(), closed.get())) {
+                synchronized(relayLock) { relay.stop() }
+                return null
+            }
+            return playback
+        }
+    }
+
     /** Prepare already pointed the relay at the failed follow-up — put the live episode back. */
     private fun restoreSettledRelay(epoch: Int, expectedSettled: Int) {
         val prev = settledSource ?: return
-        if (!castRelayRestoreMayPrepare(
-                restoreEpoch = epoch,
-                currentEpoch = restoreEpoch.get(),
-                expectedSettled = expectedSettled,
-                settledTicket = settledTicket.get(),
-                activeLoadTicket = activeLoadTicket.get(),
-                closed = closed.get(),
-            )
-        ) {
-            return
-        }
-        // Network I/O stays off relayLock so stopCasting/release never block.
+        val claim = prepareEpoch.get()
+        // Re-check mayPrepare inside prepareGate so a newer load cannot be overwritten.
         val playback = runCatching {
-            synchronized(prepareGate) { relay.prepare(prev) }
+            synchronized(prepareGate) {
+                if (!castRelayPrepareStillOwns(claim, prepareEpoch.get(), closed.get())) {
+                    return@runCatching null
+                }
+                if (!castRelayRestoreMayPrepare(
+                        restoreEpoch = epoch,
+                        currentEpoch = restoreEpoch.get(),
+                        expectedSettled = expectedSettled,
+                        settledTicket = settledTicket.get(),
+                        activeLoadTicket = activeLoadTicket.get(),
+                        closed = closed.get(),
+                    )
+                ) {
+                    return@runCatching null
+                }
+                val result = relay.prepare(prev)
+                if (!castRelayPrepareStillOwns(claim, prepareEpoch.get(), closed.get())) {
+                    synchronized(relayLock) { relay.stop() }
+                    return@runCatching null
+                }
+                result
+            }
         }.getOrElse {
             Log.w(TAG, "Cast relay restore failed", it)
             return
-        }
+        } ?: return
         synchronized(relayLock) {
             // Cancelled during prepare — do not publish; undo a revive after stop.
             if (!castRelayRestoreMayPublish(
@@ -557,7 +598,7 @@ class CastSessionHelper private constructor(
                     hasPlayingItem = playingItem != null,
                 ) || closed.get()
             ) {
-                if (closed.get() || settledTicket.get() == 0) {
+                if (castRelayDiscardShouldStop(claim, prepareEpoch.get(), closed.get())) {
                     relay.stop()
                 }
                 return
@@ -806,6 +847,7 @@ class CastSessionHelper private constructor(
     fun stopCasting() {
         generation.incrementAndGet()
         restoreEpoch.incrementAndGet()
+        prepareEpoch.incrementAndGet()
         activeLoadTicket.set(0)
         loadHooks.set(null)
         disarmWatchLoad()
@@ -834,6 +876,7 @@ class CastSessionHelper private constructor(
         closed.set(true)
         generation.incrementAndGet()
         restoreEpoch.incrementAndGet()
+        prepareEpoch.incrementAndGet()
         activeLoadTicket.set(0)
         setAvailabilityListener(null)
         setPlaybackEndedListener(null)
