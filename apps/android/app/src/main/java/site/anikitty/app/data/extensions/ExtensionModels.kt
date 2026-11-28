@@ -88,10 +88,12 @@ internal fun isRetiredExtension(id: String, name: String = "", siteUrl: String? 
     return false
 }
 
-/** True when a listing is clearly ani.pm / anipm.pk / ani.nz but not the bundled id. */
+/** True when a listing is clearly ani.pm / anipm.pk / ani.nz / ani.vg but not the bundled id. */
 internal fun isAniPmAlias(idNorm: String, nameNorm: String, siteUrl: String?): Boolean {
-    if (nameNorm == "anipm" || nameNorm == "anipmpk" || nameNorm == "aninz") return true
-    if (idNorm == "anipmpk" || idNorm == "aninz" ||
+    if (nameNorm == "anipm" || nameNorm == "anipmpk" || nameNorm == "aninz" || nameNorm == "anivg") {
+        return true
+    }
+    if (idNorm == "anipmpk" || idNorm == "aninz" || idNorm == "anivg" ||
         idNorm.endsWith("anipm") || idNorm.contains("anipmpk")
     ) {
         return true
@@ -105,7 +107,7 @@ internal fun isAniPmAlias(idNorm: String, nameNorm: String, siteUrl: String?): B
         ?.substringBefore(':')
         ?.removePrefix("www.")
         .orEmpty()
-    return host == "ani.pm" || host == "anipm.pk" || host == "ani.nz"
+    return host == "ani.pm" || host == "anipm.pk" || host == "ani.nz" || host == "ani.vg"
 }
 
 data class StoreIndex(

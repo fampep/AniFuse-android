@@ -4,7 +4,11 @@
 package site.anikitty.app.data.servers
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -20,6 +24,7 @@ import site.anikitty.app.data.skip.malIdFromTitleHint
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * On-device **ani.pm** resolve via the first-party Player API.
@@ -29,11 +34,11 @@ import java.util.concurrent.TimeUnit
  * 2. `POST /api/session` `{ malId, episode }` → short-lived token
  * 3. Play `/playlists/{mal}_ep{n}/{sub|dub}.direct.pls?t=…` on the same origin
  *
- * Live hosts: AnimePapa (Player API apex that OkHttp can reach), then the
- * brand mirrors `anipm.pk` / `ani.pm` / `ani.nz`. One Race card — never a
- * second site. Brand edges often CF-challenge app clients; Papa is the
- * same Player API stack and ships the playlist. Media3 needs
- * [AnipmXorDataSource] for PNG byte-range XOR trailers.
+ * Brand mirrors (`anipm.pk` / `ani.pm` / `ani.nz` / `ani.vg`) race in parallel
+ * first and the highest-scoring hit wins. AnimePapa is a **different** product
+ * (separate SDK / CF zone) — kept only as a last-resort fallback when every
+ * brand edge CF-challenges OkHttp, so the Race card still plays. One card —
+ * never a second site. Media3 needs [AnipmXorDataSource] for PNG XOR trailers.
  */
 class AniPmServer(
     private val cache: ResolveCache? = null,
@@ -42,7 +47,7 @@ class AniPmServer(
     override val server = StreamServer(
         id = ID,
         name = "ani.pm",
-        description = "On-device ani.pm resolve via AnimePapa Player API + brand mirrors. One card.",
+        description = "On-device ani.pm resolve (brand mirrors first, Papa fallback). One card.",
         iconUrl = "https://www.google.com/s2/favicons?domain=ani.pm&sz=128",
         siteUrl = SITE,
     )
@@ -56,24 +61,107 @@ class AniPmServer(
         require(anilistId > 0) { "anilistId required" }
         require(episode > 0) { "episode required" }
         val lang = if (audio.equals("dub", ignoreCase = true)) "dub" else "sub"
-        val origins = anipmOrderedOrigins(ORIGINS, cache?.getShow(ID, anilistId)?.watchUrl)
-        val malId = resolveMal(anilistId, titleHint, origins)
-        var lastError = MISSING
-        for (origin in origins) {
+        val watchUrl = cache?.getShow(ID, anilistId)?.watchUrl
+        val brand = anipmOrderedOrigins(
+            anipmUsableOrigins(BRAND_ORIGINS),
+            watchUrl,
+        )
+        val fallback = anipmOrderedOrigins(
+            anipmUsableOrigins(FALLBACK_ORIGINS),
+            watchUrl,
+        )
+        // MAL lookup may use fallback when every brand edge is CF-blocked.
+        val malId = resolveMal(anilistId, titleHint, brand + fallback)
+        val lastError = AtomicReference(MISSING)
+
+        val brandHit = openBestOnOrigins(
+            origins = brand,
+            malId = malId,
+            episode = episode,
+            lang = lang,
+            brandLane = true,
+            lastError = lastError,
+        )
+        if (brandHit != null) {
+            cache?.putShow(ID, anilistId, malId.toString(), "${brandHit.origin}/embed/mal/$malId")
+            return@withContext namedByServer(listOf(brandHit.source), server.name)
+        }
+
+        // Papa last — different product, but the only OkHttp-reachable Player API
+        // while brand edges serve a CF challenge page to app clients.
+        for (origin in fallback) {
             val opened = runCatching {
                 openOnOrigin(origin, malId, episode, lang)
             }.getOrElse { err ->
-                val msg = err.message?.takeIf { it.isNotBlank() } ?: MISSING
-                if (msg == BLOCKED || isHardProviderFailure(msg)) lastError = BLOCKED
-                else if (lastError != BLOCKED) lastError = msg
+                rememberOpenFailure(origin, err, lastError)
                 null
             }
             if (opened != null) {
                 cache?.putShow(ID, anilistId, malId.toString(), "$origin/embed/mal/$malId")
+                AnipmOriginHealth.markOk(origin)
                 return@withContext namedByServer(listOf(opened), server.name)
             }
         }
-        error(lastError)
+        error(lastError.get())
+    }
+
+    private suspend fun openBestOnOrigins(
+        origins: List<String>,
+        malId: Int,
+        episode: Int,
+        lang: String,
+        brandLane: Boolean,
+        lastError: AtomicReference<String>,
+    ): AnipmOriginHit? {
+        if (origins.isEmpty()) return null
+        val hits = coroutineScope {
+            origins.map { origin ->
+                async {
+                    val started = System.nanoTime()
+                    val opened = withTimeoutOrNull(BRAND_OPEN_TIMEOUT_MS) {
+                        runCatching { openOnOrigin(origin, malId, episode, lang) }
+                    }
+                    when {
+                        opened == null -> {
+                            // Hung edge — demote so the next Play skips it.
+                            AnipmOriginHealth.markChallenged(origin)
+                            if (lastError.get() != BLOCKED) lastError.set(BLOCKED)
+                            null
+                        }
+                        opened.isSuccess -> {
+                            val source = opened.getOrThrow()
+                            AnipmOriginHealth.markOk(origin)
+                            AnipmOriginHit(
+                                origin = origin,
+                                source = source,
+                                brand = brandLane,
+                                height = anipmSourceHeight(source),
+                                latencyMs = (System.nanoTime() - started) / 1_000_000L,
+                            )
+                        }
+                        else -> {
+                            rememberOpenFailure(origin, opened.exceptionOrNull()!!, lastError)
+                            null
+                        }
+                    }
+                }
+            }.awaitAll().filterNotNull()
+        }
+        return anipmPickBestHit(hits)
+    }
+
+    private fun rememberOpenFailure(
+        origin: String,
+        err: Throwable,
+        lastError: AtomicReference<String>,
+    ) {
+        val msg = err.message?.takeIf { it.isNotBlank() } ?: MISSING
+        if (msg == BLOCKED || isHardProviderFailure(msg)) {
+            AnipmOriginHealth.markChallenged(origin)
+            lastError.set(BLOCKED)
+        } else if (lastError.get() != BLOCKED) {
+            lastError.set(msg)
+        }
     }
 
     private fun resolveMal(anilistId: Int, titleHint: String?, origins: List<String>): Int {
@@ -129,15 +217,21 @@ class AniPmServer(
     private var lastBlocked: Boolean = false
 
     private fun openOnOrigin(origin: String, malId: Int, episode: Int, lang: String): PlayableSource {
-        warm(origin)
         val embedRef = "$origin/embed/mal/$malId/$episode/$lang"
-        // Host-guard: the player document sets same-origin cookies the session expects.
-        val page = get(embedRef, htmlHeaders(origin, "$origin/"))
-        if (anipmChallenged(page.code, page.text)) error(BLOCKED)
-        if (page.code == 404) error(MISSING)
-        if (page.code !in 200..299) error(BLOCKED)
-
-        val session = postSession(origin, malId, episode, lang, embedRef)
+        // Session-first: Papa answers /api/session without an HTML warm. Brand
+        // edges that CF-challenge the document still fail on the POST — we only
+        // pay the embed RTT when the first session attempt needs host cookies.
+        val session = runCatching {
+            postSession(origin, malId, episode, lang, embedRef)
+        }.getOrElse { first ->
+            val page = get(embedRef, htmlHeaders(origin, "$origin/"))
+            if (anipmChallenged(page.code, page.text)) error(BLOCKED)
+            if (page.code == 404) error(MISSING)
+            if (page.code !in 200..299) error(BLOCKED)
+            runCatching {
+                postSession(origin, malId, episode, lang, embedRef)
+            }.getOrElse { throw first }
+        }
         val token = session.token
         val mediaUrl = anipmMediaPlaylistUrl(origin, malId, episode, lang, token)
         val playlist = get(mediaUrl, mediaHeaders(origin, embedRef))
@@ -295,31 +389,119 @@ class AniPmServer(
         /** Canonical brand / store URL. */
         const val SITE = "https://ani.pm"
         /**
-         * AnimePapa hosts the first-party Player API that Media3 can open.
-         * Shared with HinataTV — session tokens warm across both cards.
+         * AnimePapa Player API apex — **not** an ani.pm brand host.
+         * Shared with HinataTV for embeds; used here only as FALLBACK when
+         * every brand mirror CF-challenges the app client.
          */
         const val PAPA = "https://animepapa.cyou"
         /**
-         * Live playback origins. Papa first: brand edges (`anipm.pk` /
-         * `ani.pm` / `ani.nz`) often return a CF challenge to OkHttp while
-         * Papa answers lookup + `/api/session` + HLS. `ani.nz` stays a
-         * mirror only — never a second Race card.
+         * Real ani.pm brand mirrors from the live SPA host allow-list
+         * (`ani.pm` / `ani.vg` / `ani.nz` / `anipm.pk`). Never includes Papa.
          */
-        val ORIGINS = listOf(PAPA, "https://anipm.pk", "https://ani.pm", "https://ani.nz")
+        val BRAND_ORIGINS = listOf(
+            "https://anipm.pk",
+            "https://ani.pm",
+            "https://ani.nz",
+            "https://ani.vg",
+        )
+        /** Last-resort Player API when brand edges are CF-blocked. */
+        val FALLBACK_ORIGINS = listOf(PAPA)
+        /**
+         * Full resolve list: brand first (best real ani.pm result), Papa last.
+         * `ani.nz` / `ani.vg` stay mirrors only — never a second Race card.
+         */
+        val ORIGINS = BRAND_ORIGINS + FALLBACK_ORIGINS
+        /** Cap each parallel brand open so CF hangs cannot starve Papa fallback. */
+        const val BRAND_OPEN_TIMEOUT_MS = 4_500L
         const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
         private fun defaultClient(): OkHttpClient =
             OkHttpClient.Builder()
-                .connectTimeout(8, TimeUnit.SECONDS)
-                .readTimeout(16, TimeUnit.SECONDS)
-                .callTimeout(28, TimeUnit.SECONDS)
+                .connectTimeout(6, TimeUnit.SECONDS)
+                .readTimeout(12, TimeUnit.SECONDS)
+                .callTimeout(20, TimeUnit.SECONDS)
                 .followRedirects(true)
                 .retryOnConnectionFailure(true)
                 .cookieJar(MemoryCookieJar())
                 .build()
     }
+}
+
+/** One parallel origin open — scored so brand + quality beat a slow fallback. */
+internal data class AnipmOriginHit(
+    val origin: String,
+    val source: PlayableSource,
+    val brand: Boolean,
+    val height: Int,
+    val latencyMs: Long,
+)
+
+/**
+ * Process-wide CF demotion for ani.pm origins. A challenged brand edge stays
+ * out of the parallel wave for [HOLD_MS] so Papa fallback is not blocked by
+ * three serial "Just a moment…" RTTs on every Play.
+ */
+internal object AnipmOriginHealth {
+    private val challengedUntil = ConcurrentHashMap<String, Long>()
+
+    fun shouldTry(origin: String, nowMs: Long = System.currentTimeMillis()): Boolean {
+        val key = origin.trimEnd('/').lowercase()
+        val until = challengedUntil[key] ?: return true
+        if (until <= nowMs) {
+            challengedUntil.remove(key, until)
+            return true
+        }
+        return false
+    }
+
+    fun markChallenged(origin: String, nowMs: Long = System.currentTimeMillis()) {
+        val key = origin.trimEnd('/').lowercase()
+        challengedUntil[key] = nowMs + HOLD_MS
+    }
+
+    fun markOk(origin: String) {
+        challengedUntil.remove(origin.trimEnd('/').lowercase())
+    }
+
+    fun clear() {
+        challengedUntil.clear()
+    }
+
+    internal const val HOLD_MS = 10 * 60_000L
+}
+
+internal fun anipmUsableOrigins(
+    origins: List<String>,
+    nowMs: Long = System.currentTimeMillis(),
+): List<String> = origins.filter { AnipmOriginHealth.shouldTry(it, nowMs) }
+
+/**
+ * Rank parallel hits: brand lane first, then height, then subtitles, then RTT.
+ * Guarantees the "best real result" when more than one mirror answers.
+ */
+internal fun anipmPickBestHit(hits: List<AnipmOriginHit>): AnipmOriginHit? {
+    if (hits.isEmpty()) return null
+    // Boolean: compareBy + max → true (brand) wins. Height / subs higher;
+    // latency lower (thenByDescending on latency with max).
+    return hits.maxWithOrNull(
+        compareBy<AnipmOriginHit> { it.brand }
+            .thenBy { it.height }
+            .thenBy { it.source.subtitles.size }
+            .thenByDescending { it.latencyMs },
+    )
+}
+
+/** Parse `1080p` / `1920x1080` style quality labels into a height score. */
+internal fun anipmSourceHeight(source: PlayableSource): Int {
+    val raw = source.quality?.trim().orEmpty()
+    if (raw.isEmpty()) return 0
+    Regex("""(\d{3,4})\s*p""", RegexOption.IGNORE_CASE).find(raw)?.groupValues?.get(1)
+        ?.toIntOrNull()?.let { return it }
+    Regex("""\d{3,4}x(\d{3,4})""", RegexOption.IGNORE_CASE).find(raw)?.groupValues?.get(1)
+        ?.toIntOrNull()?.let { return it }
+    return 0
 }
 
 internal data class AnipmSession(
