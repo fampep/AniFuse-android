@@ -43,6 +43,8 @@ internal class ThumbnailLoader(
     private val sprites = object : android.util.LruCache<String, Sprite>(8) {}
     private val crops = object : android.util.LruCache<String, Bitmap>(24) {}
     private val localFrames = object : android.util.LruCache<Long, Bitmap>(6) {}
+    /** Per-URL locks so warmAround + frame never double-fetch the same sheet. */
+    private val spriteGates = java.util.concurrent.ConcurrentHashMap<String, Any>()
     private val ledgerGen = AtomicLong(0L)
 
     suspend fun frame(positionMs: Long): Bitmap? = withContext(Dispatchers.IO) {
@@ -63,6 +65,17 @@ internal class ThumbnailLoader(
         val first = cues.firstOrNull() ?: return@withContext
         crop(first)
         warmNeighborsAsync(first.startMs)
+    }
+
+    /**
+     * Prefetch the cue under [positionMs] (or the first cue) so a mid-episode
+     * scrub does not wait on a cold sprite when the finger lands.
+     */
+    suspend fun warmAround(positionMs: Long) = withContext(Dispatchers.IO) {
+        ensureIndex()
+        val cue = cueAt(cues, positionMs.coerceAtLeast(0L)) ?: cues.firstOrNull() ?: return@withContext
+        crop(cue)
+        warmNeighborsAsync(positionMs.coerceAtLeast(cue.startMs))
     }
 
     /** Live cue span for adaptive scrub buckets, or null when cold. */
@@ -128,17 +141,22 @@ internal class ThumbnailLoader(
     }
 
     private fun loadSprite(url: String): Sprite? {
-        val bytes = fetchBytes(url, track?.headers.orEmpty()) ?: return null
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-        var sample = 1
-        while (bounds.outWidth / sample > 1280 || bounds.outHeight / sample > 1280) sample *= 2
-        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) ?: return null
-        val sprite = Sprite(bitmap, sample)
-        sprites.put(url, sprite)
-        return sprite
+        sprites.get(url)?.let { return it }
+        val lock = spriteGates.getOrPut(url) { Any() }
+        synchronized(lock) {
+            sprites.get(url)?.let { return it }
+            val bytes = fetchBytes(url, track?.headers.orEmpty()) ?: return null
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            var sample = 1
+            while (bounds.outWidth / sample > 1280 || bounds.outHeight / sample > 1280) sample *= 2
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) ?: return null
+            val sprite = Sprite(bitmap, sample)
+            sprites.put(url, sprite)
+            return sprite
+        }
     }
 
     /** One nearby keyframe for a local file. Network streams are left alone. */

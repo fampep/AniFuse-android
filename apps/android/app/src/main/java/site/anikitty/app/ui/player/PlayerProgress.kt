@@ -123,6 +123,16 @@ internal fun LiveTimeline(
     } else {
         -1L
     }
+    // Mid-episode scrub: warm once on finger-down — spriteGates dedupe any
+    // overlap with frame(); never re-warm on every bucket tick.
+    var wasScrubbing by remember { mutableStateOf(false) }
+    LaunchedEffect(scrubbing, loader, durationMs) {
+        val start = scrubPreviewWarmOnScrubStartOnly(scrubbing, wasScrubbing)
+        wasScrubbing = scrubbing
+        if (!start || durationMs <= 0L) return@LaunchedEffect
+        val pos = (scrubValue.coerceIn(0f, 1f) * durationMs).toLong()
+        loader.warmAround(pos)
+    }
     // Key on the bucket, not every scrub pixel — long drags stay zero-jank.
     // Decode misses keep the last plate so the glass preview never blanks mid-scrub.
     LaunchedEffect(scrubbing, scrubBucket, durationMs, loader) {

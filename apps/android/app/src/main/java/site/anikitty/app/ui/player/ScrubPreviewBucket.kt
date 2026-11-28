@@ -52,3 +52,12 @@ internal fun scrubPreviewShouldClear(scrubbing: Boolean, scrubBucketMs: Long): B
 
 internal fun scrubPreviewCrossfadeMs(reducedMotion: Boolean): Int =
     if (reducedMotion) 0 else SCRUB_PREVIEW_CROSSFADE_MS
+
+/**
+ * Warm-around runs once when scrub starts — not keyed on every bucket —
+ * so it does not race [ThumbnailLoader.frame] into duplicate sprite downloads.
+ */
+internal fun scrubPreviewWarmOnScrubStartOnly(
+    scrubbing: Boolean,
+    previousScrubbing: Boolean,
+): Boolean = scrubbing && !previousScrubbing
