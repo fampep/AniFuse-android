@@ -48,6 +48,12 @@ internal fun raceDockLeadLabel(latencyMs: Long?): String {
     return if (ms != null) "LEAD · ${ms}ms" else "LEAD"
 }
 
+/** Player Sources standby chip — mirrors LEAD · ms vocabulary. */
+internal fun raceDockStandbyLabel(latencyMs: Long?): String {
+    val ms = raceDockPulseMs(latencyMs)
+    return if (ms != null) "STANDBY · ${ms}ms" else "STANDBY"
+}
+
 internal fun <T> raceDockOrdered(
     servers: List<T>,
     scoreOf: (T) -> Int,

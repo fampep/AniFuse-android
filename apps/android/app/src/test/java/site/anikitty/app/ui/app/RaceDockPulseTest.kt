@@ -19,6 +19,8 @@ class RaceDockPulseTest {
             raceDockPulseLabel(selected = true, cold = false, score = 0, latencyMs = null),
         )
         assertEquals("LEAD · 12ms", raceDockLeadLabel(12L))
+        assertEquals("STANDBY", raceDockStandbyLabel(null))
+        assertEquals("STANDBY · 55ms", raceDockStandbyLabel(55L))
     }
 
     @Test

@@ -89,6 +89,53 @@ internal fun glassSourceRttLabel(latencyMs: Long?): String? {
     }
 }
 
+/**
+ * Playlist source pulse — LEAD on the playing row, live ms / HOT / DOWN on
+ * the rest. Same vocabulary as the Store Race dock so Sources feels wired.
+ */
+internal fun glassSourcePulseLabel(
+    selected: Boolean,
+    latencyMs: Long?,
+    score: Int = 0,
+    cold: Boolean = false,
+): String? = site.anikitty.app.ui.app.raceDockPulseLabel(
+    selected = selected,
+    cold = cold,
+    score = score,
+    latencyMs = latencyMs,
+)
+
+/** Armed shadow failover chip — never LEAD; always STANDBY · ms when probed. */
+internal fun glassShadowStandbyLabel(latencyMs: Long?): String =
+    site.anikitty.app.ui.app.raceDockStandbyLabel(latencyMs)
+
+/** Meta under a standby card — server · quality · audio · failover. */
+internal fun glassShadowStandbyMeta(
+    serverName: String?,
+    quality: String?,
+    audio: String?,
+): String {
+    val base = glassSourceMetaLine(serverName, quality, audio)
+    return if (base.isBlank()) "Failover standby" else "$base · failover"
+}
+
+/**
+ * Theater status pill — append STANDBY · ms when a fresh shadow is armed so
+ * failover is visible before the Sources sheet opens.
+ */
+internal fun glassTheaterStatusWithShadow(
+    baseParts: List<String>,
+    shadowReady: Boolean,
+    standbyLatencyMs: Long?,
+): String {
+    val parts = ArrayList<String>(baseParts.size + 1)
+    for (part in baseParts) {
+        if (part.isNotBlank()) parts += part
+    }
+    if (shadowReady) parts += glassShadowStandbyLabel(standbyLatencyMs)
+    return parts.joinToString(" · ")
+}
+
 @Composable
 internal fun GlassResolutionChipRow(
     options: List<Pair<String, String>>,
