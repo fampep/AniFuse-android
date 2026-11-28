@@ -56,4 +56,17 @@ class AnipmXorUnwrapTest {
         // PlayableSource defaults stay off for MegaPlay / plain HLS.
         assertFalse(PlayableSource(url = "https://cdn.example/a.m3u8").pngXor)
     }
+
+    @Test
+    fun byterangePastPngUsesStreamXor() {
+        assertFalse(anipmXorUsesStreamByterange(0L))
+        assertTrue(anipmXorUsesStreamByterange(2_963L))
+        // First ranged chunk already past IEND — key from sync candidates.
+        val chunk = ByteArray(400) { 0 }
+        chunk[0] = 0xB8.toByte()
+        chunk[188] = 0xB8.toByte()
+        assertEquals(0xFF, anipmXorStreamKey(chunk, 0, chunk.size))
+        // Short first read still picks the first-byte candidate.
+        assertEquals(0xFF, anipmXorStreamKey(byteArrayOf(0xB8.toByte()), 0, 1))
+    }
 }

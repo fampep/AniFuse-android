@@ -11,7 +11,8 @@ embed docs):
 2. Warm `/embed/mal/{mal}/{ep}/{sub|dub}` for same-origin cookies
 3. `POST /api/session` with `{ malId, episode }` → short-lived token
 4. Play `/playlists/{mal}_ep{n}/{sub|dub}.direct.pls?t=…` on this phone
-5. [AnipmXorDataSource] clears the PNG-trailer XOR so Media3 sees MPEG-TS
+5. [AnipmXorDataSource] honors `#EXT-X-BYTERANGE` (stream-XOR on read) and
+   falls back to full PNG + IEND cut so Media3 sees clear MPEG-TS
 
 Live origins tried in order (warm last-good first when cached):
 
