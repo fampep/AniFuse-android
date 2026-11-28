@@ -1136,33 +1136,41 @@ fun PlayerScreen(
     val playbackOwner = remember { Any() }
     val latestCasting by rememberUpdatedState(isCasting)
     val latestSourceUrl by rememberUpdatedState(source?.url)
-    LaunchedEffect(ready, source?.url, isCasting, playbackOwner) {
-        if (!ready && !isCasting) return@LaunchedEffect
+    val castItemUrl = castHelper?.playingItem?.url
+    val liveCasting = isCasting || (castHelper?.casting == true)
+    LaunchedEffect(ready, source?.url, liveCasting, castItemUrl, playbackOwner) {
+        if (!ready && !liveCasting) return@LaunchedEffect
         val host = downloadYieldPlayingHost(
-            casting = isCasting,
+            casting = liveCasting,
             localSourceUrl = source?.url,
-            castItemUrl = source?.url,
+            castItemUrl = castItemUrl,
         ) ?: return@LaunchedEffect
         PlaybackHostHealth.notePlaying(
             host,
-            downloadYieldOwner(casting = isCasting, localOwner = playbackOwner),
+            downloadYieldOwner(casting = liveCasting, localOwner = playbackOwner),
         )
     }
     DisposableEffect(playbackOwner) {
         onDispose {
-            val castingContinues = latestCasting || CastLifetime.current()?.casting == true
+            val helper = CastLifetime.current()
+            val castingContinues = latestCasting || helper?.casting == true
             if (shouldClearLocalPlayingOnLeave(castingContinues)) {
                 PlaybackHostHealth.clearPlaying(playbackOwner)
+                // Failed cast may have stamped CastDownloadYieldOwner without a live session.
+                if (helper?.casting != true) {
+                    PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
+                }
             } else {
                 val host = downloadYieldPlayingHost(
                     casting = true,
                     localSourceUrl = latestSourceUrl,
-                    castItemUrl = latestSourceUrl,
+                    castItemUrl = helper?.playingItem?.url,
                 )
                 if (host != null) {
                     PlaybackHostHealth.notePlaying(host, CastDownloadYieldOwner)
                 } else {
                     PlaybackHostHealth.clearPlaying(playbackOwner)
+                    PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
                 }
             }
             SegmentShadow.clear(playbackOwner)

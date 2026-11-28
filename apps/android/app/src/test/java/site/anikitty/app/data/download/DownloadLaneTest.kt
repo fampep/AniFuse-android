@@ -193,6 +193,22 @@ class DownloadLaneTest {
                 castItemUrl = "https://cdn-cast.example/ep.m3u8",
             ),
         )
+        // Before playingItem lands, fall back to local — never stamp a blank host.
+        assertEquals(
+            "cdn-phone.example",
+            downloadYieldPlayingHost(
+                casting = true,
+                localSourceUrl = "https://cdn-phone.example/ep.m3u8",
+                castItemUrl = null,
+            ),
+        )
+        assertNull(
+            downloadYieldPlayingHost(
+                casting = true,
+                localSourceUrl = null,
+                castItemUrl = "  ",
+            ),
+        )
         assertFalse(shouldClearLocalPlayingOnLeave(castingContinues = true))
         assertTrue(shouldClearLocalPlayingOnLeave(castingContinues = false))
     }

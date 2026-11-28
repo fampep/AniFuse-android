@@ -406,6 +406,9 @@ class CastSessionHelper private constructor(
     private fun dropLoad(ticket: Int) {
         if (!activeLoadTicket.compareAndSet(ticket, 0)) return
         casting = false
+        playingItem = null
+        // Aborted/failed loads must not leave CastDownloadYieldOwner stuck.
+        PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
         CastPlaybackService.demoteIfIdle()
     }
 
@@ -632,8 +635,10 @@ class CastSessionHelper private constructor(
     private fun settleError(message: String, ticket: Int) {
         if (!loadSettled.compareAndSet(false, true)) return
         casting = false
+        playingItem = null
         Log.w(TAG, "Cast load failed: $message")
         relay.stop()
+        PlaybackHostHealth.clearPlaying(CastDownloadYieldOwner)
         dropLoad(ticket)
         main.post { if (ticket == generation.get()) fireLoadError(message) }
     }
