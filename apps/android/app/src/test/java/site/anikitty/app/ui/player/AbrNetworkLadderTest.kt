@@ -134,7 +134,7 @@ class AbrNetworkLadderTest {
                 anyNetworkWifiOrEthernet = false,
             ),
         )
-        // Sibling Wi‑Fi while VPN is active.
+        // Sibling Wi‑Fi while VPN is active (underlay).
         assertTrue(
             abrWifiLike(
                 activeHasWifiOrEthernet = false,
@@ -150,6 +150,15 @@ class AbrNetworkLadderTest {
                 activeHasVpn = true,
                 isMetered = true,
                 anyNetworkWifiOrEthernet = false,
+            ),
+        )
+        // Sibling Wi‑Fi with NO VPN while metered cellular is default → not Wi‑Fi.
+        assertTrue(
+            !abrWifiLike(
+                activeHasWifiOrEthernet = false,
+                activeHasVpn = false,
+                isMetered = true,
+                anyNetworkWifiOrEthernet = true,
             ),
         )
     }

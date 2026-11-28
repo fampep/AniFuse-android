@@ -197,14 +197,19 @@ internal fun requireAbrAdaptiveValid(windows: AbrAdaptiveWindows) {
 
 /**
  * Wi‑Fi detection that survives VPN-only active networks. Below API 31 a VPN
- * active network often exposes only TRANSPORT_VPN — walk sibling networks and
- * treat unmetered VPN as Wi‑Fi so cold open does not clamp like cellular.
+ * active network often exposes only TRANSPORT_VPN — walk sibling networks
+ * *under that VPN* and treat unmetered VPN as Wi‑Fi. Sibling Wi‑Fi alone must
+ * not win when the default route is metered cellular (captive / Adaptive
+ * Connectivity) or ExoPlayer still downloads over LTE with a Wi‑Fi ladder.
  */
 internal fun abrWifiLike(
     activeHasWifiOrEthernet: Boolean,
     activeHasVpn: Boolean,
     isMetered: Boolean,
     anyNetworkWifiOrEthernet: Boolean,
-): Boolean = activeHasWifiOrEthernet ||
-    anyNetworkWifiOrEthernet ||
-    (activeHasVpn && !isMetered)
+): Boolean {
+    if (activeHasWifiOrEthernet) return true
+    if (!activeHasVpn) return false
+    // VPN active: sibling Wi‑Fi/Ethernet is the underlay, or unmetered VPN ≈ home.
+    return anyNetworkWifiOrEthernet || !isMetered
+}
