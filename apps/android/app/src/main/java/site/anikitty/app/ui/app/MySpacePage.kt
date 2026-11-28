@@ -93,7 +93,6 @@ import site.anikitty.app.data.download.DownloadShelfAction
 import site.anikitty.app.data.download.EpisodeDownloadEntity
 import site.anikitty.app.data.download.EpisodeDownloads
 import site.anikitty.app.data.download.LaneCandidate
-import site.anikitty.app.data.download.decodeHeaders
 import site.anikitty.app.data.download.downloadAhead
 import site.anikitty.app.data.download.downloadShelfAction
 import site.anikitty.app.data.download.downloadShelfCover
@@ -101,7 +100,7 @@ import site.anikitty.app.data.download.downloadShelfPhaseChip
 import site.anikitty.app.data.download.downloadShelfStorageLabel
 import site.anikitty.app.data.download.downloadShelfSubtitle
 import site.anikitty.app.data.download.downloadShelfUsedBytes
-import site.anikitty.app.data.servers.PlayableSource
+import site.anikitty.app.data.download.playableFromDownload
 import site.anikitty.app.data.servers.PlaybackHostHealth
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.delay
@@ -517,12 +516,7 @@ fun MySpaceFeed(
                                     anilistId = row.anilistId,
                                     episode = row.episode,
                                     title = row.title,
-                                    source = PlayableSource(
-                                        url = row.url,
-                                        headers = decodeHeaders(row.headersJson),
-                                        hls = row.hls,
-                                        stripBytes = row.stripBytes,
-                                    ),
+                                    source = playableFromDownload(row),
                                 )
                             }
                         }
@@ -888,7 +882,8 @@ private fun OfflineDownloadsShelf(
         LaneCandidate(row.anilistId, row.episode, row.url, row.updatedAtEpochMs)
     }
     val used = downloadShelfUsedBytes(downloads)
-    val free = remember {
+    // Re-read free space whenever used bytes change so the header cannot drift.
+    val free = remember(used, downloads.size) {
         runCatching { java.io.File(android.os.Environment.getDataDirectory().path).usableSpace }
             .getOrDefault(0L)
     }
@@ -956,7 +951,7 @@ private fun OfflineDownloadsShelf(
                 },
                 onLongClick = {
                     if (selection.active) {
-                        onRemoveDownload(row)
+                        selection.onToggle(row.anilistId)
                     } else {
                         selection.onStart(row.anilistId)
                     }
